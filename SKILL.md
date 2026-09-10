@@ -19,9 +19,10 @@ Implemented:
 - `rhost doctor <host>` — probe capabilities
 - `rhost exec <host> -- <command...>` — stateless foreground execution
 - `rhost session ...` — persistent tmux-backed sessions (create/list/exec/send/read/close/attach)
+- `rhost job ...` — detached background jobs (start/list/status/logs/stop/kill)
 - `rhost version`
 
-Planned (do not use yet): `job`, `fs`, `status`, `watch`.
+Planned (do not use yet): `fs`, `status`, `watch`.
 
 If a command is not listed above, it does not exist yet.
 
@@ -86,7 +87,7 @@ When a status is ambiguous (a remote command may itself exit 124 or 255), read
 branch on the message text.
 
 If a task will outlive a foreground timeout, do not raise the timeout
-indefinitely — that is what `job` is for (once implemented).
+indefinitely — use a `job` (§3c).
 
 ---
 
@@ -125,6 +126,60 @@ Rules:
 
 ---
 
+## 3c. Durable jobs
+
+Use a job when the work must **outlive the connection**: a training run, a long
+build, a benchmark. A job is not a long `exec` and not a session: it has no
+interactive shell, only a command, two log files, and an exit status.
+
+```bash
+rhost job start <host> --json --cwd ~/work/foo -- python train.py
+rhost job start <host> --json --name train-1 --env CUDA_VISIBLE_DEVICES=0 -- ./train.sh
+rhost job list <host> --json
+rhost job status <host> <job-id> --json
+rhost job logs <host> <job-id> --json --stream stdout --since 0
+rhost job stop <host> <job-id> --json     # SIGTERM to the whole process group
+rhost job kill <host> <job-id> --json     # SIGKILL, for jobs that ignore TERM
+```
+
+Rules:
+
+- `job start` returns `{id, state, pid}` immediately. The id is the handle you
+  keep: nothing else in the response is stable across calls. Every command above
+  also accepts a `--name` while it matches exactly one job; a name that matches
+  several is refused with `CONFIG_INVALID`, never guessed, so keep the id.
+- The job is owned by a **detached remote process plus remote files**, so it
+  survives `rhost` exiting and SSH disconnecting. Never assume a job vanished
+  because the connection did: re-run `job list` to rediscover it.
+- `job logs` returns a byte cursor, like `session read`: pass `data.next` back as
+  `--since` to tail without re-reading. `data.more` means the stream has bytes
+  beyond this chunk. `data.data` is **base64** (`data.encoding` says so) because
+  log content is arbitrary bytes — decode it, never treat it as text you can
+  regex in its encoded form.
+- States are `starting`, `running`, `exited`, `failed`, `stopped`, `stale`.
+  Branch on them, not on prose:
+  - `exited` / `failed` — the job wrote its own exit code; read
+    `data.exit_code` (0 means the command really succeeded).
+  - `stopped` — a stop/kill was requested and the process is gone. A job
+    terminated by signal records `143` (128+SIGTERM); `job kill` leaves
+    `data.exit_code: -1`, because SIGKILL cannot be trapped and rhost will not
+    invent a status.
+  - `stale` — the pid is gone and no exit code was ever recorded (host reboot,
+    an OOM kill, a stray `kill -9`). **`stale` is never a success.** Treat the
+    result as unknown and re-run if the work matters.
+- `job stop`/`job kill` signal the job's **process group**, so children go with
+  it instead of being orphaned. Both are idempotent: requesting stop on an
+  already-terminal job is not an error, and it never rewrites a recorded exit
+  code. If a job ignores SIGTERM, `job stop` reports `running` after its grace
+  period — that is the signal to escalate with `job kill`.
+- Job state is read from remote files, so a job that has finished stays
+  inspectable. There is no `job rm` yet: cleanup means deleting the remote state
+  directory yourself.
+- Prefer `session` when later steps depend on shell state; prefer `exec` for
+  anything that finishes inside a foreground timeout.
+
+---
+
 ## 4. Recovering from failures
 
 Read `error.code` from the JSON envelope, never the message text:
@@ -135,16 +190,23 @@ Read `error.code` from the JSON envelope, never the message text:
 - `SSH_AUTH_FAILED` — key/agent problem; fix locally, do not retry blindly.
 - `HOST_KEY_FAILED` — host key changed; investigate, never disable checking.
 - `REMOTE_DEPENDENCY_MISSING` — the remote lacks something `doctor` should have
-  shown.
+  shown. For jobs this means `bash`, `setsid`, or `nohup` is missing.
 - `REMOTE_COMMAND_TIMEOUT` — command exceeded `--timeout`; the remote process
   group was killed.
-- `CONFIG_INVALID` — bad input (e.g. an invalid env var name).
+- `CONFIG_INVALID` — bad input (an invalid env var name, a job handle shaped
+  like shell syntax, an ambiguous job name).
 - `USAGE_ERROR` — the command line itself was invalid (missing host, unknown
   flag); fix the invocation, this is never retryable.
 - `SESSION_NOT_FOUND` — session gone (closed, or ended by `exit` inside it);
   recreate it.
 - `SESSION_UNHEALTHY` — another writer holds the session lock; retry after a
   moment. Concurrent writers are unsafe by design.
+- `JOB_NOT_FOUND` — no job with that id (or unique name) on that host. The id
+  may be from another host, or the remote state was deleted; rediscover with
+  `job list`.
+- `JOB_STATE_UNKNOWN` — the job exists but its state could not be read or
+  written (remote state dir unwritable, helper killed mid-write). Retryable: the
+  job itself is usually unaffected.
 - `INTERNAL` — adapter bug; report it with the JSON envelope attached.
 
 ---

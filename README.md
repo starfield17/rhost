@@ -8,13 +8,14 @@ persistence mechanics on every operation. It orchestrates your existing OpenSSH
 configuration and never duplicates SSH authentication or host-key policy.
 
 > Status: early. Milestone 0 (skeleton), Milestone 1 (host resolution,
-> `doctor`, `exec`) and Milestone 2 (persistent tmux-backed `session`) are
-> implemented and verified against a real remote Linux host over SSH. The
-> verification runs the built binary as a **separate process per step**, so
-> "persistent" means it survived an actual CLI process exit — including
-> `SIGKILL` of the client — rather than an in-process simulation. Reproduce it
-> with `make test-live-all` against your own target (see Development).
-> Jobs, file sync, and status/watch are designed but not yet implemented.
+> `doctor`, `exec`), Milestone 2 (persistent tmux-backed `session`) and
+> Milestone 3 (detached `job`) are implemented and verified against a real
+> remote Linux host over SSH. The verification runs the built binary as a
+> **separate process per step**, so "persistent" means it survived an actual CLI
+> process exit — including `SIGKILL` of the client, and an SSH connection closed
+> underneath a running job — rather than an in-process simulation. Reproduce it
+> with `make test-live-all` against your own target (see Development). File
+> sync and status/watch are designed but not yet implemented.
 
 ## Install / build
 
@@ -40,6 +41,14 @@ rhost session read gpu debug --json --since 0
 rhost session list gpu
 rhost session attach gpu debug                # human, interactive
 rhost session close gpu debug
+
+rhost job start gpu --cwd ~/work/foo -- python train.py  # survives disconnect
+rhost job list gpu --json
+rhost job status gpu <job-id> --json
+rhost job logs gpu <job-id> --json --since 0  # byte cursor; pass data.next back
+rhost job stop gpu <job-id>                   # SIGTERM to the process group
+rhost job kill gpu <job-id>                   # SIGKILL to the process group
+
 rhost version
 ```
 
@@ -72,8 +81,9 @@ that exits 255 is indistinguishable by status alone for the same reason.
 
 The one invariant behind the architecture: **anything promised to survive a
 CLI invocation must be owned outside the CLI process.** Connection reuse is
-owned by OpenSSH ControlMaster; later, sessions by remote tmux and jobs by
-remote processes with durable remote metadata.
+owned by OpenSSH ControlMaster; sessions by remote tmux; jobs by a detached
+remote process whose state is a directory of remote files. rhost itself owns
+nothing durable.
 
 ## Development
 
@@ -83,6 +93,7 @@ make check   # gofmt + vet + unit tests + portability scan
 # Live tests are opt-in: name your own target, nothing is hardcoded.
 RHOST_TEST_HOST=<user>@<host> make test-live           # exec, timeout, doctor, transport reuse
 RHOST_TEST_HOST=<user>@<host> make test-live-session   # session persistence across CLI processes
+RHOST_TEST_HOST=<user>@<host> make test-live-jobs      # job persistence, signals, log cursors
 RHOST_TEST_HOST=<user>@<host> make test-live-all       # every live suite
 ```
 

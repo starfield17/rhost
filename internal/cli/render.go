@@ -21,6 +21,11 @@ func emitFailure(op, host string, aerr *errs.Error) {
 	exitCode = adapterExitCode(aerr)
 }
 
+// configErr wraps a plain error as a CONFIG_INVALID adapter error.
+func configErr(err error) *errs.Error {
+	return errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
+}
+
 // adapterExitCode is the single mapping from error taxonomy to process status.
 func adapterExitCode(aerr *errs.Error) int {
 	if aerr != nil && aerr.Code == errs.RemoteCommandTimeout {

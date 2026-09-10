@@ -1525,6 +1525,7 @@ that distinction is the product (AGENTS.md §4).
 |---|---|
 | exec, timeout, doctor, transport reuse | `make test-live` |
 | session persistence | `make test-live-session` |
+| job persistence, signals, log cursors | `make test-live-jobs` |
 | everything | `make test-live-all` |
 
 ---
@@ -1586,7 +1587,21 @@ rhost job logs
 prove job survived and is discoverable
 ```
 
-Not automated yet: blocked on Milestone 3.
+Automated: `TestLiveJob`, one CLI process per step. After `job start` it closes
+the ControlMaster through OpenSSH itself and asserts no master is left running,
+so the next process must reconnect; that new process then reports the job
+`running`, reads its output through the byte cursor, waits for `exited` with the
+job's own `exit_code`, and finds it again in `job list` once terminal.
+
+`TestLiveJobStopHarvestsProcessGroup` and `TestLiveJobKillEscalates` cover §46's
+"remote process group can be stopped": children of the job are proven gone by
+name after `stop`, a TERM-ignoring job is reported as still `running` rather than
+pretending to be stopped, and `kill` then removes the group.
+
+`TestLiveJobStaleIsNeverSuccess` kills the group behind rhost's back with a bare
+`kill -9`, which is what a reboot or OOM kill looks like to a later process: no
+exit-code file was ever written, so the state must be `stale` and `exit_code`
+`-1`, never a success.
 
 ### Test D — network interruption
 
