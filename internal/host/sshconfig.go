@@ -25,7 +25,7 @@ func Aliases() ([]Info, error) {
 	base := filepath.Join(home, ".ssh", "config")
 
 	seen := map[string]bool{}
-	var out []Info
+	out := []Info{} // never nil: `hosts --json` must render [], not null
 	visited := map[string]bool{}
 
 	var walk func(path string)

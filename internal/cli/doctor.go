@@ -27,7 +27,7 @@ completion-marker protocol work on this host.`,
 			a := app.NewDefault()
 			res, aerr := a.Doctor(cmd.Context(), host, timeout)
 			if aerr != nil {
-				emitFailure("doctor", host, aerr, 1)
+				emitFailure("doctor", host, aerr)
 				return nil
 			}
 			renderDoctor(res)

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -30,11 +31,78 @@ func TestEnsureControlDir(t *testing.T) {
 	if err := EnsureControlDir(); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(dir, "ssh"))
+	// Assert on ControlDir(), not on a hand-built path: a deep temp root makes
+	// rhost resolve the short fallback socket dir instead.
+	info, err := os.Stat(ControlDir())
 	if err != nil {
 		t.Fatalf("control dir not created: %v", err)
 	}
 	if !info.IsDir() {
 		t.Fatal("control dir is not a directory")
+	}
+	// This directory holds live multiplexed connections for this user.
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("control dir mode = %o, want 700", info.Mode().Perm())
+	}
+	if filepath.Base(ControlDir()) != "ssh" {
+		t.Errorf("control dir = %q, want it to end in ssh", ControlDir())
+	}
+}
+
+// TestControlPathFitsSocketPath is a regression caught against a real remote
+// host: a deep cache dir plus OpenSSH's fixed 40-byte %C expansion overflows
+// sun_path, and ssh then refuses every command with "ControlPath too long".
+// rhost must move to a short root instead of failing.
+func TestControlPathFitsSocketPath(t *testing.T) {
+	deep := filepath.Join("/private", strings.Repeat("very-deep-dir-", 10), "Caches", "rhost")
+
+	got := controlDirIn(deep)
+	if !strings.HasPrefix(got, socketFallbackRoot) {
+		t.Errorf("deep cache root %q did not fall back to the short root, got %q", deep, got)
+	}
+	if !socketFits(got) {
+		t.Errorf("fallback dir still exceeds the socket budget: %q", got)
+	}
+
+	shallow := filepath.Join(string(filepath.Separator), "tmp", "rhost-cache")
+	if got := controlDirIn(shallow); got != filepath.Join(shallow, "ssh") {
+		t.Errorf("a shallow cache root should be used as-is, got %q", got)
+	}
+
+	// Whatever the root, the path OpenSSH will actually bind must fit.
+	for _, root := range []string{shallow, deep, t.TempDir(), "/tmp"} {
+		if !socketFits(controlDirIn(root)) {
+			t.Errorf("controlDirIn(%q) = %q exceeds the socket path budget", root, controlDirIn(root))
+		}
+	}
+}
+
+// TestControlPathIsDerivedFromControlDir keeps the two in step: the directory
+// rhost creates is the directory it binds in. A mismatch made ssh fail with
+// "unix_listener: cannot bind to path ...: No such file or directory".
+func TestControlPathIsDerivedFromControlDir(t *testing.T) {
+	for _, root := range []string{filepath.Join(t.TempDir(), "ssh"), strings.Repeat("x", 90)} {
+		t.Setenv("RHOST_CACHE_DIR", root)
+		if got, want := filepath.Dir(ControlPath()), ControlDir(); got != want {
+			t.Errorf("ControlPath() dir = %q, want ControlDir() %q", got, want)
+		}
+		if err := EnsureControlDir(); err != nil {
+			t.Fatalf("EnsureControlDir with root %q: %v", root, err)
+		}
+		if _, err := os.Stat(ControlDir()); err != nil {
+			t.Errorf("ControlDir() was not created for root %q: %v", root, err)
+		}
+	}
+}
+
+// TestControlPathHonoursEnvOverrideInChildProcesses documents why live tests set
+// RHOST_CACHE_DIR in the environment: the child rhost process and the parent
+// must resolve the identical template, with no duplicated path arithmetic.
+func TestControlPathHonoursEnvOverrideInChildProcesses(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RHOST_CACHE_DIR", dir)
+
+	if got, want := ControlPath(), filepath.Join(controlDirIn(dir), "%C"); got != want {
+		t.Errorf("ControlPath() = %q, want %q derived from RHOST_CACHE_DIR", got, want)
 	}
 }

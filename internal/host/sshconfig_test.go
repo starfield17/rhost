@@ -15,7 +15,7 @@ func TestAliasesParsesConfigAndIncludes(t *testing.T) {
 		t.Fatal(err)
 	}
 	main := "Host gpu\n" +
-		"    HostName 10.0.0.5\n" +
+		"    HostName gpu.example.internal\n" +
 		"Host = db\n" +
 		"    User root\n" +
 		"Host *.example.com\n" + // wildcard: skipped
@@ -62,13 +62,17 @@ func TestAliasesMissingConfigIsNotError(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("got %v, want empty", got)
 	}
+	// `hosts --json` must render [] rather than null: agents iterate the field.
+	if got == nil {
+		t.Fatal("Aliases returned a nil slice, want an empty non-nil slice")
+	}
 }
 
 func TestSplitKeyword(t *testing.T) {
 	cases := []struct{ in, key, rest string }{
 		{"Host gpu", "Host", "gpu"},
 		{"Host=gpu", "Host", "gpu"},
-		{"  HostName   10.0.0.1", "HostName", "10.0.0.1"},
+		{"  HostName   build.example.internal", "HostName", "build.example.internal"},
 		{"Include conf.d/*.conf", "Include", "conf.d/*.conf"},
 	}
 	for _, c := range cases {

@@ -41,7 +41,7 @@ failures use 255, timeouts use 124.`,
 
 			env, err := parseEnv(envs)
 			if err != nil {
-				emitFailure("exec", host, errs.Wrap(errs.ConfigInvalid, err.Error(), false, err), 255)
+				emitFailure("exec", host, errs.Wrap(errs.ConfigInvalid, err.Error(), false, err))
 				return nil
 			}
 
@@ -99,11 +99,7 @@ func renderExecFailure(host string, res app.ExecResult, aerr *errs.Error) {
 			_, _ = os.Stderr.WriteString(res.Stderr)
 		}
 	}
-	if aerr.Code == errs.RemoteCommandTimeout {
-		exitCode = 124
-	} else {
-		exitCode = 255
-	}
+	exitCode = adapterExitCode(aerr)
 }
 
 // parseEnv parses repeated --env KEY=VALUE flags, validating each key.

@@ -9,11 +9,22 @@ import (
 )
 
 // emitFailure renders an adapter failure and sets the process exit code.
-func emitFailure(op, host string, aerr *errs.Error, code int) {
+//
+// Every adapter failure exits 255 (timeouts 124) so that a status in 0-254 is
+// always the *remote* command's own, regardless of which subcommand ran.
+func emitFailure(op, host string, aerr *errs.Error) {
 	if jsonFlag {
 		_ = output.Failure(op, host, nil, aerr).Write(os.Stdout)
 	} else {
 		fmt.Fprintf(os.Stderr, "rhost: %s: %s\n", aerr.Code, aerr.Message)
 	}
-	exitCode = code
+	exitCode = adapterExitCode(aerr)
+}
+
+// adapterExitCode is the single mapping from error taxonomy to process status.
+func adapterExitCode(aerr *errs.Error) int {
+	if aerr != nil && aerr.Code == errs.RemoteCommandTimeout {
+		return 124
+	}
+	return 255
 }

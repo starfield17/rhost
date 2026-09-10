@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/starfield17/rhost/internal/errs"
@@ -14,10 +15,13 @@ func classifyMissingMarker(res openssh.Result) *errs.Error {
 	stderr := string(res.Stderr)
 	lower := strings.ToLower(stderr)
 
-	// The wrapper itself could not start: the remote lacks bash or setsid.
+	// The wrapper itself could not start: the remote lacks bash or setsid. Quote
+	// the offending line, not just the first stderr line, which is often an
+	// unrelated banner when ssh is running at a higher log level.
 	if strings.Contains(lower, "command not found") &&
 		(strings.Contains(lower, "setsid") || strings.Contains(lower, "bash")) {
-		return errs.New(errs.RemoteDependencyMissing, firstLine(stderr), false)
+		return errs.New(errs.RemoteDependencyMissing,
+			lineMatching(stderr, "command not found"), false)
 	}
 
 	if e := classifySSH(stderr); e != nil {
@@ -30,7 +34,13 @@ func classifyMissingMarker(res openssh.Result) *errs.Error {
 	}
 	msg := firstLine(stderr)
 	if msg == "" {
-		msg = "ssh failed with no diagnostic"
+		// ssh said nothing, which happens for real failures: at LogLevel=ERROR
+		// OpenSSH suppresses its own connection diagnostics. Point at the switch
+		// that makes the cause visible instead of reporting a bare "no diagnostic".
+		return errs.Wrap(errs.SSHUnreachable,
+			fmt.Sprintf("ssh failed with exit status %d and no diagnostic; "+
+				"re-run with RHOST_SSH_LOG_LEVEL=VERBOSE to see OpenSSH's reason", res.ExitCode),
+			true, nil)
 	}
 	return errs.Wrap(errs.SSHUnreachable, msg, true, nil)
 }
@@ -40,6 +50,11 @@ func classifyMissingMarker(res openssh.Result) *errs.Error {
 func classifySSH(stderr string) *errs.Error {
 	s := stderr
 	switch {
+	case strings.Contains(s, "ControlPath too long"),
+		strings.Contains(s, "unix_listener: cannot bind to path"):
+		// rhost keeps its socket short, so this means the environment asked for an
+		// unusable path: name the knob instead of reporting a transport fault.
+		return errs.Wrap(errs.ConfigInvalid, firstLine(s), false, nil)
 	case strings.Contains(s, "Host key verification failed"):
 		return errs.New(errs.HostKeyFailed, "host key verification failed", false)
 	case strings.Contains(s, "Permission denied"),
@@ -61,6 +76,18 @@ func classifySSH(stderr string) *errs.Error {
 		return errs.Wrap(errs.SSHUnreachable, firstLine(stderr), true, nil)
 	}
 	return nil
+}
+
+// lineMatching returns the first line of s containing needle (case-insensitive),
+// falling back to the first line when nothing matches.
+func lineMatching(s, needle string) string {
+	lower := strings.ToLower(needle)
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(strings.ToLower(line), lower) {
+			return strings.TrimSpace(line)
+		}
+	}
+	return firstLine(s)
 }
 
 func firstLine(s string) string {

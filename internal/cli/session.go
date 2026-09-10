@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/starfield17/rhost/internal/app"
-	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/output"
 )
 
@@ -51,7 +50,7 @@ func newSessionCreateCmd() *cobra.Command {
 			a := app.NewDefault()
 			info, aerr := a.SessionCreate(cmd.Context(), host, name, cwd, shell, timeout)
 			if aerr != nil {
-				emitFailure("session.create", host, aerr, 255)
+				emitFailure("session.create", host, aerr)
 				return nil
 			}
 			if jsonFlag {
@@ -80,7 +79,7 @@ func newSessionListCmd() *cobra.Command {
 			a := app.NewDefault()
 			sessions, aerr := a.SessionList(cmd.Context(), host, timeout)
 			if aerr != nil {
-				emitFailure("session.list", host, aerr, 1)
+				emitFailure("session.list", host, aerr)
 				return nil
 			}
 			if jsonFlag {
@@ -114,7 +113,7 @@ func newSessionExecCmd() *cobra.Command {
 			a := app.NewDefault()
 			res, aerr := a.SessionExec(cmd.Context(), host, session, command, timeout)
 			if aerr != nil {
-				emitFailure("session.exec", host, aerr, sessionErrCode(aerr))
+				emitFailure("session.exec", host, aerr)
 				return nil
 			}
 			if jsonFlag {
@@ -151,7 +150,7 @@ func newSessionSendCmd() *cobra.Command {
 			host, session := args[0], args[1]
 			a := app.NewDefault()
 			if aerr := a.SessionSend(cmd.Context(), host, session, data, key, 30*time.Second); aerr != nil {
-				emitFailure("session.send", host, aerr, 1)
+				emitFailure("session.send", host, aerr)
 				return nil
 			}
 			if jsonFlag {
@@ -181,7 +180,7 @@ func newSessionReadCmd() *cobra.Command {
 			a := app.NewDefault()
 			res, aerr := a.SessionRead(cmd.Context(), host, session, since, timeout)
 			if aerr != nil {
-				emitFailure("session.read", host, aerr, 1)
+				emitFailure("session.read", host, aerr)
 				return nil
 			}
 			if jsonFlag {
@@ -213,7 +212,7 @@ func newSessionCloseCmd() *cobra.Command {
 			host, session := args[0], args[1]
 			a := app.NewDefault()
 			if aerr := a.SessionClose(cmd.Context(), host, session, 30*time.Second); aerr != nil {
-				emitFailure("session.close", host, aerr, 1)
+				emitFailure("session.close", host, aerr)
 				return nil
 			}
 			if jsonFlag {
@@ -235,17 +234,10 @@ func newSessionAttachCmd() *cobra.Command {
 			host, session := args[0], args[1]
 			a := app.NewDefault()
 			if aerr := a.SessionAttach(cmd.Context(), host, session); aerr != nil {
-				emitFailure("session.attach", host, aerr, 1)
+				emitFailure("session.attach", host, aerr)
 				return nil
 			}
 			return nil
 		},
 	}
-}
-
-func sessionErrCode(e *errs.Error) int {
-	if e.Code == errs.RemoteCommandTimeout {
-		return 124
-	}
-	return 255
 }

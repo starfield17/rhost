@@ -8,6 +8,9 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/starfield17/rhost/internal/errs"
+	"github.com/starfield17/rhost/internal/output"
 )
 
 var (
@@ -26,11 +29,32 @@ func Run() int {
 
 	if err := root.Execute(); err != nil {
 		// Anything reaching here is a usage/flag error: application commands
-		// render their own failures and return nil.
-		fmt.Fprintf(os.Stderr, "rhost: %v\n", err)
-		return 2
+		// render their own failures and return nil. The usage path still gets an
+		// error.code, because agents must never have to parse English text.
+		aerr := errs.New(errs.UsageError, err.Error(), false)
+		if usageWantsJSON() {
+			_ = output.Failure("usage", "", nil, aerr).Write(os.Stdout)
+		} else {
+			fmt.Fprintf(os.Stderr, "rhost: %s: %v\n", aerr.Code, err)
+		}
+		// 255, so that a usage error is never mistaken for a remote status.
+		return 255
 	}
 	return exitCode
+}
+
+// usageWantsJSON reports whether --json was requested. Cobra may fail before it
+// binds the flag (bad flag name, wrong arg count), so fall back to the raw argv.
+func usageWantsJSON() bool {
+	for _, a := range os.Args[1:] {
+		if a == "--json" || a == "--json=true" {
+			return true
+		}
+		if a == "--" { // everything after -- is the remote command, not our flags
+			return false
+		}
+	}
+	return jsonFlag
 }
 
 func newRootCmd() *cobra.Command {

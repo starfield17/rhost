@@ -22,7 +22,7 @@ Wildcard and negated patterns are omitted. This does not contact any host.`,
 			a := app.NewDefault()
 			infos, aerr := a.Hosts()
 			if aerr != nil {
-				emitFailure("hosts", "", aerr, 1)
+				emitFailure("hosts", "", aerr)
 				return nil
 			}
 			if jsonFlag {

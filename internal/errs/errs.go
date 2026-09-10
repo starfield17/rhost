@@ -12,6 +12,9 @@ import "fmt"
 type Code string
 
 const (
+	// UsageError is emitted when argument/flag parsing fails, so that even the
+	// usage path has a machine-readable form (AGENTS.md §6).
+	UsageError              Code = "USAGE_ERROR"
 	ConfigInvalid           Code = "CONFIG_INVALID"
 	HostUnknown             Code = "HOST_UNKNOWN"
 	SSHUnreachable          Code = "SSH_UNREACHABLE"

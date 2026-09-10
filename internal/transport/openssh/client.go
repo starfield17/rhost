@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strconv"
 	"time"
@@ -29,8 +30,19 @@ func DefaultConfig() Config {
 		ControlPersist: "15m",
 		ConnectTimeout: 15 * time.Second,
 		BatchMode:      true,
-		LogLevel:       "ERROR",
+		LogLevel:       defaultLogLevel(),
 	}
+}
+
+// defaultLogLevel keeps ssh quiet on success but lets a caller raise verbosity
+// when a transport failure needs diagnosing: OpenSSH suppresses its own
+// "Connection closed by ..." style diagnostics at LogLevel=ERROR, which would
+// otherwise leave rhost with an empty stderr to classify.
+func defaultLogLevel() string {
+	if v := os.Getenv("RHOST_SSH_LOG_LEVEL"); v != "" {
+		return v
+	}
+	return "ERROR"
 }
 
 // Client runs commands through the system OpenSSH client.

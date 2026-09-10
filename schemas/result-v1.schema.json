@@ -37,6 +37,7 @@
             "code": {
               "type": "string",
               "enum": [
+                "USAGE_ERROR",
                 "CONFIG_INVALID",
                 "HOST_UNKNOWN",
                 "SSH_UNREACHABLE",

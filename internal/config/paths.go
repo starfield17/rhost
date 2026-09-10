@@ -6,8 +6,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const appName = "rhost"
@@ -24,16 +26,48 @@ func CacheDir() string {
 	return filepath.Join(d, appName)
 }
 
-// ControlDir holds the OpenSSH ControlMaster sockets for this user.
+// ControlDir holds the OpenSSH ControlMaster sockets for this user. It is the
+// single source of truth for where those sockets live: EnsureControlDir creates
+// exactly this directory, and ControlPath is derived from it.
+//
+// A deep cache root plus OpenSSH's fixed 40-byte %C expansion can overflow
+// sun_path, and ssh then fails with "ControlPath too long"; in that case a short
+// per-user root is used instead.
 func ControlDir() string {
-	return filepath.Join(CacheDir(), "ssh")
+	return controlDirIn(CacheDir())
 }
 
-// ControlPath is an OpenSSH ControlPath *template*.
-//
-// %C is expanded by OpenSSH to a hash of (local host, remote host, port, user),
-// which gives every target its own short, collision-resistant socket name and
-// keeps us well under the Unix-domain socket path length limit.
+// socketFallbackRoot is a short, fixed root for the fallback socket dir. It
+// deliberately ignores os.TempDir(): on macOS that is a deep per-session
+// /var/folders path, which is exactly what overflowed sun_path.
+const socketFallbackRoot = "/tmp"
+
+// maxSocketPath is the conservative sun_path budget (104 bytes including the
+// NUL on BSD-derived systems such as macOS; Linux allows 108).
+const maxSocketPath = 104
+
+// hashTokenLen is the length OpenSSH substitutes for %C.
+const hashTokenLen = 40
+
+func controlDirIn(root string) string {
+	dir := filepath.Join(root, "ssh")
+	if socketFits(dir) {
+		return dir
+	}
+	return filepath.Join(socketFallbackRoot, fmt.Sprintf("rhost-%d", os.Getuid()), "ssh")
+}
+
+// socketFits reports whether the expanded ControlPath under dir stays inside
+// sun_path, counting the 40 characters OpenSSH substitutes for %C plus the NUL.
+func socketFits(dir string) bool {
+	expanded := filepath.Join(dir, strings.Repeat("0", hashTokenLen))
+	return len(expanded)+1 <= maxSocketPath
+}
+
+// ControlPath is an OpenSSH ControlPath *template*: one socket per target, under
+// ControlDir. %C is expanded by OpenSSH to a hash of (local host, remote host,
+// port, user), which gives every target its own short, collision-resistant
+// socket name.
 func ControlPath() string {
 	return filepath.Join(ControlDir(), "%C")
 }
