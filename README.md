@@ -77,8 +77,9 @@ that exits 255 is indistinguishable by status alone for the same reason.
 
 - [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) — what the project is
   and why.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — implementation framework,
-  milestones, and acceptance criteria.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the map: each Part links to
+  one small file under [`docs/architecture/`](docs/architecture/), holding the
+  implementation framework, milestones, and acceptance criteria.
 - [`AGENTS.md`](AGENTS.md) — contributor rules (portability, persistence,
   verification).
 - [`SKILL.md`](SKILL.md) — the agent-facing usage policy.

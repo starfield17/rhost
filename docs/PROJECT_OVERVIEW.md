@@ -276,7 +276,8 @@ repository
 ├── README.md
 ├── docs/
 │   ├── PROJECT_OVERVIEW.md
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md   # map
+│   └── architecture/     # one file per Part
 ├── cmd/
 │   └── rhost/
 ├── internal/
