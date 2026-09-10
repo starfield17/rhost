@@ -1,85 +1,403 @@
 package app
 
 import (
-	"context"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/starfield17/rhost/internal/config"
+	"github.com/starfield17/rhost/internal/errs"
 )
 
-// TestLiveExec exercises the real Mac -> remote-host path. It only runs when
-// explicitly enabled, so ordinary unit tests never touch a real machine.
+// Live tests drive the *built binary* as a child process, never the Go API
+// directly. That is the whole point: rhost owns nothing durable, so anything
+// promised to survive a CLI invocation can only be proven by exiting the
+// process and starting a new one (AGENTS.md §4, docs/ARCHITECTURE.md §41).
 //
-//	RHOST_TEST_LIVE=1 RHOST_TEST_HOST=orangepi@192.168.123.179 go test ./internal/app/
-func TestLiveExec(t *testing.T) {
+// They are opt-in and take their target from the environment, so this file runs
+// unchanged on any machine:
+//
+//	RHOST_TEST_LIVE=1 RHOST_TEST_HOST=<user>@<host> go test ./internal/app/ -run Live -v
+//
+// docs/ARCHITECTURE.md §41 Test D (network interruption) is deliberately not
+// automated here: it needs a human to cut the link, so it stays a manual step.
+
+// liveBinDir holds the throwaway binary built once per live run.
+var liveBinDir string
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if liveBinDir != "" {
+		_ = os.RemoveAll(liveBinDir)
+	}
+	os.Exit(code)
+}
+
+// liveCLI is one rhost invocation environment: a binary plus a private
+// RHOST_CACHE_DIR, so each test gets its own ControlMaster namespace.
+type liveCLI struct {
+	bin   string
+	cache string
+	// controlPath is resolved through internal/config, the same code the child
+	// process runs, so the parent never duplicates rhost's path arithmetic.
+	controlPath string
+}
+
+// deepCacheRoot builds a deliberately long cache root: the shape that made
+// OpenSSH refuse every command with "ControlPath too long".
+func deepCacheRoot(t *testing.T) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), strings.Repeat("deep-dir-", 8), "Library", "Caches", "rhost")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatalf("deep cache root: %v", err)
+	}
+	return root
+}
+
+// envelope mirrors schemas/result-v1.schema.json. Tests assert on codes and
+// fields, never on English message text, matching what agents are told to do.
+type envelope struct {
+	SchemaVersion int             `json:"schema_version"`
+	Operation     string          `json:"operation"`
+	OK            bool            `json:"ok"`
+	Host          string          `json:"host"`
+	Data          json.RawMessage `json:"data"`
+	Error         *struct {
+		Code      string `json:"code"`
+		Message   string `json:"message"`
+		Retryable bool   `json:"retryable"`
+	} `json:"error"`
+}
+
+// liveHost returns the caller-supplied target, skipping unless the suite was
+// explicitly enabled. Nothing about any specific machine is hardcoded here.
+func liveHost(t *testing.T) string {
+	t.Helper()
 	if os.Getenv("RHOST_TEST_LIVE") != "1" {
 		t.Skip("set RHOST_TEST_LIVE=1 to run live tests")
 	}
 	host := os.Getenv("RHOST_TEST_HOST")
 	if host == "" {
-		t.Skip("set RHOST_TEST_HOST")
+		t.Fatal("RHOST_TEST_LIVE=1 but RHOST_TEST_HOST is unset: name your own target")
 	}
+	return host
+}
 
-	a := NewDefault()
-	ctx := context.Background()
+// cli builds rhost once for the run and gives the test a private cache dir.
+//
+// The dir stays short on purpose so this suite exercises rhost's primary
+// ControlPath; TestLiveControlPathDeepCacheDir covers the long-path fallback.
+func cli(t *testing.T) liveCLI {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "rhost-live-*")
+	if err != nil {
+		t.Fatalf("cache dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return withCacheDir(t, liveCLI{bin: buildBinary(t)}, dir)
+}
 
-	res, aerr := a.Execute(ctx, ExecOptions{
-		Host:    host,
-		Command: "echo live-ok; exit 4",
-		Timeout: 60 * time.Second,
-	})
-	if aerr != nil {
-		t.Fatalf("Execute returned adapter error: %s: %s", aerr.Code, aerr.Message)
-	}
-	if res.ExitCode != 4 {
-		t.Errorf("exit code = %d, want 4", res.ExitCode)
-	}
-	if strings.TrimSpace(res.Stdout) != "live-ok" {
-		t.Errorf("stdout = %q, want live-ok", res.Stdout)
-	}
+// withCacheDir re-points a CLI at another cache root and resolves the socket
+// template exactly as the child process will.
+func withCacheDir(t *testing.T, c liveCLI, dir string) liveCLI {
+	t.Helper()
+	c.cache = dir
+	t.Setenv("RHOST_CACHE_DIR", dir)
+	c.controlPath = config.ControlPath()
+	return c
+}
 
-	doc, aerr := a.Doctor(ctx, host, 60*time.Second)
-	if aerr != nil {
-		t.Fatalf("Doctor returned adapter error: %s: %s", aerr.Code, aerr.Message)
+// buildBinary compiles the CLI under test once per live run.
+func buildBinary(t *testing.T) string {
+	t.Helper()
+	if liveBinDir == "" {
+		dir, err := os.MkdirTemp("", "rhost-bin")
+		if err != nil {
+			t.Fatalf("temp dir: %v", err)
+		}
+		liveBinDir = dir
 	}
-	if !doc.Online || !doc.Capabilities["bash"] {
-		t.Errorf("unexpected doctor result: %+v", doc)
+	bin := filepath.Join(liveBinDir, "rhost")
+	if _, err := os.Stat(bin); err == nil {
+		return bin
+	}
+	build := exec.Command("go", "build", "-o", bin, "./cmd/rhost")
+	build.Dir = filepath.Join("..", "..")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build ./cmd/rhost: %v\n%s", err, out)
+	}
+	return bin
+}
+
+// run executes one rhost process and returns its exit status and streams.
+func (c liveCLI) run(t *testing.T, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	cmd := exec.Command(c.bin, args...)
+	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+c.cache)
+	var so, se bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &so, &se
+	err := cmd.Run()
+	code = 0
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.As(err, &ee):
+		code = ee.ExitCode()
+	default:
+		t.Fatalf("run %v: %v", args, err)
+	}
+	return so.String(), se.String(), code
+}
+
+// mustJSON runs a command that must succeed and decodes its envelope.
+func (c liveCLI) mustJSON(t *testing.T, args ...string) envelope {
+	t.Helper()
+	stdout, stderr, code := c.run(t, args...)
+	var env envelope
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &env); err != nil {
+		t.Fatalf("%v: stdout is not one JSON document (%v)\nstdout=%q\nstderr=%q\nexit=%d",
+			args, err, stdout, stderr, code)
+	}
+	if env.Error != nil {
+		t.Fatalf("%v failed: %s: %s", args, env.Error.Code, env.Error.Message)
+	}
+	if !env.OK {
+		t.Fatalf("%v returned ok=false with no error payload: %s", args, stdout)
+	}
+	return env
+}
+
+func (e envelope) field(t *testing.T, key string, dst interface{}) {
+	t.Helper()
+	if len(e.Data) == 0 {
+		t.Fatalf("envelope has no data for key %q", key)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(e.Data, &m); err != nil {
+		t.Fatalf("data is not an object: %v", err)
+	}
+	raw, ok := m[key]
+	if !ok {
+		t.Fatalf("data has no %q key: %s", key, e.Data)
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		t.Fatalf("decode data.%s: %v", key, err)
 	}
 }
 
-// TestLiveSession proves the product-defining session behaviour: shell state
-// (cwd) persists across separate calls, and output is readable incrementally.
-func TestLiveSession(t *testing.T) {
-	if os.Getenv("RHOST_TEST_LIVE") != "1" {
-		t.Skip("set RHOST_TEST_LIVE=1 to run live tests")
+func (e envelope) str(t *testing.T, key string) string {
+	t.Helper()
+	var s string
+	e.field(t, key, &s)
+	return s
+}
+
+func (e envelope) num(t *testing.T, key string) int {
+	t.Helper()
+	var n int
+	e.field(t, key, &n)
+	return n
+}
+
+func (e envelope) bool(t *testing.T, key string) bool {
+	t.Helper()
+	var b bool
+	e.field(t, key, &b)
+	return b
+}
+
+// wantErrorCode asserts the machine-readable failure code, the only thing an
+// agent is allowed to branch on.
+func (c liveCLI) wantErrorCode(t *testing.T, code errs.Code, args ...string) envelope {
+	t.Helper()
+	stdout, stderr, exit := c.run(t, args...)
+	var env envelope
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &env); err != nil {
+		t.Fatalf("%v: stdout is not one JSON document (%v)\nstdout=%q stderr=%q exit=%d",
+			args, err, stdout, stderr, exit)
 	}
-	host := os.Getenv("RHOST_TEST_HOST")
-	if host == "" {
-		t.Skip("set RHOST_TEST_HOST")
+	if env.OK {
+		t.Fatalf("%v: want ok=false, got %s", args, stdout)
+	}
+	if env.Error == nil || errs.Code(env.Error.Code) != code {
+		t.Fatalf("%v: error code = %+v, want %s", args, env.Error, code)
+	}
+	if want := 255; code == errs.RemoteCommandTimeout {
+		if exit != 124 {
+			t.Errorf("%v: timeout must exit 124, got %d", args, exit)
+		}
+	} else if exit != want {
+		t.Errorf("%v: adapter failure must exit 255, got %d", args, exit)
+	}
+	return env
+}
+
+// TestLiveExec proves foreground execution end to end through the CLI: stdout,
+// the remote exit status mirrored into the process status, and explicit cwd.
+func TestLiveExec(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+
+	env := c.mustJSON(t, "--json", "exec", host, "--timeout", "60s", "--", "echo live-ok; exit 4")
+	if got := env.num(t, "exit_code"); got != 4 {
+		t.Errorf("data.exit_code = %d, want 4", got)
+	}
+	if got := strings.TrimSpace(env.str(t, "stdout")); got != "live-ok" {
+		t.Errorf("data.stdout = %q, want live-ok", got)
 	}
 
-	a := NewDefault()
-	ctx := context.Background()
-	const name = "livetest"
-
-	if _, aerr := a.SessionCreate(ctx, host, name, "/tmp", "bash", 90*time.Second); aerr != nil {
-		t.Fatalf("SessionCreate: %s: %s", aerr.Code, aerr.Message)
+	// The process exit status must mirror the remote command's own status.
+	if _, _, exit := c.run(t, "exec", host, "--", "exit 4"); exit != 4 {
+		t.Errorf("process exit = %d, want 4 (remote status must be mirrored)", exit)
 	}
-	defer a.SessionClose(ctx, host, name, 30*time.Second)
-
-	if _, aerr := a.SessionExec(ctx, host, name, "cd /var/log && echo moved", 60*time.Second); aerr != nil {
-		t.Fatalf("SessionExec cd: %s: %s", aerr.Code, aerr.Message)
-	}
-	res, aerr := a.SessionExec(ctx, host, name, "pwd", 60*time.Second)
-	if aerr != nil {
-		t.Fatalf("SessionExec pwd: %s: %s", aerr.Code, aerr.Message)
-	}
-	if got := strings.TrimSpace(res.Output); got != "/var/log" {
-		t.Errorf("cwd not persisted: got %q, want /var/log", got)
+	if _, _, exit := c.run(t, "--json", "exec", host, "--", "true"); exit != 0 {
+		t.Errorf("successful exec exit = %d, want 0", exit)
 	}
 
-	if _, aerr := a.SessionExec(ctx, host, name, "exit 7", 30*time.Second); aerr == nil {
-		t.Errorf("expected an adapter error when the command runs `exit`")
+	// --cwd must take effect in the same, stateless context.
+	pwd := c.mustJSON(t, "--json", "exec", host, "--cwd", "/var/log", "--", "pwd")
+	if got := strings.TrimSpace(pwd.str(t, "stdout")); got != "/var/log" {
+		t.Errorf("cwd /var/log not honoured: stdout=%q", got)
 	}
+
+	// exec is stateless by contract: a second process must not see the first's cd.
+	again := c.mustJSON(t, "--json", "exec", host, "--", "pwd")
+	if got := strings.TrimSpace(again.str(t, "stdout")); got == "/var/log" {
+		t.Errorf("exec leaked cwd between invocations: %q", got)
+	}
+}
+
+// TestLiveExecTimeout checks the foreground timeout kills the remote process
+// group, not just the local ssh, and reports 124 + REMOTE_COMMAND_TIMEOUT.
+func TestLiveExecTimeout(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+
+	marker := fmt.Sprintf("rhost-livetimeout-%d", time.Now().UnixNano())
+
+	// A distinctive duration, so the probe below cannot match some unrelated sleep.
+	sleepFor := strconv.Itoa(300 + time.Now().Nanosecond()%400)
+
+	env := c.wantErrorCode(t, errs.RemoteCommandTimeout,
+		"--json", "exec", host, "--timeout", "3s", "--", "echo "+marker+"; sleep "+sleepFor)
+	if !env.bool(t, "timed_out") {
+		t.Errorf("data.timed_out = false, want true")
+	}
+
+	time.Sleep(2 * time.Second)
+
+	// Match the survivor locally, from a remote command line that contains no
+	// pattern of its own. `pgrep -f <marker>` looks equivalent but always matches:
+	// rhost passes the whole wrapper script (marker included) as the remote argv,
+	// so pgrep's own wrapper is a hit. That false positive once looked like a
+	// product bug in the process-group kill; it was not.
+	procs := c.mustJSON(t, "--json", "exec", host, "--", "ps -eo pid,pgid,args").str(t, "stdout")
+	if strings.Contains(procs, "sleep "+sleepFor) {
+		t.Errorf("remote process group survived the timeout: 'sleep %s' is still running\n%s",
+			sleepFor, strings.Join(matchingLines(procs, "sleep "+sleepFor), "\n"))
+	}
+}
+
+func matchingLines(text, needle string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, needle) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// TestLiveDoctor probes a real host's capabilities.
+func TestLiveDoctor(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+
+	env := c.mustJSON(t, "--json", "doctor", host, "--timeout", "60s")
+	if got := env.str(t, "os"); got == "" {
+		t.Error("doctor returned an empty os")
+	}
+	var caps map[string]bool
+	env.field(t, "capabilities", &caps)
+	if !caps["bash"] {
+		t.Errorf("capabilities missing bash: %v", caps)
+	}
+	if !caps["tmux"] {
+		t.Log("remote has no tmux: session suite will fail, not skipped")
+	}
+}
+
+// TestLiveTransportReuse is docs/ARCHITECTURE.md §41 Test A: two *separate*
+// rhost processes must reuse one OpenSSH ControlMaster, and the master must
+// outlive the process that created it.
+func TestLiveTransportReuse(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+
+	c.mustJSON(t, "--json", "exec", host, "--", "true") // process 1, cold connect
+
+	pid1 := c.masterPID(t, host)
+	if pid1 <= 0 {
+		t.Fatalf("no ControlMaster running after process 1 exited (got %d): reuse is impossible", pid1)
+	}
+
+	c.mustJSON(t, "--json", "exec", host, "--", "true") // process 2, must reuse
+
+	if pid2 := c.masterPID(t, host); pid2 != pid1 {
+		t.Errorf("process 2 did not reuse the transport: master pid %d -> %d", pid1, pid2)
+	}
+
+	// The socket must live in rhost's own namespace, never in a shared dir.
+	sockets, _ := filepath.Glob(filepath.Join(filepath.Dir(c.controlPath), "*"))
+	if len(sockets) != 1 {
+		t.Errorf("want exactly 1 rhost control socket in the private namespace, got %v", sockets)
+	}
+}
+
+// TestLiveControlPathDeepCacheDir proves a long RHOST_CACHE_DIR no longer breaks
+// every command: rhost falls back to a short socket root on its own. Without the
+// fallback this fails with OpenSSH's "ControlPath too long".
+func TestLiveControlPathDeepCacheDir(t *testing.T) {
+	host := liveHost(t)
+	deep := withCacheDir(t, liveCLI{bin: buildBinary(t)}, deepCacheRoot(t))
+
+	deep.mustJSON(t, "--json", "exec", host, "--", "echo deep-cache-ok")
+	if pid := deep.masterPID(t, host); pid <= 0 {
+		t.Errorf("no reusable master on the fallback socket root (pid=%d)", pid)
+	}
+}
+
+var masterPIDRe = regexp.MustCompile(`Master running \(pid=(\d+)\)`)
+
+// masterPID asks OpenSSH itself whether a multiplexed connection to host is
+// alive, using the same ControlPath template rhost passes. A pid means the
+// transport outlived the CLI process that opened it.
+func (c liveCLI) masterPID(t *testing.T, host string) int {
+	t.Helper()
+	cmd := exec.Command("ssh",
+		"-o", "ControlPath="+c.controlPath,
+		"-o", "BatchMode=yes",
+		"-O", "check", host)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return -1
+	}
+	m := masterPIDRe.FindSubmatch(out)
+	if m == nil {
+		return -1
+	}
+	pid, err := strconv.Atoi(string(m[1]))
+	if err != nil {
+		return -1
+	}
+	return pid
 }
