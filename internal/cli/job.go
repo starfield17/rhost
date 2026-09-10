@@ -15,21 +15,17 @@ import (
 )
 
 func newJobCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "job",
-		Short: "Manage detached background jobs",
-		Long: `A job is a command that keeps running after the CLI exits and SSH
+	cmd := newGroup("job", "Manage detached background jobs", `A job is a command that keeps running after the CLI exits and SSH
 disconnects. It is owned by remote files and processes — never by rhost — so it
 survives the local process and is rediscoverable at any time.
 
 A job is the right tool when work will outlive a foreground timeout. For
-anything that finishes quickly, prefer ` + "`rhost exec`" + `; for stateful
+anything that finishes quickly, prefer `+"`rhost exec`"+`; for stateful
 interactive work, prefer a session.
 
-Address a job by the id that ` + "`job start`" + ` printed. A --name works as
+Address a job by the id that `+"`job start`"+` printed. A --name works as
 well for status, logs, stop and kill, but only while it matches exactly one job:
-names may collide, and a collision is an error rather than a guess.`,
-	}
+names may collide, and a collision is an error rather than a guess.`)
 	cmd.AddCommand(
 		newJobStartCmd(),
 		newJobListCmd(),

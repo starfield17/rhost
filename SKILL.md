@@ -20,9 +20,10 @@ Implemented:
 - `rhost exec <host> -- <command...>` — stateless foreground execution
 - `rhost session ...` — persistent tmux-backed sessions (create/list/exec/send/read/close/attach)
 - `rhost job ...` — detached background jobs (start/list/status/logs/stop/kill)
+- `rhost fs ...` — file transfer: `put`, `get` (scp) and `sync` (rsync)
 - `rhost version`
 
-Planned (do not use yet): `fs`, `status`, `watch`.
+Planned (do not use yet): `status`, `watch`.
 
 If a command is not listed above, it does not exist yet.
 
@@ -179,6 +180,43 @@ Rules:
   anything that finishes inside a foreground timeout.
 
 ---
+
+## 3d. Moving files: `fs`
+
+```bash
+rhost fs put <host> ./model.py ~/work/foo/model.py --json
+rhost fs get <host> ~/work/foo/results.json ./results.json --json
+rhost fs sync <host> ./project ~/work/project --json --dry-run   # plan only
+rhost fs sync <host> ./project ~/work/project --json             # apply
+rhost fs sync <host> ./project ~/work/project --json --delete --dry-run
+```
+
+Rules:
+
+- `put`/`get` copy **one file** (scp); `sync` copies a **directory tree**
+  (rsync). Passing a directory to `put` is `CONFIG_INVALID` pointing at `sync`,
+  not a silent recursive copy.
+- `sync` never deletes. Only `--delete` prunes remote-only files, and it is
+  refused (`SYNC_REJECTED`) when the destination is a top-level directory or a
+  whole home (`/`, `/srv`, `~`, `~other`) — there is no flag that makes that
+  safe, so sync into a subdirectory.
+- **Read the plan before applying it.** `--dry-run` returns the same
+  `data.changes` list the real sync does, with `action` one of `create`,
+  `update`, `delete`, `directory`, `skip`, and the raw rsync itemize string
+  beside it. An empty list means the two sides already match. `data.deletes`
+  counts the destructive part.
+- A destination may not contain glob characters: the remote shell would expand
+  it (`SYNC_REJECTED`). Trailing slashes follow rsync's convention — `~/work/proj`
+  and `~/work/proj/` mean the same thing, and rhost normalises the source.
+- `data.backend` says which tool ran. A `get` into an existing directory reports
+  the file it created in `data.destination`, not the directory.
+- If the remote has no rsync, `sync` fails with `REMOTE_DEPENDENCY_MISSING` and
+  says that `put`/`get` still work. Check with `rhost doctor <host>`.
+- Transfers are **foreground and local-process-owned**: unlike a job, killing the
+  CLI stops the copy. Nothing about `fs` persists.
+- Errors: `TRANSFER_FAILED` (the tool's own first complaint is in `message`),
+  `SYNC_REJECTED` (a refused destination), `REMOTE_DEPENDENCY_MISSING`,
+  `REMOTE_COMMAND_TIMEOUT` if `--timeout` (default 5m) runs out.
 
 ## 4. Recovering from failures
 

@@ -85,6 +85,14 @@ type Result struct {
 // options returns the shared OpenSSH options. ControlMaster=auto +
 // ControlPersist + a %C ControlPath give us transport reuse that outlives any
 // single rhost process, without a daemon (docs/ARCHITECTURE.md §8).
+// SSHOptions returns the OpenSSH options this client passes to ssh, in argv form.
+//
+// scp takes them directly; rsync can only carry them inside a single -e string,
+// which is why fileops.SyncArgs needs them and reports whether they could travel.
+// No caller may build its own ssh argument list from scratch: rhost's transport
+// reuse depends on these options being the only ones (AGENTS.md §5).
+func (c *Client) SSHOptions() []string { return c.options() }
+
 func (c *Client) options() []string {
 	opts := []string{
 		"-o", "ControlMaster=auto",

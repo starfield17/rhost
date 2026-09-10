@@ -8,14 +8,15 @@ persistence mechanics on every operation. It orchestrates your existing OpenSSH
 configuration and never duplicates SSH authentication or host-key policy.
 
 > Status: early. Milestone 0 (skeleton), Milestone 1 (host resolution,
-> `doctor`, `exec`), Milestone 2 (persistent tmux-backed `session`) and
-> Milestone 3 (detached `job`) are implemented and verified against a real
-> remote Linux host over SSH. The verification runs the built binary as a
-> **separate process per step**, so "persistent" means it survived an actual CLI
-> process exit — including `SIGKILL` of the client, and an SSH connection closed
-> underneath a running job — rather than an in-process simulation. Reproduce it
-> with `make test-live-all` against your own target (see Development). File
-> sync and status/watch are designed but not yet implemented.
+> `doctor`, `exec`), Milestone 2 (persistent tmux-backed `session`),
+> Milestone 3 (detached `job`) and Milestone 4 (file transfer `fs`) are
+> implemented and verified against a real remote Linux host over SSH. The
+> verification runs the built binary as a **separate process per step**, so
+> "persistent" means it survived an actual CLI process exit — including `SIGKILL`
+> of the client, and an SSH connection closed underneath a running job — rather
+> than an in-process simulation. Reproduce it with `make test-live-all` against
+> your own target (see Development). Status aggregation (`status`) and
+> `watch` are designed but not yet implemented.
 
 ## Install / build
 
@@ -48,6 +49,11 @@ rhost job status gpu <job-id> --json
 rhost job logs gpu <job-id> --json --since 0  # byte cursor; pass data.next back
 rhost job stop gpu <job-id>                   # SIGTERM to the process group
 rhost job kill gpu <job-id>                   # SIGKILL to the process group
+
+rhost fs put gpu ./model.py ~/work/foo/model.py
+rhost fs get gpu ~/work/foo/results.json ./results.json
+rhost fs sync gpu ./project ~/work/project --dry-run   # the plan, nothing copied
+rhost fs sync gpu ./project ~/work/project --json      # apply; never deletes
 
 rhost version
 ```
@@ -83,7 +89,8 @@ The one invariant behind the architecture: **anything promised to survive a
 CLI invocation must be owned outside the CLI process.** Connection reuse is
 owned by OpenSSH ControlMaster; sessions by remote tmux; jobs by a detached
 remote process whose state is a directory of remote files. rhost itself owns
-nothing durable.
+nothing durable — which is why `fs` is foreground: a copy that was promised to
+outlive the CLI would need a remote owner, and that is a later milestone.
 
 ## Development
 
@@ -94,6 +101,7 @@ make check   # gofmt + vet + unit tests + portability scan
 RHOST_TEST_HOST=<user>@<host> make test-live           # exec, timeout, doctor, transport reuse
 RHOST_TEST_HOST=<user>@<host> make test-live-session   # session persistence across CLI processes
 RHOST_TEST_HOST=<user>@<host> make test-live-jobs      # job persistence, signals, log cursors
+RHOST_TEST_HOST=<user>@<host> make test-live-fs        # put/get round-trip, rsync plan, --delete
 RHOST_TEST_HOST=<user>@<host> make test-live-all       # every live suite
 ```
 

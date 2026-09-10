@@ -57,6 +57,27 @@ func usageWantsJSON() bool {
 	return jsonFlag
 }
 
+// newGroup builds a command group. Invoking a group with no subcommand is a usage
+// error, and it used to print its help text on stdout and exit 0 — in --json mode
+// that puts human prose where an agent expects exactly one JSON document
+// (AGENTS.md §6). Humans still get the help; --json gets the envelope.
+func newGroup(use, short, long string) *cobra.Command {
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Long:  long,
+		RunE: func(c *cobra.Command, _ []string) error {
+			if jsonFlag {
+				emitFailure(use+".usage", "", errs.New(errs.UsageError,
+					"rhost "+use+" needs a subcommand (see: rhost "+use+" --help)", false))
+				return nil
+			}
+			_ = c.Help()
+			return nil
+		},
+	}
+}
+
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "rhost",
@@ -74,6 +95,7 @@ them to ssh: an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 		newHostsCmd(),
 		newSessionCmd(),
 		newJobCmd(),
+		newFsCmd(),
 		newVersionCmd(),
 	)
 	return root

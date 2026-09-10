@@ -13,15 +13,11 @@ import (
 )
 
 func newSessionCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "session",
-		Short: "Manage persistent tmux-backed sessions",
-		Long: `A session is a persistent interactive shell on the remote host, owned by
+	cmd := newGroup("session", "Manage persistent tmux-backed sessions", `A session is a persistent interactive shell on the remote host, owned by
 remote tmux, so it survives the CLI process and SSH disconnects.
 
 Use a session only when cwd, environment, or interactive terminal state must
-persist across calls. For ordinary commands, prefer ` + "`rhost exec`" + `.`,
-	}
+persist across calls. For ordinary commands, prefer `+"`rhost exec`"+`.`)
 	cmd.AddCommand(
 		newSessionCreateCmd(),
 		newSessionListCmd(),

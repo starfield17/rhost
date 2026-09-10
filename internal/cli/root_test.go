@@ -151,3 +151,50 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	return got
 }
+
+// A command group invoked with no subcommand used to print its help text on stdout
+// and exit 0. In --json mode that is human prose where an agent is parsing exactly
+// one JSON document, so a bare group is reported as the usage error it is
+// (AGENTS.md §6); a human still gets the help.
+func TestBareGroupIsAUsageError(t *testing.T) {
+	t.Cleanup(saveGlobals())
+
+	for _, group := range []string{"session", "job", "fs"} {
+		jsonFlag = true
+		exitCode = 0
+		os.Args = []string{"rhost", "--json", group}
+		out := captureStdout(t, func() { Run() })
+
+		var doc struct {
+			OK        bool   `json:"ok"`
+			Operation string `json:"operation"`
+			Error     struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+			t.Fatalf("%s: stdout is not one JSON document: %v\n%q", group, err, out)
+		}
+		if doc.OK || doc.Error.Code != "USAGE_ERROR" {
+			t.Errorf("%s: bare group = %+v, want ok=false USAGE_ERROR", group, doc)
+		}
+		if doc.Operation != group+".usage" {
+			t.Errorf("%s: operation = %q, want %q", group, doc.Operation, group+".usage")
+		}
+		if exitCode != 255 {
+			t.Errorf("%s: exit = %d, want 255", group, exitCode)
+		}
+	}
+
+	// The human path keeps the help text.
+	jsonFlag = false
+	exitCode = 0
+	os.Args = []string{"rhost", "job"}
+	out := captureStdout(t, func() { Run() })
+	if !strings.Contains(out, "Usage:") || !strings.Contains(out, "start") {
+		t.Errorf("bare group without --json must still print help, got %q", out)
+	}
+	if exitCode != 0 {
+		t.Errorf("help exit = %d, want 0", exitCode)
+	}
+}
