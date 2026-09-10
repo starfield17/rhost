@@ -183,18 +183,21 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 // markerScanFunc defines rh_window, the incremental completion-marker scan used
 // by ExecScript. The globals it reads (`LOG`, `dpat`, `dlen`, `floor`, `scan`) are
 // set by the calling script; it returns 0 when the marker appears in the window it
-// covered, and always advances `scan` to the size it has actually read.
+// covered, and always advances `scan` to a size it has actually read.
 //
-// The window re-reads the last dlen-1 bytes and never reaches back before
-// `floor`. Both halves matter:
+// The load-bearing property is the order: measure the log size, then read exactly
+// that window, then advance to it. The old loop read first and measured afterwards,
+// so the offset could jump past bytes nobody had read — and a marker inside that
+// band was never inside any later window, which turned a finished command into a
+// spurious REMOTE_COMMAND_TIMEOUT.
 //
-//   - without the overlap, a 9-byte marker written between one tick's size
-//     measurement and that tick's read could be missed forever, turning a finished
-//     command into a spurious REMOTE_COMMAND_TIMEOUT. Seen on a real host with
-//     `bash -c 'exit 4'`: the marker was in the log and rhost never looked at it
-//     again;
-//   - without the floor, the overlap could re-read a *previous* command's marker
-//     and report its exit code as this one's.
+// Which of the two defences closes the gap was measured on a real remote host,
+// three runs of TestLiveSession each: read-then-measure with no re-read failed 3/3;
+// measure-then-read with no re-read passed 3/3; read-then-measure *with* the re-read
+// passed 3/3. Either half is sufficient on its own, so both are kept — and the
+// re-read is what the `floor` clamp is for: it lets the window overlap backwards
+// without ever reaching into a previous command's marker and reporting its exit
+// code as this one's.
 const markerScanFunc = `rh_window() {
   cur=$(wc -c < "$LOG" 2>/dev/null || echo 0)
   from=$((scan - dlen + 1))
