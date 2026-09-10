@@ -55,7 +55,7 @@ func renderDoctor(r app.DoctorResult) {
 	output.Field(w, "WSL", output.Yes(r.WSL))
 	output.Field(w, "systemd --user", output.Yes(r.SystemdUser))
 	fmt.Fprintln(w)
-	for _, c := range []string{"bash", "tmux", "nohup", "setsid", "ps", "rsync", "sha256sum", "base64", "stty", "systemctl", "git", "nvidia-smi"} {
+	for _, c := range []string{"bash", "tmux", "nohup", "setsid", "ps", "rsync", "sha256sum", "base64", "stty", "systemctl", "git", "nvidia-smi", "flock"} {
 		output.Field(w, c, output.OK(r.Capabilities[c]))
 	}
 }

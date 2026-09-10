@@ -65,6 +65,22 @@ func TmuxName(id string) string { return "rhost_s_" + id }
 // basePreamble defines the remote state root used by every script.
 const basePreamble = "BASE=\"${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}\"\n"
 
+// tmuxPreflight fails fast (with a stable RHOST_ERR) when the remote lacks tmux.
+// Without it, `tmux new-session` would fail silently and the readiness wait would
+// surface a misleading SESSION_UNHEALTHY after roughly 30 seconds.
+const tmuxPreflight = "command -v tmux >/dev/null 2>&1 || { echo RHOST_ERR=notmux; exit 0; }\n"
+
+// flockPreflight distinguishes a missing flock (util-linux) from real lock
+// contention. Without it `flock` failing with 127 would be reported as
+// RHOST_ERR=locked, i.e. "another writer holds the lock", which is a lie.
+const flockPreflight = "command -v flock >/dev/null 2>&1 || { echo RHOST_ERR=noflock; exit 0; }\n"
+
+// nameOfFunc maps a meta.json path to its session name on stdout.
+const nameOfFunc = `RHOST_NAME_OF() {
+  sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1"
+}
+`
+
 // resolveFunc is a shell helper that maps a user-supplied name-or-id to a
 // session directory by scanning meta.json files. It keeps name resolution on
 // the remote side so every command is a single SSH round-trip.
@@ -116,6 +132,14 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	p := func(format string, a ...interface{}) { fmt.Fprintf(&b, format, a...) }
 
 	b.WriteString(basePreamble)
+	b.WriteString(tmuxPreflight)
+	b.WriteString(nameOfFunc)
+	// Reject a duplicate name before creating anything: resolving a name picks the
+	// first matching meta.json, so two sessions sharing a name behave ambiguously.
+	p("for d in \"$BASE\"/sessions/*/; do\n"+
+		"  [ -f \"$d/meta.json\" ] || continue\n"+
+		"  [ \"$(RHOST_NAME_OF \"$d/meta.json\")\" = %s ] && { echo RHOST_ERR=nameinuse; exit 0; }\n"+
+		"done\n", shell.Quote(meta.Name))
 	p("DIR=\"%s\"\n", dir)
 	b.WriteString("LOG=\"$DIR/pty.log\"\n")
 	b.WriteString("mkdir -p \"$DIR\" && chmod 700 \"$DIR\" 2>/dev/null\n")
@@ -125,9 +149,9 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	pane := shell.Quote(meta.TmuxSession + ":0.0")
 	p("tmux kill-session -t %s 2>/dev/null\n", tmux)
 	if meta.InitialCwd != "" {
-		p("tmux new-session -d -s %s -x 220 -y 50 -c %s %s\n", tmux, shell.Quote(meta.InitialCwd), shell.Quote(paneShellCmd))
+		p("tmux new-session -d -s %s -x 220 -y 50 -c %s %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.Quote(meta.InitialCwd), shell.Quote(paneShellCmd))
 	} else {
-		p("tmux new-session -d -s %s -x 220 -y 50 %s\n", tmux, shell.Quote(paneShellCmd))
+		p("tmux new-session -d -s %s -x 220 -y 50 %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.Quote(paneShellCmd))
 	}
 	p("tmux set-option -t %s history-limit 50000\n", tmux)
 	// pipe-pane command is run by tmux via `sh -c`, so quote the path safely.
@@ -144,7 +168,7 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	b.WriteString("tmux delete-buffer -b rhost_int 2>/dev/null\n")
 	p("tmux send-keys -t %s Enter\n", pane)
 	b.WriteString("i=0; while [ \"$i\" -lt 100 ]; do [ -f \"$DIR/ready\" ] && break; sleep 0.1; i=$((i+1)); done\n")
-	b.WriteString("if [ ! -f \"$DIR/ready\" ]; then echo RHOST_ERR=notready; exit 0; fi\n")
+	b.WriteString("if [ ! -f \"$DIR/ready\" ]; then tmux kill-session -t " + tmux + " 2>/dev/null; rm -rf \"$DIR\"; echo RHOST_ERR=notready; exit 0; fi\n")
 	b.WriteString("rm -f \"$DIR/ready\"\n")
 	// Drop the bootstrap chatter (integration echo / first prompts) so `read`
 	// from offset 0 starts clean. pipe-pane's `cat` appends, so truncation is safe.
@@ -165,9 +189,9 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 // RHOST_ERR=timeout.
 func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	cmdB64 := b64(command)
-	ticks := int(timeout / (100 * time.Millisecond))
-	if ticks < 1 {
-		ticks = 1
+	timeoutSec := int(timeout / time.Second)
+	if timeoutSec < 1 {
+		timeoutSec = 1
 	}
 
 	var b strings.Builder
@@ -176,20 +200,22 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	b.WriteString(basePreamble)
 	b.WriteString(resolveFunc)
 	p("RHOST_RESOLVE %s || { echo RHOST_ERR=nosession; exit 0; }\n", shell.Quote(nameOrID))
+	b.WriteString(tmuxPreflight)
+	b.WriteString(flockPreflight)
 	b.WriteString("DIR=\"$RHOST_DIR\"; LOG=\"$DIR/pty.log\"; LOCK=\"$DIR/lock\"; TMUX=\"$RHOST_TMUX\"\n")
 	b.WriteString("LOG=$(printf '%s' \"$LOG\" | sed 's#/$##')\n") // trim trailing slash
-	b.WriteString("exec 9>\"$LOCK\"\n")
+	b.WriteString("exec 9>\"$LOCK\" || { echo RHOST_ERR=nosession; exit 0; }\n")
 	b.WriteString("flock -w 30 9 || { echo RHOST_ERR=locked; exit 0; }\n")
 	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
 
-	// The D marker is an OSC 133 sequence terminated by BEL.
-	dpat := `$(printf '\033]133;D;')`
-
-	// Ensure echo is off and the pane is idle: send `stty -echo` and wait for a
-	// fresh D marker, then record the log offset.
+	// The D marker is an OSC 133 sequence terminated by BEL. `dpat` and `dlen`
+	// are computed once and reused; scanning advances a log offset and keeps a
+	// marker-length overlap, so each poll reads only newly appended bytes instead
+	// of re-scanning [start, EOF) every tick (which is quadratic on large output).
 	b.WriteString("pre=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n")
 	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" 'stty -echo 2>/dev/null' Enter\n")
-	p("i=0; while [ \"$i\" -lt 50 ]; do tail -c +$((pre+1)) \"$LOG\" 2>/dev/null | grep -aq %s && break; sleep 0.1; i=$((i+1)); done\n", `"`+dpat+`"`)
+	b.WriteString("dpat=$(printf '\\033]133;D;'); dlen=${#dpat}\n")
+	p("scan=$pre; i=0; while [ \"$i\" -lt 50 ]; do tail -c +$((scan+1)) \"$LOG\" 2>/dev/null | grep -aqF %s && break; cur=$(wc -c < \"$LOG\" 2>/dev/null || echo 0); over=$((cur - (dlen - 1))); [ \"$over\" -gt \"$scan\" ] && scan=$over; sleep 0.1; i=$((i+1)); done\n", `"$dpat"`)
 	b.WriteString("start=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n")
 
 	// Paste the command as one compound command so it produces a single D.
@@ -200,14 +226,14 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	b.WriteString("tmux delete-buffer -b rhost_cmd 2>/dev/null\n")
 	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" Enter\n")
 
-	// Wait for the next D marker after start, but bail out early if the pane's
-	// shell dies (for example the command was `exit`).
-	p("found=0; died=0; i=0; while [ \"$i\" -lt %d ]; do tail -c +$((start+1)) \"$LOG\" 2>/dev/null | grep -aq %s && { found=1; break; }; if [ $((i %% 5)) -eq 0 ] && ! tmux has-session -t \"$TMUX\" 2>/dev/null; then died=1; break; fi; sleep 0.1; i=$((i+1)); done\n", ticks, `"`+dpat+`"`)
+	// Wait for the next D marker after start, incrementally and with backoff, but
+	// bail out early if the pane's shell dies (for example the command was `exit`).
+	p("SECONDS=0; found=0; died=0; scan=$start; while [ \"$SECONDS\" -lt %d ]; do tail -c +$((scan+1)) \"$LOG\" 2>/dev/null | grep -aqF %s && { found=1; break; }; cur=$(wc -c < \"$LOG\" 2>/dev/null || echo 0); over=$((cur - (dlen - 1))); [ \"$over\" -gt \"$scan\" ] && scan=$over; if ! tmux has-session -t \"$TMUX\" 2>/dev/null; then died=1; break; fi; if [ \"$SECONDS\" -ge 5 ]; then sleep 1; elif [ \"$SECONDS\" -ge 1 ]; then sleep 0.5; else sleep 0.1; fi; done\n", timeoutSec, `"$dpat"`)
 	b.WriteString("if [ \"$died\" = 1 ]; then echo RHOST_ERR=sessiondied; exit 0; fi\n")
 	b.WriteString("if [ \"$found\" != 1 ]; then tmux send-keys -t \"$TMUX:0.0\" C-c 2>/dev/null; echo RHOST_ERR=timeout; exit 0; fi\n")
 
 	// Locate the first D at/after start, emit exit code then the region before it.
-	p("dline=$(tail -c +$((start+1)) \"$LOG\" | grep -abo %s | head -1)\n", `"`+dpat+`"`)
+	p("dline=$(tail -c +$((start+1)) \"$LOG\" | grep -aboF %s | head -1)\n", `"$dpat"`)
 	b.WriteString("doff=${dline%%:*}\n")
 	b.WriteString("abs=$((start + doff))\n")
 	b.WriteString("seg=$(tail -c +$((abs+1)) \"$LOG\" | head -c 24)\n")
@@ -229,6 +255,7 @@ func SendScript(nameOrID, kind, payload string) string {
 	b.WriteString(basePreamble)
 	b.WriteString(resolveFunc)
 	p("RHOST_RESOLVE %s || { echo RHOST_ERR=nosession; exit 0; }\n", shell.Quote(nameOrID))
+	b.WriteString(tmuxPreflight)
 	b.WriteString("TMUX=\"$RHOST_TMUX\"\n")
 	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
 	if kind == "key" {
@@ -275,7 +302,7 @@ func ReadScript(nameOrID string, since int, maxBytes int) string {
 // ListScript prints one RHOST_META line per session, each carrying the id, the
 // liveness of its tmux session, and the base64 of meta.json.
 func ListScript() string {
-	return basePreamble + `[ -d "$BASE/sessions" ] || exit 0
+	return basePreamble + tmuxPreflight + `[ -d "$BASE/sessions" ] || exit 0
 for d in "$BASE"/sessions/*/; do
   [ -f "$d/meta.json" ] || continue
   id=$(basename "$d")

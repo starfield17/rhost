@@ -6,6 +6,8 @@ func TestStripANSI(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"\x1b]133;C\x07hello\r\n", "hello\n"},
 		{"\x1b]133;D;0\x07", ""},
+		{"\x1b]0;title\x1b\\after", "after"},
+		{"\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\", "link"},
 		{"\x1b[?2004h$ ls\x1b[?2004l\r\n", "$ ls\n"},
 		{"plain text\n", "plain text\n"},
 		{"a\rb\n", "ab\n"},

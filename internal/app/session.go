@@ -64,16 +64,26 @@ func newSessionID() (string, error) {
 	return "s_" + hex.EncodeToString(b), nil
 }
 
+// sessionHelperTimeout is the transport-level budget for one session helper.
+//
+// The helper's own worst case is bounded by: flock -w 30 (waiting on another
+// writer), up to 5s waiting for the pane to go idle, then the user command's
+// timeout. If the transport kills the helper before it can finish its own
+// timeout handling (send C-c, release the lock), the pane and lock are left in an
+// inconsistent state, so give the helper room for all three phases.
 func sessionHelperTimeout(user time.Duration) time.Duration {
 	if user <= 0 {
 		user = 60 * time.Second
 	}
-	// Give the remote helper room to run its own timeout handling (Ctrl-C)
-	// before the transport-level kill fires.
-	return user + 20*time.Second
+	const (
+		lockWait = 30 * time.Second
+		idleWait = 5 * time.Second
+		slack    = 10 * time.Second
+	)
+	return user + lockWait + idleWait + slack
 }
 
-func mapHelperErr(code, host string) *errs.Error {
+func mapHelperErr(code string) *errs.Error {
 	switch code {
 	case "nosession":
 		return errs.New(errs.SessionNotFound, "no such session", false)
@@ -85,8 +95,16 @@ func mapHelperErr(code, host string) *errs.Error {
 		return errs.New(errs.SessionUnhealthy, "session is busy (another writer holds the lock)", true)
 	case "notready":
 		return errs.New(errs.SessionUnhealthy, "session shell did not become ready", true)
+	case "notmux":
+		return errs.New(errs.RemoteDependencyMissing, "remote host is missing tmux", false)
+	case "noflock":
+		return errs.New(errs.RemoteDependencyMissing, "remote host is missing flock (util-linux)", false)
+	case "nameinuse":
+		return errs.New(errs.ConfigInvalid, "session name is already in use", false)
+	case "newfailed":
+		return errs.New(errs.SessionUnhealthy, "could not create the tmux session", true)
 	default:
-		return errs.Wrap(errs.SessionUnhealthy, "session helper error: "+code, true, nil)
+		return errs.New(errs.SessionUnhealthy, "session helper error: "+code, true)
 	}
 }
 
@@ -135,7 +153,7 @@ func (a *App) SessionCreate(ctx context.Context, host, name, cwd, shellName stri
 	}
 	stdout := string(res.Stdout)
 	if strings.Contains(stdout, "RHOST_ERR=") {
-		return SessionInfo{}, mapHelperErr(extractField(stdout, "RHOST_ERR="), host)
+		return SessionInfo{}, mapHelperErr(extractField(stdout, "RHOST_ERR="))
 	}
 	return toSessionInfo(meta, "alive"), nil
 }
@@ -146,7 +164,11 @@ func (a *App) SessionList(ctx context.Context, host string, timeout time.Duratio
 	if aerr != nil {
 		return nil, aerr
 	}
-	entries := tmux.ParseList(string(res.Stdout))
+	stdout := string(res.Stdout)
+	if strings.Contains(stdout, "RHOST_ERR=") {
+		return nil, mapHelperErr(extractField(stdout, "RHOST_ERR="))
+	}
+	entries := tmux.ParseList(stdout)
 	out := make([]SessionInfo, 0, len(entries))
 	for _, e := range entries {
 		status := "dead"
@@ -173,7 +195,7 @@ func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, t
 	}
 	oc := tmux.ParseExec(string(res.Stdout))
 	if oc.Err != "" {
-		return SessionExecResult{}, mapHelperErr(oc.Err, host)
+		return SessionExecResult{}, mapHelperErr(oc.Err)
 	}
 	return SessionExecResult{
 		SessionID: nameOrID,
@@ -201,7 +223,7 @@ func (a *App) SessionSend(ctx context.Context, host, nameOrID, data, key string,
 		return aerr
 	}
 	if strings.Contains(string(res.Stdout), "RHOST_ERR=") {
-		return mapHelperErr(extractField(string(res.Stdout), "RHOST_ERR="), host)
+		return mapHelperErr(extractField(string(res.Stdout), "RHOST_ERR="))
 	}
 	return nil
 }
@@ -214,15 +236,33 @@ func (a *App) SessionRead(ctx context.Context, host, nameOrID string, since int,
 	}
 	ro := tmux.ParseRead(string(res.Stdout))
 	if ro.Error != "" {
-		return SessionReadResult{}, mapHelperErr(ro.Error, host)
+		return SessionReadResult{}, mapHelperErr(ro.Error)
 	}
+	// A hard cut at the read byte limit can land mid-rune. Hold the partial
+	// trailing bytes back and let the next read re-deliver them, so JSON never
+	// carries a replacement character produced by rhost's own boundary.
+	data, next := trimPartialRead(ro.Data, ro.Next, ro.Size)
 	return SessionReadResult{
 		SessionID: nameOrID,
 		From:      ro.From,
-		Next:      ro.Next,
-		HasMore:   ro.Next < ro.Size,
-		Data:      shell.StripANSI(string(ro.Data)),
+		Next:      next,
+		HasMore:   next < ro.Size,
+		Data:      shell.StripANSI(string(data)),
 	}, nil
+}
+
+// trimPartialRead holds back a trailing partial rune when a read stopped at the
+// byte limit (next < size) rather than at EOF, and moves the cursor back by the
+// same amount so the bytes are re-delivered once complete. A read that reached
+// EOF is returned unchanged: trailing bytes there are whatever the log holds.
+func trimPartialRead(data []byte, next, size int) ([]byte, int) {
+	if next >= size {
+		return data, next
+	}
+	if n := shell.IncompleteUTF8Suffix(data); n > 0 {
+		return data[:len(data)-n], next - n
+	}
+	return data, next
 }
 
 // SessionClose kills a session and removes its remote state.
@@ -232,7 +272,7 @@ func (a *App) SessionClose(ctx context.Context, host, nameOrID string, timeout t
 		return aerr
 	}
 	if strings.Contains(string(res.Stdout), "RHOST_ERR=") {
-		return mapHelperErr(extractField(string(res.Stdout), "RHOST_ERR="), host)
+		return mapHelperErr(extractField(string(res.Stdout), "RHOST_ERR="))
 	}
 	return nil
 }

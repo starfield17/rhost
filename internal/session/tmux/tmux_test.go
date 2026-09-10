@@ -61,9 +61,30 @@ func TestCreateScriptProtocol(t *testing.T) {
 		"$DIR/ready",
 		"meta.json",
 		"RHOST_OK=created",
+		"RHOST_ERR=notmux",
+		"RHOST_ERR=nameinuse",
+		"RHOST_ERR=newfailed",
+		"RHOST_NAME_OF",
 	} {
 		if !contains(s, want) {
 			t.Errorf("CreateScript missing %q", want)
+		}
+	}
+}
+
+// TestCreateScriptNotReadyCleansUp pins the failure-path fix: a session that
+// never becomes ready must kill its freshly created tmux session and remove its
+// state dir, or it becomes an orphan invisible to `session list`.
+func TestCreateScriptNotReadyCleansUp(t *testing.T) {
+	meta := NewMeta("s_abc", "dev", "", "bash")
+	s := CreateScript(meta, "bash --noprofile --norc -i")
+	for _, want := range []string{
+		"tmux kill-session -t 'rhost_s_s_abc'",
+		"rm -rf \"$DIR\"",
+		"RHOST_ERR=notready",
+	} {
+		if !contains(s, want) {
+			t.Errorf("CreateScript notready path missing %q", want)
 		}
 	}
 }
@@ -86,16 +107,32 @@ func TestExecScriptProtocol(t *testing.T) {
 	s := ExecScript("dev", "echo hi", 5*time.Second)
 	for _, want := range []string{
 		"flock",
+		"RHOST_ERR=noflock",
 		"RHOST_RESOLVE",
 		"133;D;",
 		"sessiondied",
 		"RHOST_EXIT=",
 		"stty -echo",
 		"tmux paste-buffer",
+		"grep -aqF",
+		"SECONDS=0",
+		"scan=$start",
 	} {
 		if !contains(s, want) {
 			t.Errorf("ExecScript missing %q", want)
 		}
+	}
+}
+
+// TestListAndSendPreflight checks the remaining tmux-backed scripts fail fast
+// with a stable code on a host without tmux, instead of misreporting liveness
+// or a missing session.
+func TestListAndSendPreflight(t *testing.T) {
+	if s := ListScript(); !contains(s, "RHOST_ERR=notmux") {
+		t.Errorf("ListScript missing tmux preflight")
+	}
+	if s := SendScript("dev", "data", "x"); !contains(s, "RHOST_ERR=notmux") {
+		t.Errorf("SendScript missing tmux preflight")
 	}
 }
 

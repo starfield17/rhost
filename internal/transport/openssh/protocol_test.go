@@ -14,6 +14,7 @@ func TestBuildScriptContainsProtocol(t *testing.T) {
 	})
 	for _, want := range []string{
 		"__RHOST_DONE_deadbeef__:",
+		"__RHOST_BEGIN_deadbeef__",
 		"rhost-deadbeef.pid",
 		"cd -- '/tmp'",
 		"export BAR='x'\\''y'",
@@ -42,6 +43,11 @@ func TestParseMarker(t *testing.T) {
 		{"no trailing newline in output", "hi" + marker, "hi", 7, true},
 		{"empty output", marker, "", 7, true},
 		{"zero exit", "x\n\n__RHOST_DONE_" + nonce + "__:0\n", "x\n", 0, true},
+		{
+			"login profile noise before begin marker is dropped",
+			"profile says hi\n\n__RHOST_BEGIN_" + nonce + "__\nreal output\n" + marker,
+			"real output\n", 7, true,
+		},
 		{
 			"fake marker with other nonce is ignored",
 			"noise\n__RHOST_DONE_othernonce__:5\nreal\n" + marker,
@@ -77,5 +83,20 @@ func TestWrapScriptQuoteSafe(t *testing.T) {
 func TestKillCommandReferencesNonce(t *testing.T) {
 	if c := KillCommand("xyz"); !strings.Contains(c, "rhost-xyz.pid") {
 		t.Errorf("KillCommand missing pidfile name: %s", c)
+	}
+}
+
+// TestKillCommandChecksBothPidLocations guards the state-dir-unwritable path:
+// BuildScript records the pid under ${TMPDIR:-/tmp} when the state dir is not
+// writable, so the killer must look there too or the remote process leaks.
+func TestKillCommandChecksBothPidLocations(t *testing.T) {
+	c := KillCommand("xyz")
+	for _, want := range []string{
+		"${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/run/rhost-xyz.pid",
+		"${TMPDIR:-/tmp}/rhost-xyz.pid",
+	} {
+		if !strings.Contains(c, want) {
+			t.Errorf("KillCommand missing %q: %s", want, c)
+		}
 	}
 }

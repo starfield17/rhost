@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	markerPrefix = "__RHOST_DONE_"
+	markerPrefix   = "__RHOST_DONE_"
+	outBeginPrefix = "__RHOST_BEGIN_"
 
 	// DefaultRemoteStateDir is the remote per-user state root. It is a shell
 	// expression so it can be overridden by RHOST_REMOTE_STATE on the host.
@@ -58,6 +59,8 @@ func (s ExecSpec) stateExpr() string {
 
 func markerToken(nonce string) string { return markerPrefix + nonce + "__" }
 
+func beginToken(nonce string) string { return outBeginPrefix + nonce + "__" }
+
 // BuildScript returns the bash script executed on the remote host.
 //
 // It is executed as a login shell (`bash -lc`) inside a new session
@@ -90,6 +93,12 @@ func BuildScript(spec ExecSpec) string {
 		b.WriteString("export " + k + "=" + shell.Quote(spec.Env[k]) + "\n")
 	}
 
+	// Emit a begin marker immediately before the command's output. The wrapper
+	// runs under `bash -lc`, which sources the login profile first; any stdout a
+	// noisy profile produces would otherwise be prepended to the command's own
+	// output. ParseMarker drops everything up to and including this marker.
+	b.WriteString("printf '\\n" + beginToken(spec.Nonce) + "\\n'\n")
+
 	// Run the user command in a subshell so a bare `exit` inside it cannot skip
 	// the completion marker.
 	b.WriteString("(\n")
@@ -114,10 +123,10 @@ func WrapScript(script string) string {
 
 // ParseMarker extracts the completion marker emitted by BuildScript.
 //
-// It returns the command's stdout (with the separator newline and marker
-// removed) and the remote exit code. ok is false when the marker is absent,
-// which means the wrapper never completed (transport failure or a missing
-// remote dependency such as bash/setsid).
+// It returns the command's stdout (with the separator newline, the begin marker,
+// and the completion marker removed) and the remote exit code. ok is false when
+// the marker is absent, which means the wrapper never completed (transport
+// failure or a missing remote dependency such as bash/setsid).
 func ParseMarker(stdout []byte, nonce string) (body []byte, code int, ok bool) {
 	needle := []byte("\n" + markerPrefix + nonce + "__:")
 	i := bytes.LastIndex(stdout, needle)
@@ -133,17 +142,33 @@ func ParseMarker(stdout []byte, nonce string) (body []byte, code int, ok bool) {
 	if err != nil {
 		return stdout, -1, false
 	}
-	return stdout[:i], n, true
+	head := stdout[:i]
+	// Drop login-profile noise: everything up to and including the begin marker
+	// is not the command's output. Match the first occurrence, which is the one
+	// the wrapper emitted before the command ran.
+	begin := []byte("\n" + beginToken(nonce) + "\n")
+	if k := bytes.Index(head, begin); k >= 0 {
+		head = head[k+len(begin):]
+	}
+	return head, n, true
 }
 
 // KillCommand returns a remote bash command that kills the process group
 // recorded for nonce, escalating TERM -> KILL. Used to terminate a command whose
 // foreground timeout elapsed; killing the local ssh process alone leaves the
 // remote process running.
+//
+// BuildScript records the pid file under the remote state dir, but falls back to
+// ${TMPDIR:-/tmp} when that dir is not writable. The killer must look in both
+// places, or a command started on a host with an unwritable state dir can never
+// be reaped.
 func KillCommand(nonce string) string {
-	f := `"${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/run/rhost-` + nonce + `.pid"`
-	return "f=" + f + "; p=$(cat \"$f\" 2>/dev/null); " +
-		"if [ -n \"$p\" ]; then " +
-		"kill -TERM -\"$p\" 2>/dev/null; sleep 0.3; kill -KILL -\"$p\" 2>/dev/null; " +
-		"rm -f \"$f\"; echo killed:$p; else echo no-pid; fi"
+	name := "rhost-" + nonce + ".pid"
+	return `f1="${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/run/` + name + `"; ` +
+		`f2="${TMPDIR:-/tmp}/` + name + `"; ` +
+		`p=$(cat "$f1" 2>/dev/null); ` +
+		`[ -n "$p" ] || p=$(cat "$f2" 2>/dev/null); ` +
+		`if [ -n "$p" ]; then ` +
+		`kill -TERM -"$p" 2>/dev/null; sleep 0.3; kill -KILL -"$p" 2>/dev/null; ` +
+		`rm -f "$f1" "$f2"; echo killed:$p; else echo no-pid; fi`
 }
