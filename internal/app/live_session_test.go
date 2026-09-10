@@ -145,6 +145,50 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 	}
 }
 
+// TestLiveSessionBoundaryIsReliable is the regression test for a marker race that
+// made `session exec -- "bash -c 'exit 4'"` time out on a real host even though
+// the shell had already reported 4. Commands that finish quietly are the risky
+// shape — there is no later output to drag the scan forward — so this repeats the
+// exact form many times, across the codes, and fails on any missed boundary.
+func TestLiveSessionBoundaryIsReliable(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+	const name = "livebound"
+
+	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
+	defer c.run(t, "--json", "session", "close", host, name)
+
+	cases := []struct {
+		command string
+		want    int
+	}{
+		{"bash -c 'exit 4'", 4},
+		{"bash -c 'exit 0'", 0},
+		{"bash -c 'exit 7'", 7},
+		{"sh -c 'exit 9'", 9},
+		{"( exit 11 )", 11},
+		{"true", 0},
+		{"false", 1},
+		{"bash -c 'echo out; exit 3'", 3},
+	}
+
+	// Two passes: the race is a timing accident, so one pass proves little.
+	for round := 0; round < 2; round++ {
+		for _, tc := range cases {
+			env := c.mustJSON(t, "--json", "session", "exec", host, name, "--", tc.command)
+			if got := env.num(t, "exit_code"); got != tc.want {
+				t.Fatalf("round %d: %q exit_code = %d, want %d (%s)", round, tc.command, got, tc.want, env.Data)
+			}
+		}
+	}
+
+	// A boundary miss surfaces as a timeout, and a timeout must still leave the
+	// session usable: check the shell is alive after the whole sequence.
+	if got := strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo still-here").str(t, "output")); !strings.Contains(got, "still-here") {
+		t.Errorf("session unusable after the boundary sequence: %q", got)
+	}
+}
+
 // TestLiveSessionSendRawInput covers the raw-injection path agents use for REPLs.
 func TestLiveSessionSendRawInput(t *testing.T) {
 	host := liveHost(t)

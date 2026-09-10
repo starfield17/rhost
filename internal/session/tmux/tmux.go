@@ -180,6 +180,33 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	return b.String()
 }
 
+// markerScanFunc defines rh_window, the incremental completion-marker scan used
+// by ExecScript. The globals it reads (`LOG`, `dpat`, `dlen`, `floor`, `scan`) are
+// set by the calling script; it returns 0 when the marker appears in the window it
+// covered, and always advances `scan` to the size it has actually read.
+//
+// The window re-reads the last dlen-1 bytes and never reaches back before
+// `floor`. Both halves matter:
+//
+//   - without the overlap, a 9-byte marker written between one tick's size
+//     measurement and that tick's read could be missed forever, turning a finished
+//     command into a spurious REMOTE_COMMAND_TIMEOUT. Seen on a real host with
+//     `bash -c 'exit 4'`: the marker was in the log and rhost never looked at it
+//     again;
+//   - without the floor, the overlap could re-read a *previous* command's marker
+//     and report its exit code as this one's.
+const markerScanFunc = `rh_window() {
+  cur=$(wc -c < "$LOG" 2>/dev/null || echo 0)
+  from=$((scan - dlen + 1))
+  [ "$from" -lt "$floor" ] && from=$floor
+  if [ "$cur" -ge "$from" ]; then
+    tail -c +"$from" "$LOG" 2>/dev/null | head -c $((cur - from + 1)) | grep -aqF "$dpat" && { scan=$cur; return 0; }
+  fi
+  scan=$cur
+  return 1
+}
+`
+
 // ExecScript runs a command in an existing session and prints `RHOST_EXIT=<code>`
 // followed by the base64 of the command's output.
 //
@@ -208,14 +235,16 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	b.WriteString("flock -w 30 9 || { echo RHOST_ERR=locked; exit 0; }\n")
 	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
 
-	// The D marker is an OSC 133 sequence terminated by BEL. `dpat` and `dlen`
-	// are computed once and reused; scanning advances a log offset and keeps a
-	// marker-length overlap, so each poll reads only newly appended bytes instead
-	// of re-scanning [start, EOF) every tick (which is quadratic on large output).
+	// The D marker is an OSC 133 sequence terminated by BEL. `dpat` and `dlen` are
+	// computed once and reused, and rh_window advances the scan by only as much as
+	// it has actually *read* (re-reading the last marker-length bytes), so each poll
+	// costs a small tail instead of re-scanning the log (quadratic on large output)
+	// while a marker can never straddle two polls unnoticed.
+	b.WriteString(markerScanFunc)
 	b.WriteString("pre=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n")
 	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" 'stty -echo 2>/dev/null' Enter\n")
 	b.WriteString("dpat=$(printf '\\033]133;D;'); dlen=${#dpat}\n")
-	p("scan=$pre; i=0; while [ \"$i\" -lt 50 ]; do tail -c +$((scan+1)) \"$LOG\" 2>/dev/null | grep -aqF %s && break; cur=$(wc -c < \"$LOG\" 2>/dev/null || echo 0); over=$((cur - (dlen - 1))); [ \"$over\" -gt \"$scan\" ] && scan=$over; sleep 0.1; i=$((i+1)); done\n", `"$dpat"`)
+	b.WriteString("floor=$((pre + 1)); scan=$floor; i=0; while [ \"$i\" -lt 50 ]; do rh_window && break; sleep 0.1; i=$((i+1)); done\n")
 	b.WriteString("start=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n")
 
 	// Paste the command as one compound command so it produces a single D.
@@ -228,7 +257,7 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 
 	// Wait for the next D marker after start, incrementally and with backoff, but
 	// bail out early if the pane's shell dies (for example the command was `exit`).
-	p("SECONDS=0; found=0; died=0; scan=$start; while [ \"$SECONDS\" -lt %d ]; do tail -c +$((scan+1)) \"$LOG\" 2>/dev/null | grep -aqF %s && { found=1; break; }; cur=$(wc -c < \"$LOG\" 2>/dev/null || echo 0); over=$((cur - (dlen - 1))); [ \"$over\" -gt \"$scan\" ] && scan=$over; if ! tmux has-session -t \"$TMUX\" 2>/dev/null; then died=1; break; fi; if [ \"$SECONDS\" -ge 5 ]; then sleep 1; elif [ \"$SECONDS\" -ge 1 ]; then sleep 0.5; else sleep 0.1; fi; done\n", timeoutSec, `"$dpat"`)
+	p("SECONDS=0; found=0; died=0; floor=$((start + 1)); scan=$floor; while [ \"$SECONDS\" -lt %d ]; do rh_window && { found=1; break; }; if ! tmux has-session -t \"$TMUX\" 2>/dev/null; then died=1; break; fi; if [ \"$SECONDS\" -ge 5 ]; then sleep 1; elif [ \"$SECONDS\" -ge 1 ]; then sleep 0.5; else sleep 0.1; fi; done\n", timeoutSec)
 	b.WriteString("if [ \"$died\" = 1 ]; then echo RHOST_ERR=sessiondied; exit 0; fi\n")
 	b.WriteString("if [ \"$found\" != 1 ]; then tmux send-keys -t \"$TMUX:0.0\" C-c 2>/dev/null; echo RHOST_ERR=timeout; exit 0; fi\n")
 
@@ -237,7 +266,12 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	b.WriteString("doff=${dline%%:*}\n")
 	b.WriteString("abs=$((start + doff))\n")
 	b.WriteString("seg=$(tail -c +$((abs+1)) \"$LOG\" | head -c 24)\n")
-	b.WriteString("code=$(printf '%s' \"$seg\" | sed -n 's/.*;D;\\([0-9][0-9]*\\).*/\\1/p')\n")
+	// Take the digits that follow the marker *we located*: strip that exact prefix,
+	// then keep the leading run of digits. A greedy sed over the whole 24-byte
+	// window would read the *last* `;D;` in it, so a command whose marker sat next
+	// to another one (an interrupt landing right after it) reported the wrong code.
+	b.WriteString("tmp=${seg#\"$dpat\"}\n")
+	b.WriteString("code=${tmp%%[!0-9]*}\n")
 	b.WriteString("[ -n \"$code\" ] || code=-1\n")
 	b.WriteString("echo \"RHOST_EXIT=$code\"\n")
 	b.WriteString("tail -c +$((start+1)) \"$LOG\" | head -c $((abs - start)) | base64 -w0\n")

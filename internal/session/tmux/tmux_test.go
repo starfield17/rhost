@@ -116,11 +116,55 @@ func TestExecScriptProtocol(t *testing.T) {
 		"tmux paste-buffer",
 		"grep -aqF",
 		"SECONDS=0",
-		"scan=$start",
 	} {
 		if !contains(s, want) {
 			t.Errorf("ExecScript missing %q", want)
 		}
+	}
+}
+
+// TestExecScriptScansEveryByte is the regression test for a real failure:
+// `session exec -- "bash -c 'exit 4'"` timed out on a live host although the
+// completion marker had been written. The scan advanced its offset to a size it
+// had measured but not read, so a marker that arrived in between sat in bytes the
+// loop never looked at again — and a finished command became a spurious timeout.
+//
+// Two properties make the scan correct, and both are asserted here because the
+// race itself is not reproducible on demand:
+//
+//   - each window re-reads the last (marker length - 1) bytes, so no 9-byte marker
+//     can straddle two polls;
+//   - `scan` only ever advances to a size that has actually been read, and the
+//     window never reaches before `floor`, so an old command's marker cannot be
+//     mistaken for this one's.
+func TestExecScriptScansEveryByte(t *testing.T) {
+	s := ExecScript("dev", "echo hi", 5*time.Second)
+	for _, want := range []string{
+		"rh_window() {",
+		"from=$((scan - dlen + 1))",
+		`[ "$from" -lt "$floor" ] && from=$floor`,
+		"head -c $((cur - from + 1))",
+		"scan=$cur",
+		"floor=$((start + 1)); scan=$floor",
+		"floor=$((pre + 1)); scan=$floor",
+	} {
+		if !contains(s, want) {
+			t.Errorf("ExecScript scan missing %q\n---\n%s", want, s)
+		}
+	}
+	// The old shape: measure, then jump the offset past what was read.
+	if contains(s, "over=$((cur - (dlen - 1)))") {
+		t.Errorf("ExecScript still advances the scan past unread bytes")
+	}
+	// Exit-code extraction must take the digits after the marker it located, not
+	// the last `;D;` in a 24-byte window that may hold two markers.
+	for _, want := range []string{"tmp=${seg#\"$dpat\"}", "code=${tmp%%[!0-9]*}"} {
+		if !contains(s, want) {
+			t.Errorf("ExecScript exit-code extraction missing %q", want)
+		}
+	}
+	if contains(s, "sed -n 's/.*;D;") {
+		t.Errorf("ExecScript still extracts the exit code with a greedy sed")
 	}
 }
 
