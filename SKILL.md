@@ -21,9 +21,9 @@ Implemented:
 - `rhost session ...` — persistent tmux-backed sessions (create/list/exec/send/read/close/attach)
 - `rhost job ...` — detached background jobs (start/list/status/logs/stop/kill)
 - `rhost fs ...` — file transfer: `put`, `get` (scp) and `sync` (rsync)
+- `rhost status <host>` — one read-only snapshot of system + managed state
+- `rhost watch <host>` — live-refreshing monitor (human view; owns no state)
 - `rhost version`
-
-Planned (do not use yet): `status`, `watch`.
 
 If a command is not listed above, it does not exist yet.
 
@@ -217,6 +217,39 @@ Rules:
 - Errors: `TRANSFER_FAILED` (the tool's own first complaint is in `message`),
   `SYNC_REJECTED` (a refused destination), `REMOTE_DEPENDENCY_MISSING`,
   `REMOTE_COMMAND_TIMEOUT` if `--timeout` (default 5m) runs out.
+
+---
+
+## 3e. Host status and monitoring: `status` / `watch`
+
+```bash
+rhost status <host> --json              # one snapshot
+rhost watch <host>                      # human, refreshes every 2s until Ctrl-C
+rhost watch <host> --interval 5s
+rhost watch <host> --json --count 1     # one envelope, for a scripted probe
+```
+
+`status` returns one read-only snapshot of the host: OS, kernel, arch, uptime,
+load, CPU, memory, disk, accelerators, and the sessions and jobs rhost manages
+on it. Use it to decide where to run something, or to see what is already
+running, without logging in.
+
+Rules:
+
+- A metric the probe could not read is `null` and named in `data.unavailable`.
+  **Never read a `null` metric as zero.** An empty `data.accelerators` means the
+  host has no GPU (or reports none) — not a failure; a host without `nvidia-smi`,
+  or WSL, still returns a full system snapshot.
+- `data.online` is reachability. `data.probe_ms` is how long the snapshot took;
+  it is deliberately **not** a network RTT.
+- `watch` owns **no state**: every refresh re-reads the host and rediscovers its
+  sessions and jobs remotely. A dropped connection shows as `data.online: false`
+  with `data.offline_code`; the next successful refresh reconstructs everything
+  from the host, never from local memory.
+- `watch --json` prints **one envelope per refresh, one per line** (NDJSON), so
+  parse it incrementally. `--count N` bounds the run; without it, `watch` runs
+  until interrupted.
+- Prefer `status` for a single reading; `watch` is a human live view.
 
 ## 4. Recovering from failures
 

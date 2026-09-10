@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/starfield17/rhost/schemas/result-v1.schema.json",
   "title": "rhost result envelope v1",
-  "description": "The single JSON document emitted by every agent-facing rhost command when --json is set.",
+  "description": "The JSON document emitted by every agent-facing rhost command when --json is set. It is a single document for one-shot commands; `rhost watch` streams the same envelope, one per line (NDJSON), one line per refresh.",
   "type": "object",
   "required": ["schema_version", "operation", "ok", "data", "error"],
   "additionalProperties": false,

@@ -9,14 +9,13 @@ configuration and never duplicates SSH authentication or host-key policy.
 
 > Status: early. Milestone 0 (skeleton), Milestone 1 (host resolution,
 > `doctor`, `exec`), Milestone 2 (persistent tmux-backed `session`),
-> Milestone 3 (detached `job`) and Milestone 4 (file transfer `fs`) are
-> implemented and verified against a real remote Linux host over SSH. The
-> verification runs the built binary as a **separate process per step**, so
-> "persistent" means it survived an actual CLI process exit — including `SIGKILL`
-> of the client, and an SSH connection closed underneath a running job — rather
-> than an in-process simulation. Reproduce it with `make test-live-all` against
-> your own target (see Development). Status aggregation (`status`) and
-> `watch` are designed but not yet implemented.
+> Milestone 3 (detached `job`), Milestone 4 (file transfer `fs`) and Milestone 5
+> (system `status` and live `watch`) are implemented and verified against a real
+> remote Linux host over SSH. The verification runs the built binary as a
+> **separate process per step**, so "persistent" means it survived an actual CLI
+> process exit — including `SIGKILL` of the client, and an SSH connection closed
+> underneath a running job — rather than an in-process simulation. Reproduce it
+> with `make test-live-all` against your own target (see Development).
 
 ## Install / build
 
@@ -54,6 +53,11 @@ rhost fs put gpu ./model.py ~/work/foo/model.py
 rhost fs get gpu ~/work/foo/results.json ./results.json
 rhost fs sync gpu ./project ~/work/project --dry-run   # the plan, nothing copied
 rhost fs sync gpu ./project ~/work/project --json      # apply; never deletes
+
+rhost status gpu                              # one snapshot: system + sessions + jobs
+rhost status gpu --json                       # ...as one JSON document
+rhost watch gpu                               # live monitor, Ctrl-C to stop
+rhost watch gpu --json --count 1              # one envelope, for a scripted probe
 
 rhost version
 ```
@@ -103,6 +107,7 @@ RHOST_TEST_HOST=<user>@<host> make test-live           # exec, timeout, doctor, 
 RHOST_TEST_HOST=<user>@<host> make test-live-session   # session persistence across CLI processes
 RHOST_TEST_HOST=<user>@<host> make test-live-jobs      # job persistence, signals, log cursors
 RHOST_TEST_HOST=<user>@<host> make test-live-fs        # put/get round-trip, rsync plan, --delete
+RHOST_TEST_HOST=<user>@<host> make test-live-status    # status snapshot, watch stream, offline
 RHOST_TEST_HOST=<user>@<host> make test-live-all       # every live suite
 ```
 

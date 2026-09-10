@@ -141,6 +141,28 @@ Acceptance:
 - unsupported telemetry does not fail snapshot;
 - watch survives temporary disconnect and reconstructs state.
 
+Status: implemented and verified against a real remote Linux host over SSH
+(`make test-live-status`). Notes on how the requirements above were met:
+
+- `status` runs one bounded read-only probe (§30) over the normal exec path and
+  parses a versioned `key=value` intermediate form, so an unsupported or
+  unreadable metric is `null` and named in `data.unavailable`, never a zero and
+  never a failed snapshot. A host with no `nvidia-smi` simply has no
+  `accelerators`;
+- `platform` records Linux vs WSL; the accelerator list is generic (today one
+  row per `nvidia-smi` GPU);
+- managed sessions and jobs are aggregated by reusing `session list` and
+  `job list`, not by re-deriving remote state; a section that cannot be read is
+  reported in `data.unavailable` while the rest of the snapshot stands;
+- `watch` owns no state — it re-runs the same snapshot each interval and
+  rediscovers sessions and jobs remotely, so an unreachable host is an
+  `online: false` refresh with an `offline_code`, and the next success
+  reconstructs everything from the host. It is also the one place `--json`
+  streams rather than emitting once: one envelope per refresh, one per line;
+- the snapshot's duration is reported as `data.probe_ms`, deliberately not as an
+  RTT: a single probe cannot separate network round-trip time from remote
+  execution time, and calling the sum an RTT would be a fabricated number.
+
 ---
 
 ## 49. Milestone 6 — hardening

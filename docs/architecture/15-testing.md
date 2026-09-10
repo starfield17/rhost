@@ -54,6 +54,7 @@ that distinction is the product (AGENTS.md §4).
 | session persistence | `make test-live-session` |
 | job persistence, signals, log cursors | `make test-live-jobs` |
 | file transfer, rsync plan, explicit `--delete` | `make test-live-fs` |
+| status snapshot, watch stream, watch offline | `make test-live-status` |
 | everything | `make test-live-all` |
 
 ---

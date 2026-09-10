@@ -1,8 +1,8 @@
 # Remote Host Adapter — Project Overview
 
 > Working name: **rhost**  
-> Status: implemented through Milestone 4 (`hosts`, `doctor`, `exec`, `session`,  
-> `job`, `fs`); Milestone 5 (status/watch) is designed but not built  
+> Status: implemented through Milestone 5 (`hosts`, `doctor`, `exec`, `session`,  
+> `job`, `fs`, `status`, `watch`); Milestone 6 (hardening) is future work  
 > Primary form: **Skill + source repository + single release binary**  
 > Local side: any machine with a standard OpenSSH client  
 > Remote side: any SSH-reachable Linux host (native, container, or WSL2)
