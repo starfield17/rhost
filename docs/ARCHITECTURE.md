@@ -272,12 +272,15 @@ Expected user configuration:
 
 ```sshconfig
 Host gpu
-    HostName 192.168.1.50
-    User ray
+    HostName gpu.example.internal
+    User dev
     IdentityFile ~/.ssh/id_ed25519
     ServerAliveInterval 30
     ServerAliveCountMax 3
 ```
+
+Use placeholder names in documentation. Real addresses, accounts, and personal
+SSH aliases must not appear in tracked files (`AGENTS.md` §1).
 
 `rhost` should invoke the user's OpenSSH client with `Host=gpu` semantics so that it naturally inherits:
 
@@ -369,7 +372,7 @@ Reasons:
 - mature host-key verification;
 - ProxyJump and uncommon SSH options work without reimplementation;
 - ControlMaster provides connection persistence outside the CLI process;
-- simplest path to a reliable macOS-first tool.
+- simplest path to a reliable first release on the primary client platform.
 
 The single release binary therefore orchestrates OpenSSH; it does not need to reimplement the SSH protocol in v0.1.
 
@@ -397,6 +400,16 @@ Do not build both backends in the first release.
 ```
 
 Use a hashed path because Unix-domain socket paths have length limits.
+
+That limit is a hard budget, not a style preference: `sun_path` allows 104 bytes
+including the NUL on BSD-derived systems (108 on Linux), and OpenSSH substitutes a
+fixed 40-character digest for `%C`. A deep cache root therefore breaks *every*
+command with `ControlPath too long` - reachable through `RHOST_CACHE_DIR` or
+`$XDG_CACHE_HOME`, which is how this was first hit. `config.ControlDir()` checks
+the expanded length and falls back to a short per-user root (`/tmp/rhost-<uid>/ssh`)
+when the cache root is too deep; it must not use `os.TempDir()` for that fallback,
+because on macOS the per-session temp dir is itself long. The directory rhost
+creates and the directory it binds in must come from the same function.
 
 Conceptual options:
 
@@ -595,7 +608,7 @@ Remote metadata:
   "tmux_session": "rhost_s_01J...",
   "created_at": "2026-09-10T12:00:00Z",
   "created_by": "rhost",
-  "initial_cwd": "/home/ray/work/foo",
+  "initial_cwd": "/home/dev/work/foo",
   "shell": "bash"
 }
 ```
@@ -622,7 +635,8 @@ The session backend should set an adequate tmux history limit.
 
 Attach a pane output log using tmux `pipe-pane` or an equivalent mechanism so output can be read incrementally after reconnect.
 
-The exact mechanism must be integration-tested on macOS → Linux/WSL2.
+The exact mechanism must be integration-tested from a real client host against a
+real remote Linux host.
 
 ---
 
@@ -871,7 +885,7 @@ Example metadata:
 {
   "schema_version": 1,
   "id": "j_01J...",
-  "cwd": "/home/ray/work/foo",
+  "cwd": "/home/dev/work/foo",
   "command": "python train.py",
   "started_at": "2026-09-10T12:00:00Z",
   "backend": "detached"
@@ -1208,6 +1222,7 @@ Start small and stable.
 Candidate codes:
 
 ```text
+USAGE_ERROR
 CONFIG_INVALID
 HOST_UNKNOWN
 SSH_UNREACHABLE
@@ -1225,6 +1240,10 @@ UNSUPPORTED_REMOTE_OS
 ```
 
 Keep low-level OpenSSH stderr available for diagnosis but do not force the agent to classify behavior by matching English error strings.
+
+`USAGE_ERROR` is reserved for argument/flag parsing failures, which happen before any command runs. The usage path still emits a normal envelope when `--json` is requested, because every agent-visible outcome needs a machine-readable form.
+
+OpenSSH runs at `LogLevel=ERROR` by default so that successful commands keep stderr clean. That level also hides ssh's own reason for some connection failures; `RHOST_SSH_LOG_LEVEL` raises it (for example `VERBOSE`) without rebuilding the binary, and the fallback message points there.
 
 ---
 
@@ -1312,7 +1331,7 @@ Record operations, not secrets:
   "time": "...",
   "host": "gpu",
   "operation": "exec",
-  "cwd": "/home/ray/work/foo",
+  "cwd": "/home/dev/work/foo",
   "command_summary": "pytest -q",
   "exit_code": 1,
   "duration_ms": 831
@@ -1497,6 +1516,17 @@ RHOST_TEST_HOST=gpu
 
 Never make ordinary unit tests unexpectedly touch a real machine.
 
+Live tests must drive the **built binary as a child process**, one process per
+step, never the Go API in-process. An in-process test cannot distinguish
+"rhost persisted this" from "rhost happened to keep it in a map until now", and
+that distinction is the product (AGENTS.md §4).
+
+| suite | command |
+|---|---|
+| exec, timeout, doctor, transport reuse | `make test-live` |
+| session persistence | `make test-live-session` |
+| everything | `make test-live-all` |
+
 ---
 
 ## 41. Required persistence tests
@@ -1515,6 +1545,10 @@ process exits
 prove both reused the same ControlMaster
 ```
 
+Automated: `TestLiveTransportReuse`. It reads the master pid back out of OpenSSH
+(`ssh -O check`) before and after the second process, so equal pids are positive
+evidence of reuse rather than an absence of errors.
+
 ### Test B — session persistence
 
 ```text
@@ -1532,6 +1566,13 @@ prove cwd persisted
 
 Then kill the local invoking process abruptly and repeat discovery.
 
+Automated: `TestLiveSession`, one CLI process per step: `create`, `cd`, then
+`pwd` in a later process; `export` then `echo $VAR`; a stable `$$` proving the
+same pane; and finally `SIGKILL` of a mid-command client, after which the session
+is still listed, the still-running remote command holds the writer lock
+(`SESSION_UNHEALTHY`, retryable), and the session becomes usable again on its
+own.
+
 ### Test C — job persistence
 
 ```text
@@ -1545,6 +1586,8 @@ rhost job logs
 prove job survived and is discoverable
 ```
 
+Not automated yet: blocked on Milestone 3.
+
 ### Test D — network interruption
 
 Start a session and a job, temporarily break the local connection, reconnect, and prove:
@@ -1552,6 +1595,10 @@ Start a session and a job, temporarily break the local connection, reconnect, an
 - session is rediscovered;
 - job is rediscovered;
 - monitor reconstructs state.
+
+Manual only. Deliberately not automated: nothing in this repository should imply
+that a script can cut a real network link on someone else's host, and a simulated
+disconnection would not prove what the test claims to prove.
 
 ---
 
@@ -1604,7 +1651,7 @@ JSON/human output
 
 Acceptance:
 
-- real Mac → Linux/WSL2 call works;
+- a real client host → remote Linux/WSL2 call works;
 - separate `rhost` processes reuse transport;
 - stdout/stderr/exit code/timeout are correct.
 
@@ -1843,6 +1890,6 @@ Before declaring an implementation task complete, ask:
 - Can I deliberately break the feature and see the relevant test fail?
 - Did I borrow an idea from Portal without accidentally borrowing its MCP/server lifecycle?
 - Did I add abstraction before a second implementation required it?
-- Did I test on the real Mac → Linux/WSL2 path for behavior that mocks cannot prove?
+- Did I test on the real client → remote Linux/WSL2 path for behavior that mocks cannot prove?
 
 If a persistence feature has not survived a real process exit and reconnect, it is not implemented yet.

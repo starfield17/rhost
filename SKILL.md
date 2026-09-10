@@ -5,7 +5,7 @@ reusable execution node. It orchestrates your existing OpenSSH configuration and
 never duplicates SSH authentication or host-key policy.
 
 Use `rhost` when work must run on a remote host: a GPU box, a build server, a
-test environment, a Linux/WSL2 node.
+test environment, a Linux or WSL2 node.
 
 **Always prefer `--json`.** Never parse human output when a JSON form exists.
 
@@ -36,7 +36,7 @@ rhost hosts --json
 Any target you can name to `ssh` also works directly as a host argument:
 
 - an alias from `~/.ssh/config` (e.g. `gpu`)
-- `user@host` (e.g. `orangepi@192.168.123.179`)
+- `user@host` (e.g. `dev@build.example.internal`)
 - a bare hostname or IP
 
 ---
@@ -71,16 +71,19 @@ Rules:
   could contain rhost flags.
 - The process exit status mirrors the remote command. **255 = adapter failure,
   124 = timeout.** `--json` gives the authoritative result: `data.exit_code`,
-  `data.stdout`, `data.stderr`, `data.timed_out`.
-- On timeout the remote process group is killed, not just the local ssh.
+  `data.stdout`, `data.stderr`, `data.timed_out`.- On timeout the remote process group is killed, not just the local ssh.
 
-Exit-code policy:
+Exit-code policy — a status in 0–254 always belongs to the **remote** command:
 
 | status | meaning |
 |---|---|
 | 0–254 | remote command's own exit status |
-| 255 | adapter/transport failure (see `error.code`) |
 | 124 | foreground timeout (`REMOTE_COMMAND_TIMEOUT`) |
+| 255 | adapter failure: transport, validation, or usage (`error.code`) |
+
+When a status is ambiguous (a remote command may itself exit 124 or 255), read
+`--json`: `ok`, `data.exit_code`, and `error.code` are authoritative. Never
+branch on the message text.
 
 If a task will outlive a foreground timeout, do not raise the timeout
 indefinitely — that is what `job` is for (once implemented).
@@ -126,13 +129,23 @@ Rules:
 
 Read `error.code` from the JSON envelope, never the message text:
 
-- `SSH_UNREACHABLE` — host not reachable; retryable.
+- `SSH_UNREACHABLE` — host not reachable; retryable. If the message reports "no
+  diagnostic", OpenSSH hid its own reason at the default log level: re-run once
+  with `RHOST_SSH_LOG_LEVEL=VERBOSE` to get a real message.
 - `SSH_AUTH_FAILED` — key/agent problem; fix locally, do not retry blindly.
 - `HOST_KEY_FAILED` — host key changed; investigate, never disable checking.
 - `REMOTE_DEPENDENCY_MISSING` — the remote lacks something `doctor` should have
   shown.
-- `REMOTE_COMMAND_TIMEOUT` — command exceeded `--timeout`.
+- `REMOTE_COMMAND_TIMEOUT` — command exceeded `--timeout`; the remote process
+  group was killed.
 - `CONFIG_INVALID` — bad input (e.g. an invalid env var name).
+- `USAGE_ERROR` — the command line itself was invalid (missing host, unknown
+  flag); fix the invocation, this is never retryable.
+- `SESSION_NOT_FOUND` — session gone (closed, or ended by `exit` inside it);
+  recreate it.
+- `SESSION_UNHEALTHY` — another writer holds the session lock; retry after a
+  moment. Concurrent writers are unsafe by design.
+- `INTERNAL` — adapter bug; report it with the JSON envelope attached.
 
 ---
 

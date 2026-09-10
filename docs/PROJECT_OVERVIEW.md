@@ -1,10 +1,11 @@
 # Remote Host Adapter — Project Overview
 
 > Working name: **rhost**  
-> Status: design brief for implementation by Codex  
+> Status: implemented through Milestone 2 (`hosts`, `doctor`, `exec`, `session`);  
+> Milestones 3–5 (jobs, files, status/watch) are designed but not built  
 > Primary form: **Skill + source repository + single release binary**  
-> Primary local environment: macOS  
-> Initial remote environment: Linux / WSL2 over SSH
+> Local side: any machine with a standard OpenSSH client  
+> Remote side: any SSH-reachable Linux host (native, container, or WSL2)
 
 ---
 
@@ -17,20 +18,25 @@ Its job is to let a coding agent running on one computer treat another SSH-reach
 The initial motivating setup is:
 
 ```text
-MacBook Air
+local machine
   ├─ coding agent
   ├─ source editing / reasoning
   └─ rhost
         │
-        │ SSH over LAN
+        │ SSH
         ▼
-Windows PC / WSL2 / Linux
+remote Linux host
   ├─ stronger CPU
-  ├─ RTX GPU / CUDA
+  ├─ GPU / CUDA when present
   ├─ test environments
   ├─ long-running jobs
   └─ interactive shells
 ```
+
+These are roles, not products. The client side is any machine that runs an
+OpenSSH client; the remote side is any SSH-reachable Linux host. Specific
+hardware, board models, addresses, and accounts never belong in this repository
+(`AGENTS.md` §1).
 
 The project is **not** specific to YOLO, CUDA, machine learning, or WSL2. Those are early use cases. The same adapter should later work for compilation, benchmarks, data processing, services, REPLs, debuggers, test suites, ARM boards, Linux servers, cloud VMs, and other remote hosts.
 
@@ -222,7 +228,7 @@ Conceptual view:
 REMOTE HOST: gpu
 ────────────────────────────────────────
 Connection    online · RTT 2.8 ms
-OS            Ubuntu / WSL2
+OS            Linux (or WSL2)
 Uptime        3d 11h
 CPU           18%
 Memory        11.2 / 32 GiB
@@ -295,7 +301,7 @@ rhost_<version>_linux_amd64
 rhost_<version>_linux_arm64
 ```
 
-The first important target is `darwin-arm64`.
+The first priority target is `darwin/arm64`.
 
 "Single binary" means a single `rhost` artifact to install. It does **not** require v0.1 to be hermetic: the first implementation may intentionally use the local OpenSSH client and remote standard utilities such as `tmux`, `bash`, `nohup`, and `setsid`.
 
@@ -416,7 +422,7 @@ The authority boundary is simple:
 - machine-readable JSON;
 - human-readable CLI;
 - generic live `watch`;
-- macOS ARM64 release;
+- local binaries for the primary client platforms (`darwin/arm64` first);
 - Linux remote support, including WSL2;
 - deterministic tests for command/result parsing and persistence discovery.
 
@@ -469,7 +475,7 @@ When the local Portal source and this document disagree about product shape, thi
 
 The project is successful when the following feels ordinary.
 
-A coding agent on the Mac changes code locally, then:
+A coding agent on the local machine changes code locally, then:
 
 ```bash
 rhost fs sync gpu ./project ~/work/project
@@ -494,7 +500,8 @@ rhost job logs gpu <job-id> --since <offset> --json
 rhost status gpu --json
 ```
 
-The Mac may have lost and regained Wi‑Fi in between. The remote job is still discoverable.
+The local machine may have lost and regained network in between. The remote job
+is still discoverable.
 
 Meanwhile the human can run:
 
@@ -516,7 +523,7 @@ The human and the agent do not need separate remote-control systems.
 
 A release is not "done" because commands compile.
 
-It is done when all of the following are demonstrated against a real SSH-accessible Linux/WSL2 host:
+It is done when all of the following are demonstrated against a real SSH-accessible Linux host:
 
 1. Ten consecutive `exec` calls reuse the SSH transport and return correct stdout, stderr, exit code, and timeout behavior.
 2. A tmux-backed session preserves cwd and environment across separate `rhost` process invocations.

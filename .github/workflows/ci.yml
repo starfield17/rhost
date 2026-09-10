@@ -13,9 +13,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23"
-      - name: Vet
-        run: go vet ./...
-      - name: Test
-        run: go test ./...
+      - name: Check (gofmt + vet + unit tests + portability, AGENTS.md §1/§9)
+        run: make check
       - name: Build
         run: go build ./cmd/rhost
