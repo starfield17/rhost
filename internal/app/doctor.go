@@ -37,7 +37,7 @@ em home "$HOME"
 ls="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)"
 [ -n "$ls" ] || ls="${SHELL:-unknown}"
 em login_shell "$ls"
-for c in bash tmux nohup setsid ps rsync sha256sum base64 stty nvidia-smi systemctl git; do
+for c in bash tmux nohup setsid ps rsync sha256sum base64 stty nvidia-smi systemctl git flock; do
   if command -v "$c" >/dev/null 2>&1; then em "have_$c" yes; else em "have_$c" no; fi
 done
 rd="${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}"

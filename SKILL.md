@@ -18,9 +18,10 @@ Implemented:
 - `rhost hosts` — list SSH config aliases
 - `rhost doctor <host>` — probe capabilities
 - `rhost exec <host> -- <command...>` — stateless foreground execution
+- `rhost session ...` — persistent tmux-backed sessions (create/list/exec/send/read/close/attach)
 - `rhost version`
 
-Planned (do not use yet): `session`, `job`, `fs`, `status`, `watch`, `attach`.
+Planned (do not use yet): `job`, `fs`, `status`, `watch`.
 
 If a command is not listed above, it does not exist yet.
 
@@ -83,6 +84,41 @@ Exit-code policy:
 
 If a task will outlive a foreground timeout, do not raise the timeout
 indefinitely — that is what `job` is for (once implemented).
+
+---
+
+## 3b. Persistent sessions
+
+Use a session **only when state must persist** across calls: a REPL, a
+debugger, an interactive CLI, or exploratory shell work where `cd`/`env` should
+carry over. For ordinary commands, prefer `exec`.
+
+```bash
+rhost session create <host> --json --name debug --cwd ~/work/foo
+rhost session list <host> --json
+rhost session exec <host> debug --json -- 'cd src && pytest -q'
+rhost session exec <host> debug --json -- pwd        # cwd persisted
+rhost session send <host> debug --data 'next()\n'    # REPL / raw input
+rhost session send <host> debug --key C-c            # control key
+rhost session read <host> debug --json --since 0     # incremental log
+rhost session close <host> debug
+rhost session attach <host> debug                    # human, interactive
+```
+
+Rules:
+
+- A session is owned by **remote tmux**, so it survives the CLI process and SSH
+  disconnects. Rediscover it with `session list`; never assume it vanished.
+- `session exec` persists shell state (`cd`, `export`, functions). It wraps the
+  command so it produces exactly one boundary, and returns the command's real
+  exit status in `data.exit_code`.
+- Concurrency: multiple readers are fine, but **concurrent writers are unsafe**.
+  `session exec` takes a remote lock; a human attached at the same time can race.
+- `session exec` on a command that runs `exit` terminates the session and
+  returns `SESSION_NOT_FOUND`. Recreate it if needed.
+- `session read` returns a byte cursor: pass `data.next` back as `--since` to
+  tail without re-reading. Output is ANSI-stripped.
+- Agents should not use `session attach` (it is interactive); it is for humans.
 
 ---
 

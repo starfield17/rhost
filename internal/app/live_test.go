@@ -47,3 +47,39 @@ func TestLiveExec(t *testing.T) {
 		t.Errorf("unexpected doctor result: %+v", doc)
 	}
 }
+
+// TestLiveSession proves the product-defining session behaviour: shell state
+// (cwd) persists across separate calls, and output is readable incrementally.
+func TestLiveSession(t *testing.T) {
+	if os.Getenv("RHOST_TEST_LIVE") != "1" {
+		t.Skip("set RHOST_TEST_LIVE=1 to run live tests")
+	}
+	host := os.Getenv("RHOST_TEST_HOST")
+	if host == "" {
+		t.Skip("set RHOST_TEST_HOST")
+	}
+
+	a := NewDefault()
+	ctx := context.Background()
+	const name = "livetest"
+
+	if _, aerr := a.SessionCreate(ctx, host, name, "/tmp", "bash", 90*time.Second); aerr != nil {
+		t.Fatalf("SessionCreate: %s: %s", aerr.Code, aerr.Message)
+	}
+	defer a.SessionClose(ctx, host, name, 30*time.Second)
+
+	if _, aerr := a.SessionExec(ctx, host, name, "cd /var/log && echo moved", 60*time.Second); aerr != nil {
+		t.Fatalf("SessionExec cd: %s: %s", aerr.Code, aerr.Message)
+	}
+	res, aerr := a.SessionExec(ctx, host, name, "pwd", 60*time.Second)
+	if aerr != nil {
+		t.Fatalf("SessionExec pwd: %s: %s", aerr.Code, aerr.Message)
+	}
+	if got := strings.TrimSpace(res.Output); got != "/var/log" {
+		t.Errorf("cwd not persisted: got %q, want /var/log", got)
+	}
+
+	if _, aerr := a.SessionExec(ctx, host, name, "exit 7", 30*time.Second); aerr == nil {
+		t.Errorf("expected an adapter error when the command runs `exit`")
+	}
+}

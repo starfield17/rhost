@@ -48,6 +48,7 @@ them to ssh: an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 		newExecCmd(),
 		newDoctorCmd(),
 		newHostsCmd(),
+		newSessionCmd(),
 		newVersionCmd(),
 	)
 	return root

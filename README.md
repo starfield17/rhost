@@ -7,10 +7,10 @@ reusable execution node — without re-deriving SSH, quoting, timeout, and
 persistence mechanics on every operation. It orchestrates your existing OpenSSH
 configuration and never duplicates SSH authentication or host-key policy.
 
-> Status: early. Milestone 0 (skeleton) and Milestone 1 (host resolution,
-> `doctor`, `exec`) are implemented and verified against a real Mac → Linux
-> (Orange Pi 5) path. Sessions, jobs, file sync, and status/watch are designed
-> but not yet implemented.
+> Status: early. Milestone 0 (skeleton), Milestone 1 (host resolution,
+> `doctor`, `exec`) and Milestone 2 (persistent tmux-backed `session`) are
+> implemented and verified against a real Mac → Linux (Orange Pi 5) path.
+> Jobs, file sync, and status/watch are designed but not yet implemented.
 
 ## Install / build
 
@@ -28,6 +28,14 @@ rhost doctor gpu                              # probe a host's capabilities
 rhost exec gpu -- pwd                         # stateless foreground command
 rhost exec gpu --cwd ~/work/foo -- pytest -q  # with an explicit cwd
 rhost exec gpu --json -- python check.py      # machine-readable result
+
+rhost session create gpu --name debug --cwd ~/work/foo
+rhost session exec gpu debug -- 'cd src && pytest -q'   # state persists
+rhost session send gpu debug --key C-c
+rhost session read gpu debug --json --since 0
+rhost session list gpu
+rhost session attach gpu debug                # human, interactive
+rhost session close gpu debug
 rhost version
 ```
 
