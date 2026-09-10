@@ -1,0 +1,64 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/starfield17/rhost/schemas/result-v1.schema.json",
+  "title": "rhost result envelope v1",
+  "description": "The single JSON document emitted by every agent-facing rhost command when --json is set.",
+  "type": "object",
+  "required": ["schema_version", "operation", "ok", "data", "error"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Envelope schema version."
+    },
+    "operation": {
+      "type": "string",
+      "description": "Command that produced this document, e.g. exec, doctor, hosts, version."
+    },
+    "ok": {
+      "type": "boolean",
+      "description": "True when the adapter operation completed as designed. The remote command may still have a non-zero exit_code."
+    },
+    "host": {
+      "type": "string",
+      "description": "Target host, when applicable."
+    },
+    "data": {
+      "description": "Operation-specific payload; null on failure unless partial data is useful."
+    },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["code", "message", "retryable"],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "CONFIG_INVALID",
+                "HOST_UNKNOWN",
+                "SSH_UNREACHABLE",
+                "SSH_AUTH_FAILED",
+                "HOST_KEY_FAILED",
+                "REMOTE_DEPENDENCY_MISSING",
+                "REMOTE_COMMAND_TIMEOUT",
+                "SESSION_NOT_FOUND",
+                "SESSION_UNHEALTHY",
+                "JOB_NOT_FOUND",
+                "JOB_STATE_UNKNOWN",
+                "TRANSFER_FAILED",
+                "SYNC_REJECTED",
+                "UNSUPPORTED_REMOTE_OS",
+                "INTERNAL"
+              ]
+            },
+            "message": { "type": "string" },
+            "retryable": { "type": "boolean" }
+          }
+        }
+      ]
+    }
+  }
+}
