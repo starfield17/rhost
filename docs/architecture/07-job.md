@@ -22,7 +22,7 @@ Result:
 
 ```json
 {
-  "job_id": "j_01J...",
+  "id": "j_01J...",
   "state": "running",
   "pid": 18372
 }
@@ -35,6 +35,11 @@ The command continues after:
 - SSH disconnects.
 
 It does not promise survival of a remote OS shutdown or WSL shutdown.
+
+The ID is generated before launch. If the launch channel times out or fails
+after the detached process may have started, the failure envelope still carries
+`data.id` with `data.state: "unknown"`. Query that ID before retrying; a blind
+retry may start the work twice.
 
 ---
 

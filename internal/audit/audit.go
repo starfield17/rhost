@@ -74,6 +74,19 @@ func (r *Recorder) Record(e Entry) error {
 	if err := os.MkdirAll(filepath.Dir(r.Path), 0o700); err != nil {
 		return err
 	}
+	if err := os.Chmod(filepath.Dir(r.Path), 0o700); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(r.Path); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return &os.PathError{Op: "open", Path: r.Path, Err: os.ErrPermission}
+		}
+		if err := os.Chmod(r.Path, 0o600); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	f, err := os.OpenFile(r.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

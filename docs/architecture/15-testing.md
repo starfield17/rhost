@@ -60,9 +60,10 @@ that distinction is the product (AGENTS.md §4).
 
 The embedded remote helper has its own suite in the language it runs in:
 `internal/fileops/remote_test.py`, driven from Go by `remote_helper_test.go` so it
-is part of `make test` and cannot drift quietly. On a machine with no usable
-python3 it is reported as a named *skip*, because a missing suite must be visible
-(§39); the live SSH suite still exercises the real remote path end to end.
+is part of `make test` and cannot drift quietly. Python 3 is a mandatory local
+and CI test dependency; a missing interpreter fails the gate instead of silently
+reducing coverage. The live SSH suite still exercises the real remote path end
+to end.
 
 ---
 
@@ -166,4 +167,3 @@ A boundary rule that has never failed in a test is not trusted.
 This principle is taken from the useful pattern in the provided repository-shaping Skill: machine-enforced boundaries are more valuable than prose-only rules.
 
 ---
-

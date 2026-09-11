@@ -113,6 +113,9 @@ rhost job kill <host> <job-id> --json     # SIGKILL, for jobs that ignore TERM
 - `job start` answers `{id, state, pid}` immediately. **Keep the id**: a `--name`
   works for the other commands only while it matches exactly one job, and a name
   matching several is refused with `CONFIG_INVALID` rather than guessed.
+- A failed or timed-out launch can still carry `{id, state:"unknown", pid:0}` in
+  the failure envelope. Query that id before retrying so a surviving detached
+  launch is not duplicated.
 - The job is a detached remote process plus remote files, so it survives the CLI
   and the connection. `job list` rediscovers it; nothing is remembered locally.
 - `job logs` is a byte cursor like `session read`. `data.data` is **base64**
@@ -160,10 +163,11 @@ rhost fs sync <host> ./project '~/work/project' --json --delete --dry-run
   `data.deletes` counts the destructive part. An empty list means the two sides
   already match.
 - A destination may not contain glob characters: the remote shell would expand
-  them. Trailing slashes follow rsync's convention; rhost normalises the source.
-- `data.multiplexed` says whether the transfer reused the existing OpenSSH
-  connection. `false` means a fresh connection was used; the transfer is still
-  correct.
+  them. A single-file remote source may not contain them either. Trailing slashes
+  follow rsync's convention; rhost normalises the source.
+- `data.multiplexed` is true only when OpenSSH's shared master answers after the
+  transfer. `false` means persistent reuse was not observed; the copy may still
+  be correct.
 - Transfers are **foreground and owned by this process**: killing the CLI stops
   the copy. Nothing about `fs` persists.
 - No rsync on the remote is `REMOTE_DEPENDENCY_MISSING`, and the message says that

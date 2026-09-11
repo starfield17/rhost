@@ -234,11 +234,11 @@ func (a *App) JobStart(ctx context.Context, opts JobStartOptions) (JobStartResul
 	}
 	res, aerr := a.runJobHelper(ctx, opts.Host, detached.StartScript(meta, cmdScript), opts.Timeout)
 	if aerr != nil {
-		return JobStartResult{}, aerr
+		return JobStartResult{ID: id, State: "unknown", PID: 0}, aerr
 	}
 	facts, herr := detached.ParseStart(string(res.Stdout))
 	if herr != "" {
-		return JobStartResult{}, mapJobHelperErr(herr)
+		return JobStartResult{ID: id, State: "unknown", PID: 0}, mapJobHelperErr(herr)
 	}
 	return JobStartResult{
 		ID:    facts.ID,

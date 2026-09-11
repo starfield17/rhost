@@ -6,13 +6,19 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 const appName = "rhost"
+
+// ErrUnsafeLocalState marks a local cache/state path that cannot safely hold
+// private process metadata or control sockets.
+var ErrUnsafeLocalState = errors.New("unsafe local rhost state")
 
 // CacheDir is rhost's local cache root. Overridable with RHOST_CACHE_DIR.
 func CacheDir() string {
@@ -21,7 +27,7 @@ func CacheDir() string {
 	}
 	d, err := os.UserCacheDir()
 	if err != nil || d == "" {
-		d = os.TempDir()
+		d = filepath.Join(os.TempDir(), fmt.Sprintf("rhost-%d", os.Getuid()), "cache")
 	}
 	return filepath.Join(d, appName)
 }
@@ -84,7 +90,33 @@ func ControlPath() string {
 
 // EnsureControlDir creates the socket directory with user-only permissions.
 func EnsureControlDir() error {
-	return os.MkdirAll(ControlDir(), 0o700)
+	dir := ControlDir()
+	if strings.HasPrefix(dir, socketFallbackRoot+string(filepath.Separator)) {
+		if err := ensurePrivateDir(filepath.Dir(dir)); err != nil {
+			return fmt.Errorf("%w: control root: %v", ErrUnsafeLocalState, err)
+		}
+	}
+	if err := ensurePrivateDir(dir); err != nil {
+		return fmt.Errorf("%w: control directory: %v", ErrUnsafeLocalState, err)
+	}
+	return nil
+}
+
+func ensurePrivateDir(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("%s is not a real directory", dir)
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok && stat.Uid != uint32(os.Getuid()) {
+		return fmt.Errorf("%s is owned by another user", dir)
+	}
+	return os.Chmod(dir, 0o700)
 }
 
 // StateDir is rhost's local state root; the audit log lives under it
@@ -102,5 +134,5 @@ func StateDir() string {
 	if h, err := os.UserHomeDir(); err == nil && h != "" {
 		return filepath.Join(h, ".local", "state", appName)
 	}
-	return filepath.Join(os.TempDir(), appName)
+	return filepath.Join(os.TempDir(), fmt.Sprintf("rhost-%d", os.Getuid()), "state")
 }

@@ -97,7 +97,7 @@ func (a *App) verifiedTransfer(ctx context.Context, host, local, remote string, 
 	_ = checksum // every verified route compares content; there is no weaker one
 	return FsTransferResult{
 		Source: source, Destination: destination,
-		Backend: fileops.BackendRsync, Multiplexed: true,
+		Backend: fileops.BackendRsync, Multiplexed: a.SSH.MasterAlive(ctx, host),
 		Size: size, DurationMS: res.Duration.Milliseconds(),
 		ChecksumVerified: true, ResumeEnabled: resume,
 	}, nil
@@ -106,17 +106,28 @@ func (a *App) verifiedTransfer(ctx context.Context, host, local, remote string, 
 // remoteFileOf reports the file a copy landed on: the named path, or the same
 // base name inside it when the name is an existing directory.
 func (a *App) remoteFileOf(ctx context.Context, host, remote, base string, timeout time.Duration) (string, *errs.Error) {
-	cmd := "p=" + shell.PathQuote(remote) + "; " +
+	probe := "p=" + shell.PathQuote(remote) + "; " +
 		"if [ -d \"$p\" ]; then printf '%s/%s' \"$p\" " + shell.Quote(base) +
 		"; else printf '%s' \"$p\"; fi"
-	res, e := a.Execute(ctx, ExecOptions{Host: host, Command: cmd, Timeout: timeout})
-	if e != nil {
-		return "", e
+	res, err := a.SSH.Run(ctx, host, "sh -c "+shell.Quote(probe), timeout)
+	if err != nil {
+		return "", errs.Wrap(errs.SSHUnreachable,
+			"cannot resolve the remote destination: "+err.Error(), true, err)
 	}
-	if res.ExitCode != 0 || res.Stdout == "" {
+	if res.TimedOut {
+		return "", errs.New(errs.RemoteCommandTimeout,
+			"resolving the remote destination exceeded its timeout", true)
+	}
+	if res.ExitCode == 255 {
+		if e := classifySSH(string(res.Stderr)); e != nil {
+			return "", e
+		}
+	}
+	out := string(res.Stdout)
+	if res.ExitCode != 0 || out == "" {
 		return "", errs.New(errs.TransferFailed, "cannot resolve the remote destination of the copy", false)
 	}
-	return res.Stdout, nil
+	return out, nil
 }
 
 // localSha256 is the reference the remote digest is compared against.
@@ -224,6 +235,7 @@ func (a *App) FsMirror(ctx context.Context, opts FsSyncOptions) (FsSyncResult, *
 		return FsSyncResult{}, mapTransferErr(res, "rsync could not mirror the directory")
 	}
 	changes, notes := fileops.ParseChanges(string(res.Stdout))
+	mux = mux && a.SSH.MasterAlive(ctx, opts.Host)
 	out := FsSyncResult{
 		Source: source, Destination: local,
 		Backend: fileops.BackendRsync, DryRun: opts.DryRun, Delete: opts.Delete,

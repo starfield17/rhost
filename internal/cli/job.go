@@ -76,7 +76,14 @@ func newJobStartCmd() *cobra.Command {
 			})
 			if aerr != nil {
 				audit.fail(aerr)
-				emitFailure("job.start", host, aerr)
+				if jsonFlag {
+					_ = output.Failure("job.start", host, res, aerr).Write(os.Stdout)
+					exitCode = adapterExitCode(aerr)
+				} else {
+					fmt.Fprintf(os.Stderr, "rhost: %s: %s (job id %s; state unknown, query before retrying)\n",
+						aerr.Code, aerr.Message, res.ID)
+					exitCode = adapterExitCode(aerr)
+				}
 				return nil
 			}
 			audit.succeed(cwd, command, nil)
@@ -253,9 +260,11 @@ func runJobSignal(op string, cmd *cobra.Command, host, id, signal string, timeou
 	if jsonFlag {
 		_ = output.Success(op, host, res).Write(os.Stdout)
 	} else if !res.Signalled {
-		// Never print "sent" for a signal that was refused: the pid could not be
-		// tied to the job, which is exactly what this backend must not guess about.
-		fmt.Printf("%s: no signal sent (process identity not verified), state=%s\n", res.JobID, res.State)
+		if res.State == "stale" {
+			fmt.Printf("%s: no signal sent (process identity not verified), state=%s\n", res.JobID, res.State)
+		} else {
+			fmt.Printf("%s: no signal needed (job already final), state=%s\n", res.JobID, res.State)
+		}
 	} else {
 		fmt.Printf("%s: sent %s, state=%s\n", res.JobID, res.Signal, res.State)
 	}

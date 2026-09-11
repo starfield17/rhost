@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"encoding/base64"
+	"strings"
 	"testing"
 	"time"
 )
@@ -119,10 +120,11 @@ func TestCreateScriptSerializesNamesAndCleansInterruptedBootstrap(t *testing.T) 
 	create := indexOf(s, `tmux new-session`)
 	arm := indexOf(s, `created=yes`)
 	meta := indexOf(s, `> "$DIR/meta.json"`)
-	disarm := indexOf(s, `created=no`)
+	disarm := strings.LastIndex(s, `created=no`)
 	for _, want := range []string{
 		`command -v flock`, `exec 8> "$BASE/sessions/.create.lock"`,
-		`trap cleanup EXIT HUP INT TERM`, `tmux kill-session`, `rm -rf "$DIR"`,
+		`trap cleanup EXIT`, `trap 'exit 1' HUP INT TERM`,
+		`tmux kill-session`, `rm -rf "$DIR"`,
 	} {
 		if !contains(s, want) {
 			t.Errorf("CreateScript lifecycle guard missing %q:\n%s", want, s)

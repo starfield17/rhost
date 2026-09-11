@@ -35,6 +35,12 @@ var remoteHelpers = map[string]string{
 // derivation leaves room for the JSON envelope around the payload, which is why
 // it is generous rather than exact.
 func (a *App) RemoteFile(ctx context.Context, host string, request map[string]interface{}, timeout time.Duration) (map[string]interface{}, *errs.Error) {
+	if cap, ok := request["max_bytes"]; ok {
+		n, valid := cap.(int)
+		if !valid || n <= 0 || n > 8*1024*1024 {
+			return nil, errs.New(errs.ConfigInvalid, "max_bytes must be between 1 and 8388608", false)
+		}
+	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, errs.New(errs.ConfigInvalid, err.Error(), false)

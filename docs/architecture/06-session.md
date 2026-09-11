@@ -90,10 +90,20 @@ Do not blindly inherit fish/zsh/bash differences and then make the command proto
 
 The session backend should set an adequate tmux history limit.
 
+Creation holds one remote `flock` across duplicate-name detection, tmux startup,
+and metadata publication. This makes same-name concurrent creates deterministic.
+Until metadata is durable, an exit/signal trap owns cleanup of the new tmux
+session and state directory, so a dropped SSH channel does not leave a hidden
+session outside discovery.
+
 Attach a pane output log using tmux `pipe-pane` or an equivalent mechanism so output can be read incrementally after reconnect.
 
 The exact mechanism must be integration-tested from a real client host against a
 real remote Linux host.
+
+`session attach` is intentionally human-only. Combining it with `--json` fails
+locally with `USAGE_ERROR`; interactive terminal bytes can never masquerade as a
+JSON envelope.
 
 ---
 

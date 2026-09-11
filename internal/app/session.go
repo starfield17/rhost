@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/starfield17/rhost/internal/config"
 	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/session/tmux"
 	"github.com/starfield17/rhost/internal/shell"
@@ -342,6 +344,9 @@ func (a *App) SessionAttach(ctx context.Context, host, nameOrID string) *errs.Er
 	}()
 
 	if err := a.SSH.RunInteractive(ctx, host, "tmux attach-session -t "+shell.Quote(tmuxName)); err != nil {
+		if errors.Is(err, config.ErrUnsafeLocalState) {
+			return errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
+		}
 		return errs.Wrap(errs.SessionUnhealthy, "attach failed: "+err.Error(), true, err)
 	}
 	return nil

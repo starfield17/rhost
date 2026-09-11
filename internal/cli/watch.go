@@ -92,6 +92,7 @@ func runWatch(ctx context.Context, host string, interval time.Duration, count in
 func offlineStatus(aerr *errs.Error) app.StatusResult {
 	return app.StatusResult{
 		Online:         false,
+		ProbedAt:       time.Now().UTC().Format(time.RFC3339),
 		OfflineCode:    string(aerr.Code),
 		OfflineMessage: aerr.Message,
 		Unavailable:    []string{},

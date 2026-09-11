@@ -92,6 +92,9 @@ func ValidateTransferPaths(source, destination string) error {
 	if strings.ContainsAny(source, "\n\x00") {
 		return reject("source path %q contains a newline or NUL", source)
 	}
+	if _, remote, ok := SplitRemoteSpec(source); ok && strings.ContainsAny(remote, "*?[") {
+		return reject("source path %q contains a glob; fs get copies exactly one file", remote)
+	}
 	return checkDestination(destination)
 }
 

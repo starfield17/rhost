@@ -76,6 +76,7 @@ reffer/
 /dist/
 /rhost
 audit.jsonl
+/tunnels/
 
 # local-only scratch: real host names, addresses, test logs belong here and
 # nowhere else (AGENTS.md §1)

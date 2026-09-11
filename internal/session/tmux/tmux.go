@@ -141,7 +141,11 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 
 	b.WriteString(basePreamble)
 	b.WriteString(tmuxPreflight)
+	b.WriteString("command -v flock >/dev/null 2>&1 || { echo RHOST_ERR=noflock; exit 0; }\n")
 	b.WriteString(nameOfFunc)
+	b.WriteString("mkdir -p \"$BASE/sessions\" && chmod 700 \"$BASE/sessions\" 2>/dev/null || { echo RHOST_ERR=newfailed; exit 0; }\n")
+	b.WriteString("exec 8> \"$BASE/sessions/.create.lock\"\n")
+	b.WriteString("flock -w 30 8 || { echo RHOST_ERR=locked; exit 0; }\n")
 	// Reject a duplicate name before creating anything: resolving a name picks the
 	// first matching meta.json, so two sessions sharing a name behave ambiguously.
 	p("for d in \"$BASE\"/sessions/*/; do\n"+
@@ -150,17 +154,22 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 		"done\n", shell.Quote(meta.Name))
 	p("DIR=\"%s\"\n", dir)
 	b.WriteString("LOG=\"$DIR/pty.log\"\n")
-	b.WriteString("mkdir -p \"$DIR\" && chmod 700 \"$DIR\" 2>/dev/null\n")
+	b.WriteString("mkdir -p \"$DIR\" && chmod 700 \"$DIR\" 2>/dev/null || { rm -rf \"$DIR\"; echo RHOST_ERR=newfailed; exit 0; }\n")
 	b.WriteString("rm -f \"$DIR/ready\" \"$LOG\"\n")
 
 	tmux := shell.Quote(meta.TmuxSession)
 	pane := shell.Quote(meta.TmuxSession + ":0.0")
+	b.WriteString("created=notyet\n")
+	b.WriteString("cleanup() { if [ \"$created\" = yes ]; then tmux kill-session -t " + tmux + " 2>/dev/null; rm -rf \"$DIR\"; fi; }\n")
+	b.WriteString("trap cleanup EXIT\n")
+	b.WriteString("trap 'exit 1' HUP INT TERM\n")
 	p("tmux kill-session -t %s 2>/dev/null\n", tmux)
 	if meta.InitialCwd != "" {
 		p("tmux new-session -d -s %s -x 220 -y 50 -c %s %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.PathQuote(meta.InitialCwd), shell.Quote(paneShellCmd))
 	} else {
 		p("tmux new-session -d -s %s -x 220 -y 50 %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.Quote(paneShellCmd))
 	}
+	b.WriteString("created=yes\n")
 	p("tmux set-option -t %s history-limit 50000\n", tmux)
 	// pipe-pane command is run by tmux via `sh -c`, so quote the path safely.
 	b.WriteString("printf -v QPIPE 'cat >> %q' \"$LOG\"\n")
@@ -182,8 +191,10 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	// from offset 0 starts clean. pipe-pane's `cat` appends, so truncation is safe.
 	b.WriteString(": > \"$LOG\"\n")
 
-	p("printf '%%s' '%s' | base64 -d > \"$DIR/meta.json\"\n", b64(string(metaJSON)))
-	b.WriteString("chmod 600 \"$DIR/meta.json\" 2>/dev/null\n")
+	p("printf '%%s' '%s' | base64 -d > \"$DIR/meta.json\" || { echo RHOST_ERR=newfailed; exit 0; }\n", b64(string(metaJSON)))
+	b.WriteString("chmod 600 \"$DIR/meta.json\" 2>/dev/null || { echo RHOST_ERR=newfailed; exit 0; }\n")
+	b.WriteString("created=no\n")
+	b.WriteString("trap - EXIT HUP INT TERM\n")
 	b.WriteString("echo RHOST_OK=created\n")
 	return b.String()
 }

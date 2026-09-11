@@ -69,9 +69,9 @@ all. Read the per-target rows, not just the status.`,
 					"at least one --host is required", false))
 				return nil
 			}
-			if parallel < 1 || delay < 0 || maxOutput < 0 {
+			if parallel < 1 || delay < 0 || maxOutput < 0 || maxOutput > maxCLIOutputBytes {
 				emitFailure("exec-many", "", errs.New(errs.ConfigInvalid,
-					"--parallel must be positive, --delay and --max-output-bytes non-negative", false))
+					"--parallel must be positive, --delay non-negative, and --max-output-bytes between 0 and 67108864", false))
 				return nil
 			}
 			env, err := parseEnv(envs)

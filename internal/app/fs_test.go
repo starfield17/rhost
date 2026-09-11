@@ -44,9 +44,15 @@ func stubArgv(t *testing.T, stub string) []string {
 	return strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
 }
 
-func newStubApp(scp, rsync string) *App {
+func newStubApp(t *testing.T, scp, rsync string) *App {
+	t.Helper()
+	ssh := stubTool(t, "ssh", `case " $* " in *" -O check "*) exit 0;; esac; /bin/sh -c "$last"`)
+	t.Setenv("RHOST_REMOTE_STATE", t.TempDir())
+	t.Setenv("RHOST_CACHE_DIR", filepath.Join(t.TempDir(), "cache"))
 	return &App{
-		SSH:       openssh.New(openssh.DefaultConfig()),
+		SSH: openssh.New(openssh.Config{
+			SSHBin: ssh, ControlPath: filepath.Join(t.TempDir(), "%C"), BatchMode: true,
+		}),
 		Transfers: &fileops.Runner{ScpBin: scp, RsyncBin: rsync},
 	}
 }
@@ -60,7 +66,7 @@ func TestFsPutArgumentShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	scp := stubTool(t, "scp", "exit 0")
-	a := newStubApp(scp, "rsync")
+	a := newStubApp(t, scp, "rsync")
 
 	res, aerr := a.FsPut(context.Background(), FsPutOptions{
 		Host: "gpu", LocalPath: colon, Remote: "/home/dev/work/a:b.txt",
@@ -124,7 +130,7 @@ func TestFsPutPrefixesAmbiguousRelativeSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	scp := stubTool(t, "scp", "exit 0")
-	a := newStubApp(scp, "rsync")
+	a := newStubApp(t, scp, "rsync")
 	if _, aerr := a.FsPut(context.Background(), FsPutOptions{
 		Host: "gpu", LocalPath: "a:b.txt", Remote: "/tmp/a:b.txt",
 	}); aerr != nil {
@@ -141,7 +147,7 @@ func TestFsGetReportsTheFileItWrote(t *testing.T) {
 	body := "fetched\n"
 	// The stub stands in for scp's behaviour of writing into a directory operand.
 	scp := stubTool(t, "scp", "printf '"+body+"' > \"$last/model.py\"; exit 0")
-	a := newStubApp(scp, "rsync")
+	a := newStubApp(t, scp, "rsync")
 
 	res, aerr := a.FsGet(context.Background(), FsGetOptions{
 		Host: "gpu", Remote: "/home/dev/work/model.py", LocalPath: dir,
@@ -164,7 +170,7 @@ func TestFsPutReportsEffectiveRemoteFile(t *testing.T) {
 	}
 	remoteDir := t.TempDir()
 	scp := stubTool(t, "scp", "exit 0")
-	a := newStubApp(scp, "rsync")
+	a := newStubApp(t, scp, "rsync")
 
 	res, aerr := a.FsPut(context.Background(), FsPutOptions{
 		Host: "gpu", LocalPath: source, Remote: remoteDir,
@@ -211,7 +217,7 @@ func TestFsMapsToolFailures(t *testing.T) {
 	}
 
 	scp := stubTool(t, "scp", "printf 'scp: /nope: No such file or directory\\n' >&2; exit 1")
-	a := newStubApp(scp, "rsync")
+	a := newStubApp(t, scp, "rsync")
 	_, aerr := a.FsPut(context.Background(), FsPutOptions{Host: "gpu", LocalPath: src, Remote: "/nope"})
 	if aerr == nil || aerr.Code != errs.TransferFailed {
 		t.Fatalf("a failing scp must be TRANSFER_FAILED, got %+v", aerr)
@@ -224,7 +230,7 @@ func TestFsMapsToolFailures(t *testing.T) {
 	}
 
 	// A tool that cannot be started at all is not the remote's fault.
-	a = newStubApp(filepath.Join(t.TempDir(), "not-installed"), "rsync")
+	a = newStubApp(t, filepath.Join(t.TempDir(), "not-installed"), "rsync")
 	_, aerr = a.FsPut(context.Background(), FsPutOptions{Host: "gpu", LocalPath: src, Remote: "/tmp/x"})
 	if aerr == nil || aerr.Code != errs.TransferFailed ||
 		!strings.Contains(aerr.Message, "not installed") {
@@ -240,7 +246,7 @@ func TestFsMapsToolFailures(t *testing.T) {
 	// exec'd it), which is why the failure was CI-only: the timeout left the tool
 	// running for the full 5s.
 	slow := stubTool(t, "scp", "/bin/sh -c 'sleep 5 & wait'")
-	a = newStubApp(slow, "rsync")
+	a = newStubApp(t, slow, "rsync")
 	start := time.Now()
 	_, aerr = a.FsPut(context.Background(), FsPutOptions{
 		Host: "gpu", LocalPath: src, Remote: "/tmp/x", Timeout: 300 * time.Millisecond,
@@ -257,7 +263,7 @@ func TestFsMapsToolFailures(t *testing.T) {
 // is what makes `fs sync --delete ~` safe to try.
 func TestFsValidatesBeforeConnecting(t *testing.T) {
 	dir := t.TempDir()
-	a := newStubApp("definitely-not-scp", "definitely-not-rsync")
+	a := newStubApp(t, "definitely-not-scp", "definitely-not-rsync")
 
 	_, aerr := a.FsSync(context.Background(), FsSyncOptions{
 		Host: "no-such-host.invalid", LocalPath: dir, Remote: "~", Delete: true,
@@ -299,7 +305,7 @@ func TestFsValidatesBeforeConnecting(t *testing.T) {
 // A glob in a destination would be expanded by the remote shell, so it is refused
 // as a rejection rather than a transfer failure.
 func TestFsRejectsGlobEndpoints(t *testing.T) {
-	a := newStubApp("definitely-not-scp", "definitely-not-rsync")
+	a := newStubApp(t, "definitely-not-scp", "definitely-not-rsync")
 	_, aerr := a.FsSync(context.Background(), FsSyncOptions{
 		Host: "no-such-host.invalid", LocalPath: t.TempDir(), Remote: "/tmp/rhost-*",
 	})

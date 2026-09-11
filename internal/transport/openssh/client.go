@@ -135,9 +135,25 @@ func (c *Client) Run(ctx context.Context, target, remoteCmd string, timeout time
 	return c.RunWith(ctx, target, remoteCmd, RunOptions{Timeout: timeout})
 }
 
+// MasterAlive asks OpenSSH whether the shared ControlMaster for target is
+// actually answering. It never creates a master; false means callers must not
+// claim their transfer used a persistent connection merely because the argv
+// carried a ControlPath option.
+func (c *Client) MasterAlive(ctx context.Context, target string) bool {
+	if err := config.EnsureControlDir(); err != nil {
+		return false
+	}
+	check, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	args := append(c.options(), "-O", "check", "--", target)
+	return exec.CommandContext(check, c.cfg.SSHBin, args...).Run() == nil
+}
+
 // RunWith is Run with an output budget and an optional stdin payload.
 func (c *Client) RunWith(ctx context.Context, target, remoteCmd string, opts RunOptions) (Result, error) {
-	_ = config.EnsureControlDir()
+	if err := config.EnsureControlDir(); err != nil {
+		return Result{}, err
+	}
 
 	timeout := opts.Timeout
 	if timeout <= 0 {

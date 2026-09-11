@@ -14,6 +14,8 @@ import (
 	"github.com/starfield17/rhost/internal/shell"
 )
 
+const maxCLIOutputBytes = 64 * 1024 * 1024
+
 func newExecCmd() *cobra.Command {
 	var (
 		cwd       string
@@ -50,8 +52,9 @@ failures use 255, timeouts use 124.`,
 			}
 
 			a := app.NewDefault()
-			if maxOutput < 0 {
-				emitFailure("exec", host, errs.New(errs.ConfigInvalid, "max-output-bytes must be nonnegative", false))
+			if maxOutput < 0 || maxOutput > maxCLIOutputBytes {
+				emitFailure("exec", host, errs.New(errs.ConfigInvalid,
+					"max-output-bytes must be between 0 and 67108864", false))
 				return nil
 			}
 			res, aerr := a.Execute(cmd.Context(), app.ExecOptions{

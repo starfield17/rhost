@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,9 +185,13 @@ func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *
 	if aerr != nil {
 		return FsTransferResult{}, aerr
 	}
+	effectiveRemote, aerr := a.remoteFileOf(ctx, opts.Host, opts.Remote, filepath.Base(local), opts.timeout())
+	if aerr != nil {
+		return FsTransferResult{}, aerr
+	}
+	effectiveDst := fileops.RemoteSpec(opts.Host, effectiveRemote)
 
 	sshOpts := a.SSH.SSHOptions()
-	mux := scpReusesTransport(sshOpts)
 	argv, err := fileops.ScpArgs(local, dst, sshOpts)
 	if err != nil {
 		return FsTransferResult{}, transferValidation(err)
@@ -198,8 +203,9 @@ func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *
 	if res.ExitCode != 0 {
 		return FsTransferResult{}, mapTransferErr(res, "scp could not copy the file")
 	}
+	mux := scpReusesTransport(sshOpts) && a.SSH.MasterAlive(ctx, opts.Host)
 	return FsTransferResult{
-		Source: local, Destination: dst, Backend: fileops.BackendScp,
+		Source: local, Destination: effectiveDst, Backend: fileops.BackendScp,
 		Size: info.Size(), Multiplexed: mux, DurationMS: res.Duration.Milliseconds(),
 	}, nil
 }
@@ -219,7 +225,6 @@ func (a *App) FsGet(ctx context.Context, opts FsGetOptions) (FsTransferResult, *
 	}
 
 	sshOpts := a.SSH.SSHOptions()
-	mux := scpReusesTransport(sshOpts)
 	argv, err := fileops.ScpArgs(src, local, sshOpts)
 	if err != nil {
 		return FsTransferResult{}, transferValidation(err)
@@ -243,6 +248,7 @@ func (a *App) FsGet(ctx context.Context, opts FsGetOptions) (FsTransferResult, *
 	if st, statErr := os.Stat(out); statErr == nil && !st.IsDir() {
 		size = st.Size()
 	}
+	mux := scpReusesTransport(sshOpts) && a.SSH.MasterAlive(ctx, opts.Host)
 	return FsTransferResult{
 		Source: src, Destination: out, Backend: fileops.BackendScp,
 		Size: size, Multiplexed: mux, DurationMS: res.Duration.Milliseconds(),
@@ -312,6 +318,7 @@ func (a *App) FsSync(ctx context.Context, opts FsSyncOptions) (FsSyncResult, *er
 		return FsSyncResult{}, mapTransferErr(res, "rsync could not sync the directory")
 	}
 	changes, notes := fileops.ParseChanges(string(res.Stdout))
+	mux = mux && a.SSH.MasterAlive(ctx, opts.Host)
 	out := FsSyncResult{
 		Source: strings.TrimRight(local, "/") + "/", Destination: remote,
 		Backend: fileops.BackendRsync, DryRun: opts.DryRun, Delete: opts.Delete,
@@ -390,7 +397,9 @@ func (a *App) remoteHasRsync(ctx context.Context, host string) *errs.Error {
 // first because a put or get may be the very first thing rhost does on this
 // machine, and scp cannot open a master through a directory that is missing.
 func (a *App) runTool(ctx context.Context, bin string, args []string, timeout time.Duration) (fileops.Result, error) {
-	_ = config.EnsureControlDir()
+	if err := config.EnsureControlDir(); err != nil {
+		return fileops.Result{}, err
+	}
 	if bin == a.Transfers.RsyncBin {
 		var err error
 		args, err = a.Transfers.SafeRsyncPaths(ctx, args)
@@ -416,6 +425,9 @@ func transferValidation(err error) *errs.Error {
 // missingTool distinguishes "the tool refused" from "the tool is not installed
 // here". The second one is not the remote's fault and not retryable.
 func missingTool(code errs.Code, name string, cause error) *errs.Error {
+	if errors.Is(cause, config.ErrUnsafeLocalState) {
+		return errs.Wrap(errs.ConfigInvalid, cause.Error(), false, cause)
+	}
 	msg := "cannot run " + name + " on this machine: " + cause.Error()
 	if os.IsNotExist(cause) || strings.Contains(cause.Error(), "executable file not found") {
 		return errs.Wrap(errs.TransferFailed, name+" is not installed locally", false, cause)

@@ -58,6 +58,14 @@ Requirements:
 - keep agent JSON and human preview consistent;
 - do not silently follow unexpected symlinks across boundaries.
 
+Single-file transfers reject a remote source glob: `fs get` copies exactly one
+file, never an expansion whose cardinality depends on remote directory contents.
+`source` and `destination` name the effective files; when a put target is an
+existing remote directory, the destination includes the source basename inside
+that directory. `multiplexed` is true only after OpenSSH's control command
+observes the shared master answering; carrying a `ControlPath` option alone is
+not evidence of reuse.
+
 Recommended agent workflow:
 
 ```text
@@ -69,4 +77,3 @@ dry run
 The Skill should teach this for destructive sync modes.
 
 ---
-

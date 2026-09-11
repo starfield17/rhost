@@ -3,10 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/starfield17/rhost/internal/config"
 	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/shell"
 	"github.com/starfield17/rhost/internal/transport/openssh"
@@ -15,6 +17,10 @@ import (
 // killTimeout bounds the best-effort remote process-group kill issued after a
 // foreground timeout.
 const killTimeout = 8 * time.Second
+
+// maxExecOutputBytes keeps one invocation's two in-memory streams bounded even
+// when an API caller bypasses the CLI's flag validation.
+const maxExecOutputBytes = 64 * 1024 * 1024
 
 // ExecOptions describes a single stateless foreground execution.
 type ExecOptions struct {
@@ -60,6 +66,10 @@ type ExecResult struct {
 // remote command's real status.
 func (a *App) Execute(ctx context.Context, opts ExecOptions) (ExecResult, *errs.Error) {
 	out := ExecResult{Host: opts.Host, ExitCode: -1}
+	if opts.MaxOutputBytes < 0 || opts.MaxOutputBytes > maxExecOutputBytes {
+		return out, errs.New(errs.ConfigInvalid,
+			"max output bytes must be between 0 and 67108864", false)
+	}
 
 	for k := range opts.Env {
 		if err := shell.ValidateEnvKey(k); err != nil {
@@ -93,6 +103,9 @@ func (a *App) Execute(ctx context.Context, opts ExecOptions) (ExecResult, *errs.
 		Stdin:          opts.Stdin,
 	})
 	if runErr != nil {
+		if errors.Is(runErr, config.ErrUnsafeLocalState) {
+			return out, errs.Wrap(errs.ConfigInvalid, runErr.Error(), false, runErr)
+		}
 		return out, errs.Wrap(errs.SSHUnreachable, runErr.Error(), true, runErr)
 	}
 	out.Duration = res.Duration

@@ -51,7 +51,10 @@ def digest(data):
 
 def request_path(q):
     """Absolute path for one request, with `~` expanded on the remote side."""
-    return os.path.abspath(os.path.expanduser(q.get('path') or '.'))
+    value = q.get('path') or '.'
+    if type(value) is not str:
+        raise Failure('CONFIG_INVALID', 'path must be a string')
+    return os.path.abspath(os.path.expanduser(value))
 
 
 def check_capacity(q):
@@ -418,13 +421,22 @@ def write_or_patch(q, path):
             mode = asked
 
         expected = q.get('if_hash', '')
+        if type(expected) is not str:
+            raise Failure('CONFIG_INVALID', 'if_hash must be a string')
         if (exists and expected != digest(old)) or (not exists and (expected or op == 'patch')):
             raise Failure('FILE_CONFLICT', 'file changed or expected target is missing')
 
         if op == 'write':
-            data = base64.b64decode(q['content']).decode('utf-8').encode('utf-8')
+            if type(q.get('content')) is not str:
+                raise Failure('CONFIG_INVALID', 'content must be base64 text')
+            try:
+                data = base64.b64decode(q['content'], validate=True).decode('utf-8').encode('utf-8')
+            except ValueError:
+                raise Failure('CONFIG_INVALID', 'content must be valid base64 UTF-8 text')
         else:
-            data = apply_patch(old, q.get('edits') or [])
+            if 'edits' not in q:
+                raise Failure('INVALID_PATCH', 'edits are required')
+            data = apply_patch(old, q['edits'])
         if len(data) > EDIT_LIMIT:
             raise Failure('FILE_TOO_LARGE', 'editing limit is %d bytes' % EDIT_LIMIT)
 

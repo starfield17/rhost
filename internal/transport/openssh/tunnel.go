@@ -130,7 +130,7 @@ func (c *Client) OpenTunnel(ctx context.Context, host, kind, listen, destination
 	if err := config.EnsureControlDir(); err != nil {
 		return t, err
 	}
-	if err := os.MkdirAll(tunnelRoot(), 0o700); err != nil {
+	if err := ensureTunnelRoot(); err != nil {
 		return t, err
 	}
 
@@ -166,11 +166,35 @@ func (c *Client) OpenTunnel(ctx context.Context, host, kind, listen, destination
 	if err != nil {
 		return t, err
 	}
-	if err := os.WriteFile(filepath.Join(tunnelRoot(), t.ID+".json"), data, 0o600); err != nil {
+	record := filepath.Join(tunnelRoot(), t.ID+".json")
+	if info, statErr := os.Lstat(record); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		_ = c.masterError(context.Background(), t, "exit")
+		return t, fmt.Errorf("tunnel record path is a symlink")
+	}
+	if err := os.WriteFile(record, data, 0o600); err != nil {
+		_ = c.masterError(context.Background(), t, "exit")
+		return t, err
+	}
+	if err := os.Chmod(record, 0o600); err != nil {
 		_ = c.masterError(context.Background(), t, "exit")
 		return t, err
 	}
 	return t, nil
+}
+
+func ensureTunnelRoot() error {
+	dir := tunnelRoot()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return fmt.Errorf("tunnel state root is not a real directory")
+	}
+	return os.Chmod(dir, 0o700)
 }
 
 // ValidateTunnel checks a forward without creating directories, starting SSH or
@@ -212,7 +236,11 @@ func readTunnel(id string) (Tunnel, error) {
 	if !tunnelID.MatchString(id) {
 		return Tunnel{}, fmt.Errorf("%w: %s", ErrNoTunnel, id)
 	}
-	data, err := os.ReadFile(filepath.Join(tunnelRoot(), id+".json"))
+	record := filepath.Join(tunnelRoot(), id+".json")
+	if info, statErr := os.Lstat(record); statErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		return Tunnel{}, fmt.Errorf("tunnel record %s is a symlink", id)
+	}
+	data, err := os.ReadFile(record)
 	if os.IsNotExist(err) {
 		return Tunnel{}, fmt.Errorf("%w: %s", ErrNoTunnel, id)
 	}
