@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Install the latest rhost release binary into a directory on your PATH.
 #
-#   curl -fsSL https://raw.githubusercontent.com/starfield17/rhost/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/starfield17/rhost/main/scripts/install.sh | bash
+#
+# The download is verified against the release's SHA-256 file before anything is
+# replaced, and an existing binary is left in place if verification fails.
 #
 # Override the install directory with RHOST_INSTALL_DIR (default: ~/.local/bin).
 set -euo pipefail
@@ -35,8 +38,28 @@ url="https://github.com/${repo}/releases/download/v${version}/${asset}"
 
 mkdir -p "$install_dir"
 echo "downloading $asset ..."
-curl -fsSL "$url" -o "$install_dir/rhost"
-chmod +x "$install_dir/rhost"
+# Everything lands in a temporary directory inside the install dir, so the rename
+# that publishes the binary is within one filesystem (atomic) and an existing
+# install is still there untouched if any step before it fails.
+install_tmp="$(mktemp -d "$install_dir/.rhost-install.XXXXXX")"
+trap 'rm -f "$install_tmp/$asset" "$install_tmp/$asset.sha256"; rmdir "$install_tmp"' EXIT
+curl -fsSL "$url" -o "$install_tmp/$asset"
+if ! curl -fsSL "$url.sha256" -o "$install_tmp/$asset.sha256"; then
+  echo "no SHA-256 file for this release; refusing to install an unverified binary" >&2
+  exit 1
+fi
+# Two spellings of the same check: `sha256sum` is coreutils and is on most Linux
+# systems, `shasum` is what macOS ships. The digest format is identical.
+if command -v sha256sum >/dev/null 2>&1; then
+  (cd "$install_tmp" && sha256sum -c "$asset.sha256" >/dev/null)
+elif command -v shasum >/dev/null 2>&1; then
+  (cd "$install_tmp" && shasum -a 256 -c "$asset.sha256" >/dev/null)
+else
+  echo "need sha256sum or shasum to verify the download" >&2
+  exit 1
+fi
+chmod +x "$install_tmp/$asset"
+mv "$install_tmp/$asset" "$install_dir/rhost"
 
 echo "installed $install_dir/rhost"
 case ":$PATH:" in
