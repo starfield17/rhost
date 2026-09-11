@@ -24,8 +24,8 @@ jobs:
           - goos: linux
             goarch: arm64
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.23"
 
@@ -47,7 +47,7 @@ jobs:
             -o "dist/${out}" ./cmd/rhost
           ( cd dist && shasum -a 256 "${out}" > "${out}.sha256" )
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rhost-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -56,11 +56,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
