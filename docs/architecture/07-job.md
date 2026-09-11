@@ -52,6 +52,7 @@ Example:
         ├── command.sh
         ├── stdout.log
         ├── stderr.log
+        ├── identity
         ├── pid
         ├── pgid
         ├── exit_code
@@ -59,6 +60,12 @@ Example:
 ```
 
 Permissions should default to user-private.
+
+`identity` is written by the job process itself, before its pid file, and holds
+the pid, the pgid, the boot id and the process start time from
+`/proc/<pid>/stat`. It is what makes the pid a *process* rather than a number
+that the kernel may hand to someone else later (§22). `pid` and `pgid` stay for
+human inspection; nothing derives liveness from them alone.
 
 Example metadata:
 
@@ -90,12 +97,23 @@ The wrapper should:
 1. establish cwd/env;
 2. launch the command in its own process group/session;
 3. redirect stdout and stderr to distinct files;
-4. record PID/PGID;
+4. record its identity (pid, pgid, boot id, process start time) atomically, then
+   PID/PGID;
 5. atomically write exit code on completion;
 6. atomically write completion time;
 7. preserve enough metadata for later rediscovery.
 
 Prefer transferring or generating a small wrapper script over constructing an unreadable deeply quoted one-liner.
+
+Every observer re-reads the boot id and the start time of the live process and
+compares them with the recorded ones. A pid whose start time no longer matches
+belongs to a different process: the job is `stale`, never `running`, and no
+signal is ever sent to it. An identity that cannot be compared at all — a job
+directory written before identity tracking, or a host where `/proc` is not
+readable — is `stale` for the same reason: "running" is a claim about *this* job,
+and an unverifiable pid cannot support it. Because of that, the backend refuses
+to create a job when `/proc` cannot provide an identity (`doctor` reports it as
+`capabilities.pid_identity`).
 
 ### Later backend
 
@@ -126,6 +144,17 @@ stale
 The exact state machine should be documented in code and tests.
 
 If the job metadata says it was running but the PID no longer exists and there is no exit-code file, report `unknown` or `stale`, not `success`.
+
+`running` additionally requires a **verified process identity** (§22): the
+recorded boot id and start time must still describe the live pid. A pid that now
+belongs to another process is `stale`. A stopped marker moves a job to `stopped`
+only once the process is actually gone, so a stop that did not take effect is
+reported as what it is.
+
+`job stop` and `job kill` signal only a verified process group, and report
+`signalled: true|false` so a refusal can never be read as a stop. This is the one
+mistake the backend treats as unrecoverable: killing an unrelated process group
+because it inherited a recycled pid.
 
 ---
 
@@ -181,4 +210,3 @@ Behavior should be observable and idempotent.
 A stop request against an already terminal job should not invent an error if the requested final condition already holds.
 
 ---
-

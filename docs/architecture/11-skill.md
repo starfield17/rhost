@@ -1,10 +1,26 @@
 [← Architecture map](../ARCHITECTURE.md)
 
-# Part XI — SKILL.md
+# Part XI — the skill
 
 ## 34. Required Skill behavior
 
-The repository should ship a concise `SKILL.md`.
+The skill ships as an installable directory, `skills/rhost/`:
+
+```text
+skills/rhost/
+├── SKILL.md            frontmatter, hard rules, routing
+└── references/
+    ├── CLI.md          the command surface
+    ├── RECOVERY.md     error codes and what each asks for
+    └── SAFETY.md       authority, secrets, destructive operations
+```
+
+`SKILL.md` carries YAML frontmatter (`name`, `description`) so an agent can list
+it before loading it, and stays short: the rules nobody should have to
+rediscover, plus a table pointing at the reference the current task needs.
+Detail that only some tasks need lives in `references/` — progressive
+disclosure, not a smaller manual. Nothing binary is ever stored in the skill
+directory: the executable comes from a GitHub Release.
 
 Its main rules should be operational facts, not general software-engineering advice.
 
@@ -45,4 +61,3 @@ The Skill should name actual CLI commands and behaviors.
 It should not contain a tutorial on SSH, tmux, Go, or system design.
 
 ---
-

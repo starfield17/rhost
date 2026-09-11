@@ -1,6 +1,12 @@
 // Package host discovers usable SSH targets. OpenSSH configuration remains the
 // source of truth (docs/PROJECT_OVERVIEW.md §10); rhost only reads it to list
 // aliases for humans and agents.
+//
+// The listing is best-effort by design: it follows Include directives and skips
+// wildcard/negated patterns, but it is not an implementation of ssh_config's
+// full grammar (Match, quoted includes and the system-wide file are not
+// modelled), and it never claims a host is reachable. `ssh <target>` is the
+// authority; this exists so an agent can see what the user probably meant.
 package host
 
 import (

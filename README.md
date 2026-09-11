@@ -7,23 +7,36 @@ reusable execution node — without re-deriving SSH, quoting, timeout, and
 persistence mechanics on every operation. It orchestrates your existing OpenSSH
 configuration and never duplicates SSH authentication or host-key policy.
 
-> Status: early. Milestone 0 (skeleton), Milestone 1 (host resolution,
-> `doctor`, `exec`), Milestone 2 (persistent tmux-backed `session`),
-> Milestone 3 (detached `job`), Milestone 4 (file transfer `fs`) and Milestone 5
-> (system `status` and live `watch`) are implemented and verified against a real
-> remote Linux host over SSH. Milestone 6 is in progress: its remote-development
-> tools (`fs read/write/patch/grep/glob`, `mirror`, `batch`, verified transfer,
-> bounded output, `exec-many`, `tunnel`, `session recover`) are implemented and
-> verified the same way; config migration, the installer's checksum path, and
-> release signing are not (see
+> Status: **v0.1.0-alpha.1**. The v0.1 surface is implemented and verified against
+> a real remote Linux host over SSH: `hosts`, `doctor`, `exec`, `exec-many`,
+> `session` (including `recover`), `job`, `fs` (transfer, and the remote
+> read/write/patch/grep/glob helper), `tunnel`, `status`, `watch`, and a local
+> `audit` trail. Still open: config migration, release signing, and the daemon
+> evaluation (see
 > [`docs/architecture/16-milestones.md`](docs/architecture/16-milestones.md) §49).
 > The verification runs the built binary as a
 > **separate process per step**, so "persistent" means it survived an actual CLI
 > process exit — including `SIGKILL` of the client, and an SSH connection closed
 > underneath a running job — rather than an in-process simulation. Reproduce it
 > with `make test-live-all` against your own target (see Development).
+>
+> Local side: macOS and Linux, which is what CI runs. Other OpenSSH platforms are
+> untested. Remote side: an SSH-reachable Linux host — native, container, or WSL2.
 
 ## Install / build
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/starfield17/rhost/main/scripts/install.sh | bash
+```
+
+The installer downloads the release binary for this platform, verifies it against
+the release's own SHA-256 file, and only then replaces `~/.local/bin/rhost` — a
+failed check leaves an existing install untouched. `RHOST_INSTALL_DIR` moves the
+destination and `RHOST_VERSION` pins a version; without a pin it takes the newest
+stable release, or the newest release of any kind while every release is a
+prerelease.
+
+From source:
 
 ```bash
 go build -o bin/rhost ./cmd/rhost
@@ -173,7 +186,10 @@ that exits 255 is indistinguishable by status alone for the same reason.
   implementation framework, milestones, and acceptance criteria.
 - [`AGENTS.md`](AGENTS.md) — contributor rules (portability, persistence,
   verification).
-- [`SKILL.md`](SKILL.md) — the agent-facing usage policy.
+- [`skills/rhost/`](skills/rhost/SKILL.md) — the agent-facing skill: hard rules
+  in `SKILL.md`, and the command cookbook, recovery recipes and safety notes in
+  `references/`. The directory is self-contained: copy or symlink it into an
+  agent's skills directory as-is.
 - [`schemas/result-v1.schema.json`](schemas/result-v1.schema.json) — the JSON
   envelope contract.
 
@@ -191,9 +207,9 @@ make check   # gofmt + vet + unit tests + portability scan
 
 # Live tests are opt-in: name your own target, nothing is hardcoded.
 RHOST_TEST_HOST=<user>@<host> make test-live           # exec, timeout, doctor, transport reuse
-RHOST_TEST_HOST=<user>@<host> make test-live-session   # session persistence across CLI processes
-RHOST_TEST_HOST=<user>@<host> make test-live-jobs      # job persistence, signals, log cursors
-RHOST_TEST_HOST=<user>@<host> make test-live-fs        # put/get round-trip, rsync plan, --delete
+RHOST_TEST_HOST=<user>@<host> make test-live-session   # persistence across CLI processes, busy-pane refusal
+RHOST_TEST_HOST=<user>@<host> make test-live-jobs      # persistence, signals, process identity, log cursors
+RHOST_TEST_HOST=<user>@<host> make test-live-fs        # put/get round-trip, rsync plan, --delete, cache root with a space
 RHOST_TEST_HOST=<user>@<host> make test-live-status    # status snapshot, watch stream, offline
 RHOST_TEST_HOST=<user>@<host> make test-live-tools     # fs tools, verified transfer, exec-many, tunnels
 RHOST_TEST_HOST=<user>@<host> make test-live-all       # every live suite
@@ -208,7 +224,8 @@ The target host is only ever an environment variable at invocation — never a
 default, and never written into a file (`AGENTS.md` §1).
 
 `rhost` can do exactly what the current OS user can do through the configured
-SSH identity, and no more — see [`SKILL.md`](SKILL.md) §5.
+SSH identity, and no more — see
+[`skills/rhost/references/SAFETY.md`](skills/rhost/references/SAFETY.md).
 
 ## Troubleshooting
 
@@ -224,7 +241,8 @@ This affects diagnosis only: rhost never changes host-key policy or authenticati
 
 Transport sockets live under the local cache dir. If that path is very deep,
 OpenSSH's Unix-socket length limit applies and rhost falls back to a short
-per-user root automatically.
+per-user root automatically; a cache path containing whitespace moves there too,
+so the ControlPath never has to be quoted inside rsync's `-e` string.
 
 ## A note on remote login shells
 

@@ -16,7 +16,11 @@ func newHostsCmd() *cobra.Command {
 		Short: "List SSH config host aliases",
 		Long: `List concrete Host aliases from your OpenSSH client config.
 
-Wildcard and negated patterns are omitted. This does not contact any host.`,
+This is best-effort discovery, not OpenSSH's own resolution: it reads the user
+config and its Include files, and does not implement Match, quoted includes, or
+the system-wide config. A host you can reach may be missing from the list, and a
+listed alias is not a promise that the connection succeeds: plain ssh is the
+authority. Wildcard and negated patterns are omitted. No host is contacted.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a := app.NewDefault()

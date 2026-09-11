@@ -8,8 +8,9 @@ Use Go-native layout rather than an artificial `src/` layer:
 
 ```text
 rhost/
-├── SKILL.md
 ├── README.md
+├── skills/
+│   └── rhost/               # the installable skill (SKILL.md + references/)
 ├── docs/
 │   ├── PROJECT_OVERVIEW.md
 │   ├── ARCHITECTURE.md      # the map
@@ -163,4 +164,3 @@ type JobManager interface {
 Keep these internal until a second frontend genuinely needs a public Go library.
 
 ---
-

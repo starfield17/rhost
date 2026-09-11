@@ -13,7 +13,7 @@ This file is the **map**. The architecture is expanded under
 agent — can load only the part a task needs instead of a 1900-line document.
 
 Section numbers `§0`–`§53` are stable. Every `docs/ARCHITECTURE.md §N`
-reference in the code, `AGENTS.md`, `README.md` and `SKILL.md` still resolves:
+reference in the code, `AGENTS.md`, `README.md` and `skills/rhost/SKILL.md` still resolves:
 find §N in the list below to see which file holds it. Each Part file links back
 to this map.
 
@@ -85,7 +85,7 @@ to this map.
 - [32. JSON is a public compatibility surface](architecture/10-structured-output.md#32-json-is-a-public-compatibility-surface)
 - [33. Error taxonomy](architecture/10-structured-output.md#33-error-taxonomy)
 
-## [Part XI — SKILL.md](architecture/11-skill.md)
+## [Part XI — the skill](architecture/11-skill.md)
 
 - [34. Required Skill behavior](architecture/11-skill.md#34-required-skill-behavior)
 

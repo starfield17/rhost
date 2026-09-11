@@ -181,9 +181,10 @@ release signing/checksums
 
 Then evaluate whether a local daemon is actually justified.
 
-Status: in progress. Implemented and verified against a real remote Linux host
-over SSH — `make test-live-tools` for the file, exec and tunnel surface, and
-`make test-live-session` for recovery (both part of `make test-live-all`):
+Status: implemented, except for the three items named at the end of this section.
+Verified against a real remote Linux host over SSH — `make test-live-tools` for
+the file, exec and tunnel surface, and `make test-live-session` for recovery
+(both part of `make test-live-all`):
 
 - **audit**: implemented (§36) — a local JSONL trail of remote operations,
   fail-open, disabled with `RHOST_AUDIT=0`, read back with `rhost audit`.
@@ -231,10 +232,23 @@ source work on the remote without downloading the tree.
   invocation that made it (§2), loopback-only by default, and `list` reporting
   OpenSSH's own answer about each master rather than a guess from the record.
 
-Still open: **config migration**, **installer checksum verification**,
-**release signing**, and the daemon evaluation. `scripts/install.sh` still has to
-be run against a real release layout before its checksum path can be called
-verified.
+The hardening round closed two lifecycle holes that could reach a real remote
+machine, and both are now contract rather than caveat:
+
+- **process identity** (§22, §25): a job's pid is not its identity. Each job
+  records its boot id and process start time in `identity` before its pid file;
+  a job is `running` only while those still describe the live pid, and
+  `job stop`/`job kill` signal only a verified process group. A pid that is now
+  another process is `stale` and is never signalled — `signalled: false` in the
+  JSON says a refusal happened, instead of a stop that did not.
+- **session foreground safety** (§16): `session exec` refuses with
+  `SESSION_BUSY` when a program owns the pane instead of pasting into it, and the
+  attach path toggles echo on the pane's pty instead of sending `stty` as input.
+
+Still open: **config migration**, **release signing**, and the daemon evaluation.
+The installer's checksum path is implemented *and* exercised end to end:
+`scripts/install.sh` downloads a release asset plus its `.sha256`, verifies it,
+and replaces the binary atomically, and installs the newest release of any kind
+while every release is a prerelease.
 
 ---
-

@@ -7,7 +7,7 @@
 ```text
                          Coding Agent
                               │
-                         reads SKILL.md
+                    reads skills/rhost/SKILL.md
                               │
                     shell command invocation
                               ▼
@@ -65,4 +65,3 @@ This table is an architectural contract.
 Do not add in-memory ownership where a process restart would violate this table.
 
 ---
-

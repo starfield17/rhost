@@ -138,6 +138,11 @@ Use this for:
 - Ctrl-C and other control keys.
 
 Do not force `session exec` semantics onto arbitrary interactive programs.
+`session exec` enforces that distinction rather than leaving it to the caller: it
+refuses with `SESSION_BUSY` while any program other than the managed shell is the
+pane's foreground process, and the refusal names that program. The refused
+command never ran. `session send` remains the raw path, and `session recover` is
+the explicit way to interrupt a program that should not be there.
 
 ---
 
@@ -170,6 +175,17 @@ or an equivalent binary-safe path.
 Raw keys such as `C-c` should use explicit tmux key operations.
 
 Before a managed `session exec`, the backend may need to normalize the shell input line (for example Ctrl-C/Ctrl-U) only when it is known to be at a managed shell prompt. Do not send destructive control sequences blindly while an interactive program owns the foreground.
+
+The check is mechanical: `tmux display-message -p '#{pane_current_command}'` must
+equal the shell recorded in the session's `meta.json`, and it happens under the
+writer lock, before the first byte of input. The idle probe that follows (which
+itself types `stty -echo`) is therefore never delivered to a program that is not
+the shell.
+
+Terminal *settings* are not input. Echo, for example, is a property of the pane's
+pty: read `#{pane_tty}` and apply `stty echo` / `stty -echo` to that device, never
+by typing the command into the pane, which would deliver it to whatever owns the
+foreground and change nothing about the terminal.
 
 ---
 
@@ -275,4 +291,3 @@ Concurrency policy for simultaneous human and agent input should initially be si
 Do not build a collaborative terminal protocol in v0.1.
 
 ---
-

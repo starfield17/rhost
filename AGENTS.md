@@ -4,7 +4,7 @@ Hard rules, not style preferences.
 
 ## 1. Nothing local-only goes into tracked content
 
-Everything tracked — `README.md`, `SKILL.md`, `docs/**`, code comments, test
+Everything tracked — `README.md`, `skills/rhost/SKILL.md`, `docs/**`, code comments, test
 source, commit messages, example output — must be true for *any* SSH-reachable
 host. So information about one specific machine, account, network, or test box
 stays out:

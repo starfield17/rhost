@@ -1,10 +1,11 @@
 # Remote Host Adapter — Project Overview
 
 > Working name: **rhost**  
-> Status: implemented through Milestone 5 (`hosts`, `doctor`, `exec`, `session`,  
-> `job`, `fs`, `status`, `watch`); Milestone 6 (hardening) is future work  
+> Status: **v0.1.0-alpha.1** — implemented through Milestone 6: `hosts`,  
+> `doctor`, `exec`, `exec-many`, `session`, `job`, `fs`, `tunnel`, `status`,  
+> `watch`, `audit`. Open: config migration, release signing, daemon evaluation  
 > Primary form: **Skill + source repository + single release binary**  
-> Local side: any machine with a standard OpenSSH client  
+> Local side: macOS or Linux (what CI runs; other OpenSSH platforms untested)  
 > Remote side: any SSH-reachable Linux host (native, container, or WSL2)
 
 ---
@@ -272,8 +273,9 @@ The intended distribution model is:
 
 ```text
 repository
-├── SKILL.md
 ├── README.md
+├── skills/
+│   └── rhost/            # the installable skill: SKILL.md + references/
 ├── docs/
 │   ├── PROJECT_OVERVIEW.md
 │   ├── ARCHITECTURE.md   # map
@@ -288,10 +290,16 @@ repository
 │   └── install.sh
 └── .github/
     └── workflows/
+        ├── ci.yml
         └── release.yml
 ```
 
 For Go, prefer normal Go repository conventions (`cmd/`, `internal/`, packages at module root) instead of creating a literal `src/` directory only for symmetry.
+
+The three layers are deliberately separate: the repository is the source, GitHub
+Releases are the distribution (one binary per platform, with a `.sha256` file),
+and `skills/rhost/` is the knowledge an agent loads — never a place a binary is
+stored.
 
 GitHub Releases should publish platform binaries such as:
 
@@ -317,7 +325,7 @@ The core workflow is already expressible as:
 ```text
 coding agent
     │
-    │ reads SKILL.md
+    │ reads skills/rhost/SKILL.md
     ▼
 rhost CLI
     │
@@ -348,9 +356,13 @@ But `rhost-mcp` would be an adapter around the core, not the core itself.
 
 ---
 
-## 9. The role of `SKILL.md`
+## 9. The role of the skill
 
-`SKILL.md` is the **agent policy and usage layer**, not the implementation.
+`skills/rhost/` is the **agent policy and usage layer**, not the implementation.
+Its `SKILL.md` holds the rules an agent must not have to rediscover, and its
+`references/` hold the detail that only some tasks need: the full command
+surface, the recovery recipes, and the safety rules. Load `SKILL.md`; open a
+reference when the task actually reaches it.
 
 It should tell an agent:
 

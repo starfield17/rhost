@@ -54,29 +54,39 @@ build. Agents branch on these values, never on the message text.
 ```text
 USAGE_ERROR
 CONFIG_INVALID
+INTERNAL
 HOST_UNKNOWN
 SSH_UNREACHABLE
 SSH_AUTH_FAILED
 HOST_KEY_FAILED
 REMOTE_DEPENDENCY_MISSING
 REMOTE_COMMAND_TIMEOUT
+SESSION_BUSY
 SESSION_NOT_FOUND
 SESSION_UNHEALTHY
 JOB_NOT_FOUND
 JOB_STATE_UNKNOWN
 TRANSFER_FAILED
-REMOTE_TRANSFER_FAILED
-BATCH_FAILED
+FILE_TOO_LARGE
 SYNC_REJECTED
 FILE_NOT_FOUND
 FILE_CONFLICT
-INVALID_TARGET
 INVALID_PATCH
+INVALID_TARGET
+INVALID_TEXT
 SEARCH_FAILED
+TUNNEL_FAILED
+TUNNEL_NOT_FOUND
 UNSUPPORTED_REMOTE_OS
 ```
 
-The five `FILE_*`/`INVALID_*`/`SEARCH_FAILED` codes come from the remote helper
+`SESSION_BUSY` is the answer to `session exec` on a pane whose foreground is not
+the managed shell: a program owns the terminal, so the command was not run at
+all. It is deliberately not `SESSION_UNHEALTHY` — there is nothing wrong with the
+session — and the caller's next move is `session send`/`session read`, or
+`session recover`, not a retry of the same paste.
+
+The `FILE_*`, `INVALID_*` and `SEARCH_FAILED` codes come from the remote helper
 (`internal/fileops/remote.py`) and travel back inside the envelope as JSON rather
 than as text the caller has to scrape. They are *failures of the operation on the
 remote*, not of SSH, which is why they are separate from `TRANSFER_FAILED`: an agent
@@ -93,4 +103,3 @@ Keep low-level OpenSSH stderr available for diagnosis but do not force the agent
 OpenSSH runs at `LogLevel=ERROR` by default so that successful commands keep stderr clean. That level also hides ssh's own reason for some connection failures; `RHOST_SSH_LOG_LEVEL` raises it (for example `VERBOSE`) without rebuilding the binary, and the fallback message points there.
 
 ---
-
