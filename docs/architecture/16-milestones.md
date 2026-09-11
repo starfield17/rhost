@@ -181,5 +181,16 @@ release signing/checksums
 
 Then evaluate whether a local daemon is actually justified.
 
+Status: in progress.
+
+- **audit**: implemented (§36) — a local JSONL trail of remote operations,
+  fail-open, disabled with `RHOST_AUDIT=0`, read back with `rhost audit`.
+- **more robust process cancellation**: a timed-out `fs` transfer now runs in its
+  own process group and kills the whole group on cancellation, with `WaitDelay`
+  as a backstop, so the transfer is stopped rather than abandoned when a child
+  holds the stdout/stderr pipes.
+- still open: **output truncation policy**, **config migration**, **shell
+  recovery**, **installer checksum verification**, **release signing**.
+
 ---
 

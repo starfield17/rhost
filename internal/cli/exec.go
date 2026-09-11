@@ -38,10 +38,13 @@ failures use 255, timeouts use 124.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
 			command := strings.Join(args[1:], " ")
+			audit := startAudit("exec", host)
 
 			env, err := parseEnv(envs)
 			if err != nil {
-				emitFailure("exec", host, errs.Wrap(errs.ConfigInvalid, err.Error(), false, err))
+				aerr := errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
+				audit.fail(aerr)
+				emitFailure("exec", host, aerr)
 				return nil
 			}
 
@@ -54,9 +57,12 @@ failures use 255, timeouts use 124.`,
 				Timeout: timeout,
 			})
 			if aerr != nil {
+				audit.fail(aerr)
 				renderExecFailure(host, res, aerr)
 				return nil
 			}
+			code := res.ExitCode
+			audit.succeed(cwd, command, &code)
 			renderExecSuccess(host, res)
 			return nil
 		},

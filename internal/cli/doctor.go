@@ -24,12 +24,15 @@ completion-marker protocol work on this host.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
+			audit := startAudit("doctor", host)
 			a := app.NewDefault()
 			res, aerr := a.Doctor(cmd.Context(), host, timeout)
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("doctor", host, aerr)
 				return nil
 			}
+			audit.succeed("", "", nil)
 			renderDoctor(res)
 			return nil
 		},

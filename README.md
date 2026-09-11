@@ -59,6 +59,8 @@ rhost status gpu --json                       # ...as one JSON document
 rhost watch gpu                               # live monitor, Ctrl-C to stop
 rhost watch gpu --json --count 1              # one envelope, for a scripted probe
 
+rhost audit --json                            # local audit log of remote operations
+
 rhost version
 ```
 

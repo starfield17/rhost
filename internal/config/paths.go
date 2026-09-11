@@ -77,14 +77,20 @@ func EnsureControlDir() error {
 	return os.MkdirAll(ControlDir(), 0o700)
 }
 
-// StateDir is the local state root (audit log, etc.). Not yet used in v0.1 M1.
+// StateDir is rhost's local state root; the audit log lives under it
+// (docs/ARCHITECTURE.md §36). It follows the XDG state convention —
+// $XDG_STATE_HOME, else ~/.local/state — and RHOST_STATE_DIR overrides it for
+// tests and for a user who wants the trail elsewhere. It is deliberately not the
+// config dir: state is data rhost accumulates, not configuration.
 func StateDir() string {
 	if v := os.Getenv("RHOST_STATE_DIR"); v != "" {
 		return v
 	}
-	d, err := os.UserConfigDir()
-	if err != nil || d == "" {
-		return filepath.Join(os.TempDir(), appName)
+	if d := os.Getenv("XDG_STATE_HOME"); d != "" {
+		return filepath.Join(d, appName)
 	}
-	return filepath.Join(d, appName)
+	if h, err := os.UserHomeDir(); err == nil && h != "" {
+		return filepath.Join(h, ".local", "state", appName)
+	}
+	return filepath.Join(os.TempDir(), appName)
 }

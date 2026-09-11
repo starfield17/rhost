@@ -32,12 +32,15 @@ same snapshot.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
+			audit := startAudit("status", host)
 			a := app.NewDefault()
 			res, aerr := a.Status(cmd.Context(), app.StatusOptions{Host: host, Timeout: timeout})
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("status", host, aerr)
 				return nil
 			}
+			audit.succeed("", "", nil)
 			if jsonFlag {
 				_ = output.Success("status", host, res).Write(os.Stdout)
 				return nil

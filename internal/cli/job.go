@@ -51,9 +51,12 @@ func newJobStartCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
 			command := strings.Join(args[1:], " ")
+			audit := startAudit("job.start", host)
 			env, err := parseEnv(envs)
 			if err != nil {
-				emitFailure("job.start", host, configErr(err))
+				aerr := configErr(err)
+				audit.fail(aerr)
+				emitFailure("job.start", host, aerr)
 				return nil
 			}
 			a := app.NewDefault()
@@ -66,9 +69,11 @@ func newJobStartCmd() *cobra.Command {
 				Timeout: timeout,
 			})
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("job.start", host, aerr)
 				return nil
 			}
+			audit.succeed(cwd, command, nil)
 			if jsonFlag {
 				_ = output.Success("job.start", host, res).Write(os.Stdout)
 			} else {
@@ -230,12 +235,15 @@ func newJobKillCmd() *cobra.Command {
 }
 
 func runJobSignal(op string, cmd *cobra.Command, host, id, signal string, timeout time.Duration) error {
+	audit := startAudit(op, host)
 	a := app.NewDefault()
 	res, aerr := a.JobSignal(cmd.Context(), host, id, signal, timeout)
 	if aerr != nil {
+		audit.fail(aerr)
 		emitFailure(op, host, aerr)
 		return nil
 	}
+	audit.succeed("", id, nil)
 	if jsonFlag {
 		_ = output.Success(op, host, res).Write(os.Stdout)
 	} else {

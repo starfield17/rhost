@@ -43,12 +43,15 @@ func newSessionCreateCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
+			audit := startAudit("session.create", host)
 			a := app.NewDefault()
 			info, aerr := a.SessionCreate(cmd.Context(), host, name, cwd, shell, timeout)
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("session.create", host, aerr)
 				return nil
 			}
+			audit.succeed(cwd, "", nil)
 			if jsonFlag {
 				_ = output.Success("session.create", host, info).Write(os.Stdout)
 			} else {
@@ -106,12 +109,16 @@ func newSessionExecCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			command := strings.Join(args[2:], " ")
+			audit := startAudit("session.exec", host)
 			a := app.NewDefault()
 			res, aerr := a.SessionExec(cmd.Context(), host, session, command, timeout)
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("session.exec", host, aerr)
 				return nil
 			}
+			code := res.ExitCode
+			audit.succeed("", command, &code)
 			if jsonFlag {
 				data := map[string]interface{}{
 					"session_id": res.SessionID,
@@ -144,11 +151,19 @@ func newSessionSendCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
+			audit := startAudit("session.send", host)
 			a := app.NewDefault()
 			if aerr := a.SessionSend(cmd.Context(), host, session, data, key, 30*time.Second); aerr != nil {
+				audit.fail(aerr)
 				emitFailure("session.send", host, aerr)
 				return nil
 			}
+			// The injected data may be sensitive, so record the key but never the data.
+			summary := "--data (redacted)"
+			if key != "" {
+				summary = "key " + key
+			}
+			audit.succeed("", summary, nil)
 			if jsonFlag {
 				_ = output.Success("session.send", host, map[string]interface{}{"sent": true}).Write(os.Stdout)
 			} else {
@@ -206,11 +221,14 @@ func newSessionCloseCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
+			audit := startAudit("session.close", host)
 			a := app.NewDefault()
 			if aerr := a.SessionClose(cmd.Context(), host, session, 30*time.Second); aerr != nil {
+				audit.fail(aerr)
 				emitFailure("session.close", host, aerr)
 				return nil
 			}
+			audit.succeed("", session, nil)
 			if jsonFlag {
 				_ = output.Success("session.close", host, map[string]interface{}{"closed": true}).Write(os.Stdout)
 			} else {

@@ -23,6 +23,7 @@ Implemented:
 - `rhost fs ...` — file transfer: `put`, `get` (scp) and `sync` (rsync)
 - `rhost status <host>` — one read-only snapshot of system + managed state
 - `rhost watch <host>` — live-refreshing monitor (human view; owns no state)
+- `rhost audit` — read the local audit log of remote operations
 - `rhost version`
 
 If a command is not listed above, it does not exist yet.
@@ -287,3 +288,10 @@ Read `error.code` from the JSON envelope, never the message text:
 `rhost` can do exactly what the current OS user can do through the configured
 SSH identity, and no more. It does not store private keys or passwords, does not
 disable host-key verification, and does not elevate privileges.
+
+`rhost` keeps a local audit log of the remote operations it runs (exec, sessions,
+jobs, transfers, status) at `~/.local/state/rhost/audit.jsonl` — operations, not
+secrets: no environment maps, and `session send` records the key but never the
+injected data. Read it back with `rhost audit --json` (most recent 20 by default;
+`--limit 0` for all, `--host H` to filter). Set `RHOST_AUDIT=0` to turn it off.
+Auditing is fail-open: a write failure never blocks a remote operation.

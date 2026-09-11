@@ -49,5 +49,20 @@ Do not record full environment maps by default.
 
 Do not make audit logging a prerequisite for v0.1 execution if the design would make a full disk brick all remote work; choose and document fail-open/fail-closed behavior consciously.
 
+Status: implemented. `rhost` appends one Entry per audited remote operation to
+`$XDG_STATE_HOME/rhost/audit.jsonl` (default `~/.local/state/rhost/audit.jsonl`,
+overridable with `RHOST_STATE_DIR`), and `rhost audit [--json] [--limit N]
+[--host H]` reads it back.
+
+- **Fail-open**, chosen consciously: a write error is reported on stderr and the
+  operation proceeds, so a full or read-only disk cannot brick remote work.
+- Records operations, not secrets: no environment maps and no file contents, and
+  `session send` records the key but never the injected data.
+- Audited operations are the remote actions and snapshots — `exec`, `doctor`,
+  `status`, `session create/exec/send/close`, `job start/stop/kill`,
+  `fs put/get/sync`. List/read/log-poll commands and `watch` are not audited, so
+  the trail records actions rather than polling noise.
+- Turned off with `RHOST_AUDIT=0`.
+
 ---
 

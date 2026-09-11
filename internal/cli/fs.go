@@ -44,14 +44,17 @@ func newFsPutCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, local, remote := args[0], args[1], args[2]
+			audit := startAudit("fs.put", host)
 			a := app.NewDefault()
 			res, aerr := a.FsPut(cmd.Context(), app.FsPutOptions{
 				Host: host, LocalPath: local, Remote: remote, Timeout: timeout,
 			})
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("fs.put", host, aerr)
 				return nil
 			}
+			audit.succeed("", "put "+local+" -> "+remote, nil)
 			if jsonFlag {
 				_ = output.Success("fs.put", host, res).Write(os.Stdout)
 			} else {
@@ -72,14 +75,17 @@ func newFsGetCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, remote, local := args[0], args[1], args[2]
+			audit := startAudit("fs.get", host)
 			a := app.NewDefault()
 			res, aerr := a.FsGet(cmd.Context(), app.FsGetOptions{
 				Host: host, Remote: remote, LocalPath: local, Timeout: timeout,
 			})
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("fs.get", host, aerr)
 				return nil
 			}
+			audit.succeed("", "get "+remote+" -> "+local, nil)
 			if jsonFlag {
 				_ = output.Success("fs.get", host, res).Write(os.Stdout)
 			} else {
@@ -112,15 +118,25 @@ prune would be a disaster, and there is no flag that makes it safe.`,
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, local, remote := args[0], args[1], args[2]
+			audit := startAudit("fs.sync", host)
 			a := app.NewDefault()
 			res, aerr := a.FsSync(cmd.Context(), app.FsSyncOptions{
 				Host: host, LocalPath: local, Remote: remote,
 				Delete: doDelete, DryRun: dryRun, Excludes: excludes, Timeout: timeout,
 			})
 			if aerr != nil {
+				audit.fail(aerr)
 				emitFailure("fs.sync", host, aerr)
 				return nil
 			}
+			summary := "sync " + local + " -> " + remote
+			if doDelete {
+				summary += " --delete"
+			}
+			if dryRun {
+				summary += " --dry-run"
+			}
+			audit.succeed("", summary, nil)
 			if jsonFlag {
 				_ = output.Success("fs.sync", host, res).Write(os.Stdout)
 			} else {

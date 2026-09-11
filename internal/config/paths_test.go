@@ -106,3 +106,25 @@ func TestControlPathHonoursEnvOverrideInChildProcesses(t *testing.T) {
 		t.Errorf("ControlPath() = %q, want %q derived from RHOST_CACHE_DIR", got, want)
 	}
 }
+
+// StateDir anchors the audit log (§36): RHOST_STATE_DIR wins, else the XDG state
+// convention, else ~/.local/state — never the config dir.
+func TestStateDir(t *testing.T) {
+	t.Setenv("RHOST_STATE_DIR", "/tmp/rhost-state")
+	if got := StateDir(); got != "/tmp/rhost-state" {
+		t.Errorf("StateDir() = %q, want the RHOST_STATE_DIR override", got)
+	}
+
+	t.Setenv("RHOST_STATE_DIR", "")
+	t.Setenv("XDG_STATE_HOME", "/tmp/xdg-state")
+	if got, want := StateDir(), filepath.Join("/tmp/xdg-state", "rhost"); got != want {
+		t.Errorf("StateDir() = %q, want %q", got, want)
+	}
+
+	t.Setenv("XDG_STATE_HOME", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got, want := StateDir(), filepath.Join(home, ".local", "state", "rhost"); got != want {
+		t.Errorf("StateDir() = %q, want %q", got, want)
+	}
+}
