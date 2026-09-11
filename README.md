@@ -12,7 +12,8 @@ configuration and never duplicates SSH authentication or host-key policy.
 > `session` (including `recover`), `job`, `fs` (transfer, and the remote
 > read/write/patch/grep/glob helper), `tunnel`, `status`, `watch`, and a local
 > `audit` trail. Still open: config migration, release signing, and the daemon
-> evaluation (see
+> evaluation. Releases carry build-provenance attestations — provenance, not a
+> signature (see
 > [`docs/architecture/16-milestones.md`](docs/architecture/16-milestones.md) §49).
 > The verification runs the built binary as a
 > **separate process per step**, so "persistent" means it survived an actual CLI
@@ -35,6 +36,14 @@ failed check leaves an existing install untouched. `RHOST_INSTALL_DIR` moves the
 destination and `RHOST_VERSION` pins a version; without a pin it takes the newest
 stable release, or the newest release of any kind while every release is a
 prerelease.
+
+Every release artifact is also attested: the attestation names the workflow, the
+repository and the commit that produced the bytes, so a download can be checked
+back to its source.
+
+```bash
+gh attestation verify rhost_<version>_<os>_<arch> --repo starfield17/rhost
+```
 
 From source:
 
@@ -203,7 +212,11 @@ outlive the CLI would need a remote owner, and that is a later milestone.
 ## Development
 
 ```bash
-make check   # gofmt + vet + unit tests + portability scan
+make check   # gofmt + vet + unit tests + portability scan + release contract
+
+# The release artifacts, exactly as CI builds them (pass DATE=<timestamp> to
+# reproduce a published build byte for byte):
+make dist VERSION=0.1.0
 
 # Live tests are opt-in: name your own target, nothing is hardcoded.
 RHOST_TEST_HOST=<user>@<host> make test-live           # exec, timeout, doctor, transport reuse

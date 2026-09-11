@@ -246,9 +246,12 @@ machine, and both are now contract rather than caveat:
   attach path toggles echo on the pane's pty instead of sending `stty` as input.
 
 Still open: **config migration**, **release signing**, and the daemon evaluation.
-The installer's checksum path is implemented *and* exercised end to end:
-`scripts/install.sh` downloads a release asset plus its `.sha256`, verifies it,
-and replaces the binary atomically, and installs the newest release of any kind
-while every release is a prerelease.
+Release artifacts carry a build-provenance attestation — the workflow, repository
+and commit behind the bytes, verifiable with `gh attestation verify` — which is
+provenance and not a signature. The installer's checksum path is implemented *and*
+exercised end to end: `scripts/install.sh` downloads a release asset plus its
+`.sha256`, verifies it, and replaces the binary atomically, and installs the
+newest release of any kind while every release is a prerelease. The release
+pipeline that produces those artifacts is §38.
 
 ---

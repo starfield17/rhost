@@ -79,7 +79,7 @@ concepts in a generic adapter, no daemon until real usage justifies one
 ## 9. Verify before reporting
 
 ```bash
-make check                                                # gofmt + vet + tests + portability
+make check                                                # gofmt + vet + tests + portability + release contract
 RHOST_TEST_HOST=<user>@<host> make test-live              # exec + doctor
 RHOST_TEST_HOST=<user>@<host> make test-live-session      # sessions
 RHOST_TEST_HOST=<user>@<host> make test-live-all          # every live suite

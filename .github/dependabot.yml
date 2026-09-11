@@ -1,0 +1,13 @@
+# Every action in the workflows is pinned to a commit SHA, so this is what moves
+# the pins: one grouped pull request per week, reviewed like any other change.
+# The Go module graph is not managed here.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
