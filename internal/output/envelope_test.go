@@ -99,25 +99,10 @@ func TestTaxonomyMatchesSchema(t *testing.T) {
 	}
 	declared := schema.Properties.Error.OneOf[1].Properties.Code.Enum
 
-	want := []string{
-		string(errs.UsageError),
-		string(errs.ConfigInvalid),
-		string(errs.HostUnknown),
-		string(errs.SSHUnreachable),
-		string(errs.SSHAuthFailed),
-		string(errs.HostKeyFailed),
-		string(errs.RemoteDependencyMissing),
-		string(errs.RemoteCommandTimeout),
-		string(errs.SessionNotFound),
-		string(errs.SessionUnhealthy),
-		string(errs.JobNotFound),
-		string(errs.JobStateUnknown),
-		string(errs.TransferFailed),
-		string(errs.SyncRejected),
-		string(errs.UnsupportedRemoteOS),
-		string(errs.Internal),
-	}
-	sort.Strings(want)
+	// errs.Codes() is the single source of truth for the taxonomy, already sorted;
+	// the constants are declared next to their meaning instead of being re-listed
+	// here.
+	want := errs.Codes()
 	got := append([]string{}, declared...)
 	sort.Strings(got)
 

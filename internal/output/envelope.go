@@ -44,6 +44,19 @@ func Success(operation, host string, data interface{}) Envelope {
 	}
 }
 
+// ErrorOf renders one adapter error as the envelope's error object.
+//
+// It is exported because a command whose *aggregate* outcome is a success can
+// still contain failed items — exec-many and fs batch report per-target results
+// inside one document — and each of those needs the same machine-readable shape
+// (AGENTS.md §6: an agent branches on error.code, never on text).
+func ErrorOf(err *errs.Error) *ErrorPayload {
+	if err == nil {
+		return nil
+	}
+	return &ErrorPayload{Code: string(err.Code), Message: err.Message, Retryable: err.Retryable}
+}
+
 // Failure builds a failed envelope. data may be nil, or may carry partial
 // information (for example partial stdout on a timeout).
 func Failure(operation, host string, data interface{}, err *errs.Error) Envelope {
@@ -53,11 +66,7 @@ func Failure(operation, host string, data interface{}, err *errs.Error) Envelope
 		OK:            false,
 		Host:          host,
 		Data:          data,
-		Error: &ErrorPayload{
-			Code:      string(err.Code),
-			Message:   err.Message,
-			Retryable: err.Retryable,
-		},
+		Error:         ErrorOf(err),
 	}
 }
 

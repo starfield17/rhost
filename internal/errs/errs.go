@@ -5,7 +5,10 @@
 // codes deliberately.
 package errs
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // Code identifies a class of adapter failure. It matches the candidate
 // taxonomy in docs/ARCHITECTURE.md §33.
@@ -30,7 +33,54 @@ const (
 	SyncRejected            Code = "SYNC_REJECTED"
 	UnsupportedRemoteOS     Code = "UNSUPPORTED_REMOTE_OS"
 	Internal                Code = "INTERNAL"
+	FileConflict            Code = "FILE_CONFLICT"
+	FileTooLarge            Code = "FILE_TOO_LARGE"
+	InvalidText             Code = "INVALID_TEXT"
+	SearchFailed            Code = "SEARCH_FAILED"
+	TunnelFailed            Code = "TUNNEL_FAILED"
+	// Codes owned by the remote file helper (internal/fileops/remote.py). They
+	// describe what the helper refused, because only the remote side can tell
+	// whether a path exists or a content hash still matches.
+	FileNotFound  Code = "FILE_NOT_FOUND"
+	InvalidTarget Code = "INVALID_TARGET"
+	InvalidPatch  Code = "INVALID_PATCH"
+	// TunnelNotFound names a record this machine no longer has.
+	TunnelNotFound Code = "TUNNEL_NOT_FOUND"
 )
+
+// allCodes is the closed set an agent may branch on. Anything outside it is
+// reported as INTERNAL: a code is a contract, and a string that arrives over the
+// wire from another machine does not get to create one (AGENTS.md §6). The
+// schema test compares this list with schemas/result-v1.schema.json.
+var allCodes = []Code{
+	UsageError, ConfigInvalid, HostUnknown, SSHUnreachable, SSHAuthFailed,
+	HostKeyFailed, RemoteDependencyMissing, RemoteCommandTimeout, SessionNotFound,
+	SessionUnhealthy, JobNotFound, JobStateUnknown, TransferFailed, SyncRejected,
+	UnsupportedRemoteOS, Internal, FileConflict, FileTooLarge, InvalidText,
+	SearchFailed, TunnelFailed, FileNotFound, InvalidTarget, InvalidPatch,
+	TunnelNotFound,
+}
+
+var codeSet = func() map[Code]bool {
+	m := make(map[Code]bool, len(allCodes))
+	for _, c := range allCodes {
+		m[c] = true
+	}
+	return m
+}()
+
+// Codes returns every published code, sorted, for contract checks.
+func Codes() []string {
+	out := make([]string, 0, len(allCodes))
+	for _, c := range allCodes {
+		out = append(out, string(c))
+	}
+	sort.Strings(out)
+	return out
+}
+
+// KnownCode reports whether s is part of the published taxonomy.
+func KnownCode(s string) bool { return codeSet[Code(s)] }
 
 // Error is an adapter failure with a stable code. It is the only error type the
 // application layer returns across the CLI boundary.
