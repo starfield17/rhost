@@ -3,23 +3,21 @@
 These run the helper exactly as the remote host runs it — one JSON request on
 stdin, one JSON response on stdout — so the shapes asserted here are the shapes
 `rhost fs read/grep/glob/write/patch` return. They are driven from Go
-(remote_helper_test.go) as part of `make test`, and skipped when this machine has
-no usable python3, because a skipped suite is honest and a silently missing one
-is not.
+(remote_helper_test.go) as part of `make test`. Python 3 and ripgrep are explicit
+test dependencies; a missing dependency fails the suite rather than silently
+reducing it.
 """
 import base64
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 
 HERE = Path(__file__).with_name('remote.py')
-HAS_RG = shutil.which('rg') is not None
 
 
 class RemoteFilesTest(unittest.TestCase):
@@ -201,7 +199,6 @@ class RemoteFilesTest(unittest.TestCase):
 
     # --- search ----------------------------------------------------------
 
-    @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
     def test_grep_rows_are_normalized(self):
         tree = self.root / 'tree'
         (tree / 'sub').mkdir(parents=True)
@@ -235,7 +232,6 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertEqual(len(forced), 3)
         self.assertIn({'path': 'ignored.go'}, forced)
 
-    @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
     def test_search_pagination_and_budget(self):
         tree = self.root / 'tree'
         tree.mkdir()
@@ -262,7 +258,6 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertEqual(tiny['results'], [])
         self.assertGreater(tiny['next'], 0)
 
-    @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
     def test_long_match_line_is_clipped_not_dropped(self):
         tree = self.root / 'tree'
         tree.mkdir()
@@ -274,7 +269,6 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertTrue(rows[0]['text'].startswith('TODO '))
         self.assertLessEqual(len(json.dumps(result['results']).encode()), 2048)
 
-    @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
     def test_no_match_is_an_empty_success(self):
         tree = self.root / 'tree'
         tree.mkdir()
@@ -285,7 +279,6 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertFalse(result['truncated'])
         self.assertEqual(result['next'], 0)
 
-    @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
     def test_glob_and_hidden_files(self):
         tree = self.root / 'tree'
         (tree / 'nested').mkdir(parents=True)
@@ -309,7 +302,6 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertEqual(self.code(op='grep', path=str(self.root), pattern='x', mode='bogus'),
                          'CONFIG_INVALID')
 
-    @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
     def test_search_missing_root_is_a_path_error(self):
         self.assertEqual(self.code(op='grep', path=str(self.root / 'missing'), pattern='x'),
                          'FILE_NOT_FOUND')

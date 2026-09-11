@@ -232,8 +232,8 @@ Live tests build `rhost` and invoke it as a **separate process per step**: state
 that is promised to outlive the CLI is only proven by exiting and restarting it.
 The embedded remote helper (`internal/fileops/remote.py`) has its own suite
 (`remote_test.py`), run from `make test` through a Go wrapper so it cannot drift
-quietly. Python 3 is a mandatory local test dependency; its absence fails the
-gate instead of silently reducing coverage.
+quietly. Python 3 and ripgrep are mandatory local test dependencies; either
+absence fails the gate instead of silently reducing coverage.
 The target host is only ever an environment variable at invocation — never a
 default, and never written into a file (`AGENTS.md` §1).
 

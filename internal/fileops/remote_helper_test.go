@@ -15,9 +15,10 @@ import (
 // here and in the CLI. That is the point: the shapes asserted there are the
 // shapes an agent reads under `--json` (AGENTS.md §6).
 //
-// Set RHOST_PYTHON to name a specific interpreter. Without any python3 this
-// suite is skipped *by name*, so `go test -v` reports the gap instead of hiding
-// it; the live SSH suite (internal/app) still covers the real remote path.
+// Set RHOST_PYTHON to name a specific interpreter. Python 3 and ripgrep are
+// mandatory local test dependencies: either missing tool fails the gate rather
+// than quietly reducing the helper suite. The live SSH suite (internal/app)
+// still covers the real remote path.
 func TestEmbeddedRemoteHelperSuite(t *testing.T) {
 	python := os.Getenv("RHOST_PYTHON")
 	if python == "" {
@@ -26,6 +27,9 @@ func TestEmbeddedRemoteHelperSuite(t *testing.T) {
 	path, err := exec.LookPath(python)
 	if err != nil {
 		t.Fatalf("no %s on PATH: remote_test.py (the embedded helper's own suite) is mandatory", python)
+	}
+	if _, err := exec.LookPath("rg"); err != nil {
+		t.Fatalf("no rg on PATH: remote.py search tests are mandatory")
 	}
 	cmd := exec.Command(path, "-m", "unittest", "discover", "-s", ".", "-p", "remote_test.py")
 	out, err := cmd.CombinedOutput()
