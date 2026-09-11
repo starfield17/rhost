@@ -238,3 +238,22 @@ func TestNoCommandAtAllIsAUsageError(t *testing.T) {
 		t.Errorf("help exit = %d, want 0", exitCode)
 	}
 }
+
+func TestSessionAttachRejectsJSONBeforeSSH(t *testing.T) {
+	t.Cleanup(saveGlobals())
+	os.Args = []string{"rhost", "--json", "session", "attach", "example-host", "dev"}
+	out := captureStdout(t, func() { Run() })
+
+	var doc struct {
+		OK    bool `json:"ok"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+		t.Fatalf("attach --json must emit one envelope: %v\n%q", err, out)
+	}
+	if doc.OK || doc.Error.Code != "USAGE_ERROR" {
+		t.Errorf("attach --json = %s, want USAGE_ERROR", out)
+	}
+}

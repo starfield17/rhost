@@ -133,6 +133,19 @@ class RemoteFilesTest(unittest.TestCase):
                                    content=base64.b64encode(b'x').decode()), 'CONFIG_INVALID')
         self.assertFalse((self.root / 'bad').exists())
 
+        for invalid in (-1, '10000', True, 644):
+            target = self.root / ('bad-mode-' + str(invalid))
+            self.assertEqual(self.code(op='write', path=str(target), file_mode=invalid,
+                                       content=base64.b64encode(b'x').decode()),
+                             'CONFIG_INVALID')
+            self.assertFalse(target.exists())
+
+    def test_write_missing_parent_is_a_path_error(self):
+        path = self.root / 'missing' / 'file'
+        self.assertEqual(self.code(op='write', path=str(path),
+                                   content=base64.b64encode(b'x').decode()),
+                         'FILE_NOT_FOUND')
+
     def test_write_requires_creation_or_hash(self):
         path = self.root / 'text'
         path.write_text('one\ntwo\n')
@@ -157,6 +170,24 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertEqual(self.code(op='patch', path=str(link), if_hash=hash_value, edits=[]),
                          'INVALID_TARGET')
         self.assertEqual(path.read_bytes(), original)
+
+    def test_patch_schema_is_strict(self):
+        path = self.root / 'text'
+        path.write_text('one\ntwo\n')
+        hash_value = hashlib.sha256(path.read_bytes()).hexdigest()
+        bad_edits = [
+            [{'end': 1, 'text': 'x'}],
+            [{'start': 1, 'text': 'x'}],
+            [{'start': 1, 'end': 1}],
+            [{'start': 1.0, 'end': 1, 'text': 'x'}],
+            [{'start': True, 'end': 1, 'text': 'x'}],
+            [{'start': '1', 'end': 1, 'text': 'x'}],
+            [{'start': 1, 'end': 1, 'text': 7}],
+        ]
+        for edits in bad_edits:
+            self.assertEqual(self.code(op='patch', path=str(path), if_hash=hash_value,
+                                       edits=edits), 'INVALID_PATCH', edits)
+        self.assertEqual(path.read_text(), 'one\ntwo\n')
 
     def test_patch_applies_bottom_up(self):
         path = self.root / 'text'
@@ -224,6 +255,13 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertGreater(len(tight['results']), 0)
         self.assertLessEqual(sum(len(json.dumps(r)) for r in tight['results']), 200)
 
+        # A row larger than the page budget is consumed and advances the cursor.
+        # Returning the same offset would make every retry repeat forever.
+        tiny = self.request(op='grep', path=str(tree), pattern='hit', max_bytes=1, limit=60)
+        self.assertTrue(tiny['truncated'])
+        self.assertEqual(tiny['results'], [])
+        self.assertGreater(tiny['next'], 0)
+
     @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
     def test_long_match_line_is_clipped_not_dropped(self):
         tree = self.root / 'tree'
@@ -270,6 +308,11 @@ class RemoteFilesTest(unittest.TestCase):
         # caller's own mistake and must not be reported as a missing dependency.
         self.assertEqual(self.code(op='grep', path=str(self.root), pattern='x', mode='bogus'),
                          'CONFIG_INVALID')
+
+    @unittest.skipUnless(HAS_RG, 'rg is not installed on this machine')
+    def test_search_missing_root_is_a_path_error(self):
+        self.assertEqual(self.code(op='grep', path=str(self.root / 'missing'), pattern='x'),
+                         'FILE_NOT_FOUND')
 
     # --- destructive-sync destination check ------------------------------
 

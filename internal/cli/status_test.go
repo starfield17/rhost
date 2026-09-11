@@ -31,7 +31,7 @@ func TestRenderStatusHuman(t *testing.T) {
 			}},
 		},
 		Accelerators: []status.Accelerator{{
-			Vendor: "nvidia", Type: "gpu", Name: "NVIDIA GeForce RTX 4060",
+				Vendor: "nvidia", Type: "gpu", Name: "Generic Compute GPU",
 			UtilizationPercent: ptrVal(93.0),
 			MemoryUsedBytes:    ptrVal(uint64(6 << 30)), MemoryTotalBytes: ptrVal(uint64(8 << 30)),
 			TemperatureC: ptrVal(66.0),
@@ -56,7 +56,7 @@ func TestRenderStatusHuman(t *testing.T) {
 		"40.0", // disk line shows a size, proving the disk rendered
 		"Disk /",
 		"(40%)",
-		"NVIDIA GeForce RTX 4060",
+			"Generic Compute GPU",
 		"util 93%",
 		"66°C",
 		"dbg",

@@ -46,7 +46,8 @@ mem_total_kb=32768000
 mem_available_kb=11468800
 disk=/dev/sda1	950000000	380000000	570000000	40%	/
 disk=/dev/sdb1	1000000	500000	500000	50%	/home/dev
-gpu=0	NVIDIA GeForce RTX 4060	93	6340	8188	66
+accelerators_probe=ok
+gpu=0	Generic Compute GPU	93	6340	8188	66
 `
 
 func TestParseProbeFull(t *testing.T) {
@@ -93,7 +94,7 @@ func TestParseProbeFull(t *testing.T) {
 		t.Fatalf("accelerators = %d, want 1", len(s.Accelerators))
 	}
 	g := s.Accelerators[0]
-	if g.Vendor != "nvidia" || g.Type != "gpu" || g.Name != "NVIDIA GeForce RTX 4060" {
+	if g.Vendor != "nvidia" || g.Type != "gpu" || g.Name != "Generic Compute GPU" {
 		t.Errorf("gpu identity = %+v", g)
 	}
 	if *g.UtilizationPercent != 93 || *g.TemperatureC != 66 {
@@ -141,7 +142,8 @@ disk=/dev/sdc	2000	1000	1000	50%	/
 func TestParseProbeNAFields(t *testing.T) {
 	s := mustParse(t, `rhost_probe_version=1
 platform=linux
-gpu=0	NVIDIA GeForce RTX 4060	[N/A]	[N/A]	8188	[N/A]
+accelerators_probe=ok
+gpu=0	Generic Compute GPU	[N/A]	[N/A]	8188	[N/A]
 `)
 	g := s.Accelerators[0]
 	if g.UtilizationPercent != nil || g.MemoryUsedBytes != nil || g.TemperatureC != nil {
@@ -149,6 +151,29 @@ gpu=0	NVIDIA GeForce RTX 4060	[N/A]	[N/A]	8188	[N/A]
 	}
 	if g.MemoryTotalBytes == nil || *g.MemoryTotalBytes != 8188*1024*1024 {
 		t.Errorf("the reported field must survive: %+v", g)
+	}
+}
+
+func TestParseProbeMalformedMetricsAreUnavailable(t *testing.T) {
+	s := mustParse(t, `rhost_probe_version=1
+uptime_seconds=not-a-number
+load1=not-a-number
+cpu_count=not-a-number
+cpu_percent=not-a-number
+mem_total_kb=not-a-number
+disk=/dev/example	bad	bad	bad	bad	/
+accelerators_probe=failed
+`)
+	want := map[string]bool{
+		"uptime": true, "load": true, "cpu_count": true,
+		"cpu_percent": true, "memory": true, "disk": true,
+		"accelerators": true,
+	}
+	for _, name := range s.Unavailable {
+		delete(want, name)
+	}
+	if len(want) != 0 {
+		t.Errorf("unavailable = %v, missing %v", s.Unavailable, want)
 	}
 }
 

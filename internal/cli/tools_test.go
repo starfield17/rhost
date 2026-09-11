@@ -160,6 +160,7 @@ func TestHelperUsageErrorBounds(t *testing.T) {
 		{op: "grep", maxBytes: 10, limit: 0},
 		{op: "grep", maxBytes: 10, offset: -1},
 		{op: "grep", maxBytes: 10, limit: 1, context: -1},
+		{op: "grep", maxBytes: maxRemoteHelperBytes + 1, limit: 1},
 	} {
 		if e := helperUsageError(tc.op, tc.maxBytes, tc.start, tc.lines, tc.limit, tc.offset, tc.context); e == nil {
 			t.Errorf("%+v accepted a bound the remote helper would refuse", tc)
@@ -171,6 +172,24 @@ func TestHelperUsageErrorBounds(t *testing.T) {
 	// write and patch carry no paging bounds at all.
 	if e := helperUsageError("write", 100, 0, 0, 0, 0, 0); e != nil {
 		t.Errorf("valid write rejected: %v", e)
+	}
+}
+
+func TestTunnelOpenValidationIsConfigurationError(t *testing.T) {
+	for _, tc := range []struct {
+		kind, listen, destination string
+		expose                    bool
+	}{
+		{kind: "dynamic", listen: "localhost:1080"},
+		{kind: "local", listen: "localhost", destination: "localhost:8000"},
+		{kind: "local", listen: "localhost:8080"},
+		{kind: "socks", listen: "localhost:1080", destination: "localhost:8000"},
+		{kind: "local", listen: ":8080", destination: "localhost:8000"},
+	} {
+		e := validateTunnelOpen(tc.kind, tc.listen, tc.destination, tc.expose)
+		if e == nil || e.Code != errs.ConfigInvalid || e.Retryable {
+			t.Errorf("validateTunnelOpen(%+v) = %v, want non-retryable CONFIG_INVALID", tc, e)
+		}
 	}
 }
 

@@ -25,7 +25,7 @@ func TestEmbeddedRemoteHelperSuite(t *testing.T) {
 	}
 	path, err := exec.LookPath(python)
 	if err != nil {
-		t.Skipf("no %s on PATH: remote_test.py (the embedded helper's own suite) did not run", python)
+		t.Fatalf("no %s on PATH: remote_test.py (the embedded helper's own suite) is mandatory", python)
 	}
 	cmd := exec.Command(path, "-m", "unittest", "discover", "-s", ".", "-p", "remote_test.py")
 	out, err := cmd.CombinedOutput()

@@ -244,8 +244,11 @@ func TestSignalScriptGroupKill(t *testing.T) {
 	// The stopped marker and the signal itself are gated on a *verified* process
 	// identity: a live pid that cannot be tied to the job may belong to anything,
 	// and signalling it is the one unrecoverable mistake this backend can make.
-	if !strings.Contains(s, "if [ \"$alive\" = yes ] && [ \"$identity\" = verified ]; then\n: > \"$DIR/stopped\"") {
-		t.Errorf("SignalScript must gate the stopped marker and the signal on verified identity: %s", s)
+	gate := strings.Index(s, "if [ \"$alive\" = yes ] && [ \"$identity\" = verified ]; then")
+	deliver := strings.Index(s, "&& signalled=yes")
+	marker := strings.Index(s, ": > \"$DIR/stopped\"")
+	if gate < 0 || deliver < 0 || marker < 0 || !(gate < deliver && deliver < marker) {
+		t.Errorf("SignalScript must write stopped only after successful signal delivery: %d %d %d\n%s", gate, deliver, marker, s)
 	}
 	// Whether a signal was actually delivered is reported, not assumed: the
 	// caller must be able to tell a refused stop from a delivered one.
