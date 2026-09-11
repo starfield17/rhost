@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"strconv"
@@ -209,6 +210,64 @@ func TestLiveSessionSendRawInput(t *testing.T) {
 			t.Fatal("injected input never produced output in the session log")
 		}
 		time.Sleep(2 * time.Second)
+	}
+}
+
+// TestLiveSessionBusyRefusesExec is the §16 contract on a real pane: once a
+// program owns the terminal, `session exec` refuses with SESSION_BUSY instead of
+// pasting a managed command into that program, `session send` stays the raw path,
+// and `session recover` is what brings the shell back.
+func TestLiveSessionBusyRefusesExec(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+	const name = "livebusy"
+
+	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
+	defer c.run(t, "--json", "session", "close", host, name)
+
+	// Occupy the pane with a program that reads the terminal: the exact shape that
+	// used to swallow the next exec's probe and payload.
+	c.mustJSON(t, "--json", "session", "send", host, name, "--data", "cat\n")
+
+	// The program starts asynchronously, so the refusal is what we wait for: a
+	// successful exec before `cat` takes over is not a failure of the check.
+	deadline := time.Now().Add(20 * time.Second)
+	var busy envelope
+	for {
+		stdout, stderr, exit := c.run(t, "--json", "session", "exec", host, name, "--", "echo must-not-run")
+		var env envelope
+		if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &env); err == nil && !env.OK {
+			if env.Error == nil || env.Error.Code != string(errs.SessionBusy) {
+				t.Fatalf("exec on a busy pane: error = %+v, want SESSION_BUSY\nstdout=%q stderr=%q exit=%d",
+					env.Error, stdout, stderr, exit)
+			}
+			if !env.Error.Retryable {
+				t.Errorf("SESSION_BUSY must be retryable (the caller can interrupt the program)")
+			}
+			busy = env
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the pane never became busy with `cat`; last exec said %q", stdout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if msg := busy.Error.Message; !strings.Contains(msg, "cat") {
+		t.Errorf("SESSION_BUSY must name what owns the pane, got %q", msg)
+	}
+	// The refused command must not have run: its output cannot be in the log.
+	if got := c.mustJSON(t, "--json", "session", "read", host, name, "--since", "0").str(t, "data"); strings.Contains(got, "must-not-run") {
+		t.Errorf("a refused exec ran anyway: %q", got)
+	}
+
+	// recover interrupts the program and proves the shell answers again.
+	recovered := c.mustJSON(t, "--json", "session", "recover", host, name)
+	if !recovered.bool(t, "session_preserved") {
+		t.Fatal("session recover did not bring the shell back")
+	}
+	after := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo back-ok")
+	if got := strings.TrimSpace(after.str(t, "output")); got != "back-ok" {
+		t.Errorf("exec after recover = %q, want back-ok", got)
 	}
 }
 

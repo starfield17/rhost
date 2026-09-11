@@ -34,8 +34,10 @@ is holding a session, not a read-only health check. The session itself is never
 recreated, so its working directory, environment and history survive — or the
 result says they did not.
 
-Read data.session_preserved. A false means the shell did not answer, and the next
-step is ` + "`session read`" + ` or ` + "`session close`" + `, not another blind command.`,
+Read data.session_preserved. A false means the shell did not answer: the pane is
+still owned by whatever was running, the result carries SESSION_BUSY rather than
+waiting out a timeout, and the next step is ` + "`session read`" + ` — to see what
+it is doing — or ` + "`session close`" + `, not another blind command.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(c *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
@@ -49,7 +51,18 @@ step is ` + "`session read`" + ` or ` + "`session close`" + `, not another blind
 			}
 			audit.succeed("", "key C-c", nil)
 
-			res, aerr := a.SessionExec(c.Context(), host, session, ":", timeout)
+			// Ctrl-C reaches the program first and the prompt follows, so the pane
+			// can still look busy for a moment after a successful interrupt. A busy
+			// refusal is retried briefly; anything else is reported as it is.
+			var res app.SessionExecResult
+			var aerr *errs.Error
+			for attempt := 0; attempt < 4; attempt++ {
+				res, aerr = a.SessionExec(c.Context(), host, session, ":", timeout)
+				if aerr == nil || aerr.Code != errs.SessionBusy {
+					break
+				}
+				time.Sleep(250 * time.Millisecond)
+			}
 			preserved := aerr == nil && res.SessionPreserved
 			if aerr == nil && !preserved {
 				// The probe command ran and never came back with a shell prompt:

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/starfield17/rhost/internal/app"
+	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/output"
 )
 
@@ -17,7 +18,13 @@ func newSessionCmd() *cobra.Command {
 remote tmux, so it survives the CLI process and SSH disconnects.
 
 Use a session only when cwd, environment, or interactive terminal state must
-persist across calls. For ordinary commands, prefer `+"`rhost exec`"+`.`)
+persist across calls. For ordinary commands, prefer `+"`rhost exec`"+`.
+
+`+"`session exec`"+` runs a command in the managed shell, and refuses with
+SESSION_BUSY when a program — a REPL, a debugger, an editor — owns the pane,
+because pasting a command into that program is not what the caller asked for.
+`+"`session send`"+` is the raw terminal path for exactly that case, and
+`+"`session recover`"+` is how a stuck pane is interrupted.`)
 	cmd.AddCommand(
 		newSessionCreateCmd(),
 		newSessionListCmd(),
@@ -122,11 +129,18 @@ func newSessionExecCmd() *cobra.Command {
 					_ = output.Failure("session.exec", host, sessionExecData(res), aerr).Write(os.Stdout)
 					exitCode = adapterExitCode(aerr)
 				} else {
-					sp := "not usable"
-					if res.SessionPreserved {
-						sp = "usable again"
+					fmt.Fprintf(os.Stderr, "rhost: %s: %s", aerr.Code, aerr.Message)
+					// Only a timeout needs the extra sentence, because only a timeout
+					// leaves the question "is the pane free again?". A refusal like
+					// SESSION_BUSY is not a damaged session: something is running in it.
+					if aerr.Code == errs.RemoteCommandTimeout {
+						sp := "still busy"
+						if res.SessionPreserved {
+							sp = "usable again"
+						}
+						fmt.Fprintf(os.Stderr, " (session is %s)", sp)
 					}
-					fmt.Fprintf(os.Stderr, "rhost: %s: %s (session is %s)\n", aerr.Code, aerr.Message, sp)
+					fmt.Fprintln(os.Stderr)
 					exitCode = adapterExitCode(aerr)
 				}
 				return nil

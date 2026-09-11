@@ -97,6 +97,13 @@ func mapHelperErr(code string) *errs.Error {
 		return errs.New(errs.RemoteCommandTimeout, "command exceeded timeout in session", true)
 	case "locked":
 		return errs.New(errs.SessionUnhealthy, "session is busy (another writer holds the lock)", true)
+	case "busy":
+		return errs.New(errs.SessionBusy,
+			"session foreground is not the managed shell; use session send/read, or session recover", true)
+	case "unknownfg":
+		return errs.New(errs.SessionUnhealthy, "could not read the pane's foreground command", true)
+	case "notty":
+		return errs.New(errs.SessionUnhealthy, "could not open the pane's terminal", true)
 	case "notready":
 		return errs.New(errs.SessionUnhealthy, "session shell did not become ready", true)
 	case "notmux":
@@ -206,7 +213,7 @@ func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, t
 			SessionID:        nameOrID,
 			TimedOut:         oc.Err == "timeout",
 			SessionPreserved: oc.Recovered,
-		}, mapHelperErr(oc.Err)
+		}, mapSessionExecErr(oc)
 	}
 	return SessionExecResult{
 		SessionID:        nameOrID,
@@ -214,6 +221,22 @@ func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, t
 		Output:           shell.StripANSI(oc.Output),
 		ExitCode:         oc.ExitCode,
 	}, nil
+}
+
+// mapSessionExecErr turns an exec helper failure into the taxonomy. `busy` is the
+// one case that carries detail worth keeping: the caller has to know *what* owns
+// the pane, because the next step is to drive that program (session send/read) or
+// to interrupt it (session recover) — never to retry the same paste.
+func mapSessionExecErr(oc tmux.ExecOutcome) *errs.Error {
+	if oc.Err != "busy" {
+		return mapHelperErr(oc.Err)
+	}
+	what := oc.Foreground
+	if what == "" {
+		what = "another program"
+	}
+	return errs.New(errs.SessionBusy,
+		"session foreground is "+what+", not the managed shell; use session send/read, or session recover", true)
 }
 
 // SessionSend injects raw data or a single key into a session.

@@ -25,6 +25,13 @@ func TestParseExec(t *testing.T) {
 		t.Errorf("err = %q, want timeout", tout.Err)
 	}
 
+	// The refusal of a pane owned by another program names that program, because
+	// the caller's next move depends on what it is.
+	busy := ParseExec("RHOST_FG=python3\nRHOST_ERR=busy\n")
+	if busy.Err != "busy" || busy.Foreground != "python3" {
+		t.Errorf("busy refusal = %+v, want err=busy foreground=python3", busy)
+	}
+
 	// A command that outlived its deadline is interrupted, and the helper answers
 	// with whether the pane actually came back. "timed out" and "timed out but the
 	// session is usable" are different instructions to a caller, so the two states
@@ -209,6 +216,72 @@ func TestListAndSendPreflight(t *testing.T) {
 	}
 	if s := SendScript("dev", "data", "x"); !contains(s, "RHOST_ERR=notmux") {
 		t.Errorf("SendScript missing tmux preflight")
+	}
+	if s := EchoScript("dev", true); !contains(s, "RHOST_ERR=notmux") {
+		t.Errorf("EchoScript missing tmux preflight")
+	}
+}
+
+// TestExecScriptRefusesWhenPaneIsBusy is the §16 guard: a command is pasted into
+// the terminal, so the terminal must belong to the managed shell. The check has
+// to come *before* the first byte is sent — the stty probe is itself input — and
+// it has to fail with its own code rather than degrade into a timeout.
+func TestExecScriptRefusesWhenPaneIsBusy(t *testing.T) {
+	s := ExecScript("dev", "echo hi", 5*time.Second)
+	for _, want := range []string{
+		`want=$(RHOST_SHELL_OF "$DIR/meta.json"`,
+		`#{pane_current_command}`,
+		`echo "RHOST_FG=$fg"`,
+		"RHOST_ERR=busy",
+		"RHOST_ERR=unknownfg",
+		// The metadata carries the shell the session was created with.
+		`"shell"`,
+	} {
+		if !contains(s, want) {
+			t.Errorf("ExecScript missing the foreground check (%q):\n%s", want, s)
+		}
+	}
+	gate := indexOf(s, "RHOST_ERR=busy")
+	probe := indexOf(s, `send-keys -t "$TMUX:0.0" 'stty -echo`)
+	paste := indexOf(s, "tmux paste-buffer -b rhost_cmd")
+	if gate < 0 || probe < 0 || paste < 0 {
+		t.Fatalf("ExecScript has no foreground-check/probe/paste sequence: %d %d %d", gate, probe, paste)
+	}
+	if !(gate < probe && gate < paste) {
+		t.Errorf("ExecScript must check the foreground before typing anything: %d %d %d", gate, probe, paste)
+	}
+	// The lock is taken before the check, so two writers cannot both inspect the
+	// pane and then both paste.
+	lock := indexOf(s, "flock -w 30 9")
+	if lock < 0 || lock > gate {
+		t.Errorf("ExecScript must hold the writer lock before checking the pane: %d %d", lock, gate)
+	}
+}
+
+// TestEchoScriptSetsThePaneTTY pins the fix for the attach path: echo is a
+// property of the pane's pty, so it is set on that pty. Typing `stty …` into the
+// pane would deliver the keystrokes to whatever owns the foreground — the bug
+// this replaced — and would fail to change the terminal at all when the shell is
+// not the foreground process.
+func TestEchoScriptSetsThePaneTTY(t *testing.T) {
+	on := EchoScript("dev", true)
+	off := EchoScript("dev", false)
+	for _, s := range []string{on, off} {
+		if contains(s, "send-keys") {
+			t.Errorf("EchoScript must not type into the pane:\n%s", s)
+		}
+		if !contains(s, `#{pane_tty}`) || !contains(s, ` < "$TTY"`) {
+			t.Errorf("EchoScript must set the flag on the pane's tty:\n%s", s)
+		}
+		if !contains(s, "RHOST_ERR=notty") {
+			t.Errorf("EchoScript must report a missing tty with its own code:\n%s", s)
+		}
+	}
+	if !contains(on, `stty echo < "$TTY"`) {
+		t.Errorf("echo on must set the flag:\n%s", on)
+	}
+	if !contains(off, `stty -echo < "$TTY"`) || contains(off, `stty echo < "$TTY"`) {
+		t.Errorf("echo off must clear the flag and only the flag:\n%s", off)
 	}
 }
 

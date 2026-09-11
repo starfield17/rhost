@@ -101,6 +101,14 @@ const resolveFunc = `RHOST_RESOLVE() {
 }
 `
 
+// shellOfFunc reads the managed shell out of a session's metadata, so the
+// foreground check compares against what this session was actually created with
+// rather than against a hardcoded name.
+const shellOfFunc = `RHOST_SHELL_OF() {
+  sed -n 's/.*"shell"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1"
+}
+`
+
 func b64(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
 
 // integrationScript configures the pane's interactive bash. It is injected once
@@ -217,6 +225,13 @@ const markerScanFunc = `rh_window() {
 // offset, pastes the command, then waits for the next OSC 133 D marker. On its
 // own timeout it sends Ctrl-C (keeping the session usable) and prints
 // RHOST_ERR=timeout.
+//
+// Before any of that it refuses to run at all unless the pane's foreground
+// process is the managed shell: a command is pasted into the terminal, and a
+// terminal owned by a REPL or a debugger would execute it in the wrong place.
+// The refusal is its own code (busy, with the foreground command in RHOST_FG)
+// because it is not a failure of the session — it is the caller asking the wrong
+// tool for the job.
 func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	cmdB64 := b64(command)
 	timeoutSec := int(timeout / time.Second)
@@ -237,6 +252,19 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	b.WriteString("exec 9>\"$LOCK\" || { echo RHOST_ERR=nosession; exit 0; }\n")
 	b.WriteString("flock -w 30 9 || { echo RHOST_ERR=locked; exit 0; }\n")
 	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
+
+	// Everything below types into the pane's terminal. That is only safe while
+	// the managed shell owns the foreground: after `session send --data 'python\n'`
+	// the pane is a REPL, and a pasted command (or the stty probe) would be read
+	// by *it*, not by a shell (docs/ARCHITECTURE.md §16). So exec fails closed and
+	// names what it found, leaving `session send`/`session read` as the honest way
+	// to drive a program, and `session recover` as the explicit repair path.
+	b.WriteString(shellOfFunc)
+	b.WriteString("want=$(RHOST_SHELL_OF \"$DIR/meta.json\" 2>/dev/null)\n")
+	b.WriteString("[ -n \"$want\" ] || want=" + shell.Quote(DefaultShell) + "\n")
+	b.WriteString("fg=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_current_command}' 2>/dev/null)\n")
+	b.WriteString("if [ -z \"$fg\" ]; then echo RHOST_ERR=unknownfg; exit 0; fi\n")
+	b.WriteString("if [ \"$fg\" != \"$want\" ]; then echo \"RHOST_FG=$fg\"; echo RHOST_ERR=busy; exit 0; fi\n")
 
 	// The D marker is an OSC 133 sequence terminated by BEL. `dpat` and `dlen` are
 	// computed once and reused, and rh_window advances the scan by only as much as
@@ -415,6 +443,9 @@ type ExecOutcome struct {
 	Output   string
 	ExitCode int
 	Err      string // non-empty for a helper-level problem (timeout, nosession, …)
+	// Foreground is the pane's foreground command when the helper refused with
+	// "busy". It names what is holding the terminal, so the answer can say so.
+	Foreground string
 	// Recovered says the pane came back to a prompt after the helper interrupted a
 	// timed-out command. It is only ever meaningful together with Err == "timeout",
 	// and "not recovered" is a different answer from "timed out": the session may
@@ -427,6 +458,7 @@ func ParseExec(stdout string) ExecOutcome {
 	out := ExecOutcome{ExitCode: -1}
 	if err := fieldLine(stdout, "RHOST_ERR="); err != "" {
 		out.Err = err
+		out.Foreground = fieldLine(stdout, "RHOST_FG=")
 		out.Recovered = fieldLine(stdout, "RHOST_RECOVERED=") == "1"
 		return out
 	}

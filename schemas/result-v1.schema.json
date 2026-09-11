@@ -52,6 +52,7 @@
                 "REMOTE_COMMAND_TIMEOUT",
                 "REMOTE_DEPENDENCY_MISSING",
                 "SEARCH_FAILED",
+                "SESSION_BUSY",
                 "SESSION_NOT_FOUND",
                 "SESSION_UNHEALTHY",
                 "SSH_AUTH_FAILED",
