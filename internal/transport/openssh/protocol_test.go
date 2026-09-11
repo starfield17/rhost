@@ -74,7 +74,7 @@ func TestParseMarker(t *testing.T) {
 
 func TestWrapScriptQuoteSafe(t *testing.T) {
 	got := WrapScript("echo 'a b'")
-	want := "exec setsid bash -lc 'echo '\\''a b'\\'''"
+	want := "exec setsid bash -lc 'eval \"$(printf %s ZWNobyAnYSBiJw== | base64 -d)\"'"
 	if got != want {
 		t.Errorf("WrapScript = %q, want %q", got, want)
 	}

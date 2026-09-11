@@ -32,6 +32,10 @@ type SessionExecResult struct {
 	Output    string
 	ExitCode  int
 	TimedOut  bool
+	// SessionPreserved is the answer to the only question that matters after a
+	// timeout: is this session still usable, or is something still running in it?
+	// True means the pane was observed returning to a prompt.
+	SessionPreserved bool
 }
 
 // SessionReadResult is an incremental read of a session's output log.
@@ -195,12 +199,20 @@ func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, t
 	}
 	oc := tmux.ParseExec(string(res.Stdout))
 	if oc.Err != "" {
-		return SessionExecResult{}, mapHelperErr(oc.Err)
+		// The session survived the helper's own interrupt only if the pane came back
+		// to a prompt, so `session_preserved` is the helper's answer, not a guess
+		// made from the exit status of the CLI that gave up.
+		return SessionExecResult{
+			SessionID:        nameOrID,
+			TimedOut:         oc.Err == "timeout",
+			SessionPreserved: oc.Recovered,
+		}, mapHelperErr(oc.Err)
 	}
 	return SessionExecResult{
-		SessionID: nameOrID,
-		Output:    shell.StripANSI(oc.Output),
-		ExitCode:  oc.ExitCode,
+		SessionID:        nameOrID,
+		SessionPreserved: true,
+		Output:           shell.StripANSI(oc.Output),
+		ExitCode:         oc.ExitCode,
 	}, nil
 }
 

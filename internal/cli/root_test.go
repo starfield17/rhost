@@ -198,3 +198,43 @@ func TestBareGroupIsAUsageError(t *testing.T) {
 		t.Errorf("help exit = %d, want 0", exitCode)
 	}
 }
+
+// TestNoCommandAtAllIsAUsageError is the root-level case of the rule above: the
+// bare program used to print its help and exit 0 even under --json, which leaves an
+// agent parsing prose as if it were a result document.
+func TestNoCommandAtAllIsAUsageError(t *testing.T) {
+	t.Cleanup(saveGlobals())
+
+	jsonFlag = true
+	exitCode = 0
+	os.Args = []string{"rhost", "--json"}
+	out := captureStdout(t, func() { Run() })
+
+	var doc struct {
+		OK    bool `json:"ok"`
+		Error *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\n%q", err, out)
+	}
+	if doc.OK || doc.Error == nil || doc.Error.Code != "USAGE_ERROR" {
+		t.Errorf("bare rhost --json = %s, want ok=false USAGE_ERROR", out)
+	}
+	if exitCode != 255 {
+		t.Errorf("exit = %d, want 255", exitCode)
+	}
+
+	// A human who typed nothing still gets the help, and still gets exit 0.
+	jsonFlag = false
+	exitCode = 0
+	os.Args = []string{"rhost"}
+	out = captureStdout(t, func() { Run() })
+	if !strings.Contains(out, "Usage:") || !strings.Contains(out, "Available Commands") {
+		t.Errorf("bare rhost without --json must print help, got %q", out)
+	}
+	if exitCode != 0 {
+		t.Errorf("help exit = %d, want 0", exitCode)
+	}
+}

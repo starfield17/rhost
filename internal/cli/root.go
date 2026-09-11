@@ -23,6 +23,7 @@ var (
 
 // Run builds and executes the command tree, returning the process exit code.
 func Run() int {
+	exitCode = 0
 	root := newRootCmd()
 	root.SilenceErrors = true
 	root.SilenceUsage = true
@@ -89,8 +90,17 @@ authentication or host-key policy. Hosts are named exactly as you would name
 them to ssh: an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 	}
 	root.PersistentFlags().BoolVar(&jsonFlag, "json", false, "emit machine-readable JSON on stdout")
+	root.RunE = func(c *cobra.Command, _ []string) error {
+		if jsonFlag {
+			emitFailure("usage", "", errs.New(errs.UsageError, "rhost needs a subcommand", false))
+			return nil
+		}
+		return c.Help()
+	}
 	root.AddCommand(
 		newExecCmd(),
+		newExecManyCmd(),
+		newTunnelCmd(),
 		newDoctorCmd(),
 		newHostsCmd(),
 		newSessionCmd(),

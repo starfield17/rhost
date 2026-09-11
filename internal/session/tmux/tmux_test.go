@@ -24,6 +24,22 @@ func TestParseExec(t *testing.T) {
 	if tout.Err != "timeout" {
 		t.Errorf("err = %q, want timeout", tout.Err)
 	}
+
+	// A command that outlived its deadline is interrupted, and the helper answers
+	// with whether the pane actually came back. "timed out" and "timed out but the
+	// session is usable" are different instructions to a caller, so the two states
+	// must survive parsing.
+	if out := ParseExec("RHOST_RECOVERED=1\nRHOST_ERR=timeout\n"); out.Err != "timeout" || !out.Recovered {
+		t.Errorf("recovered timeout parsed as %+v", out)
+	}
+	if out := ParseExec("RHOST_RECOVERED=0\nRHOST_ERR=timeout\n"); out.Err != "timeout" || out.Recovered {
+		t.Errorf("unrecovered timeout parsed as %+v", out)
+	}
+	// The marker is only ever printed next to a timeout; a clean command must not
+	// pick up a recovered flag out of nowhere.
+	if out := ParseExec("RHOST_EXIT=0\n" + payload + "\n"); out.Recovered {
+		t.Errorf("successful command reports Recovered")
+	}
 }
 
 func TestParseRead(t *testing.T) {
@@ -120,6 +136,22 @@ func TestExecScriptProtocol(t *testing.T) {
 		if !contains(s, want) {
 			t.Errorf("ExecScript missing %q", want)
 		}
+	}
+	// After the deadline the helper must interrupt *and then prove* the shell is
+	// back, in that order, before it reports the timeout: an unverified Ctrl-C is
+	// how a session ends up with two commands racing in one pane.
+	interrupt := indexOf(s, `send-keys -t "$TMUX:0.0" C-c`)
+	probe := indexOf(s, `recovered=1`)
+	report := indexOf(s, `echo RHOST_ERR=timeout`)
+	if interrupt < 0 || probe < 0 || report < 0 {
+		t.Fatalf("ExecScript has no interrupt/probe/report sequence: %d %d %d", interrupt, probe, report)
+	}
+	if !(interrupt < probe && probe < report) {
+		t.Errorf("ExecScript reports a timeout without proving recovery first: %d %d %d",
+			interrupt, probe, report)
+	}
+	if !contains(s, "RHOST_RECOVERED=$recovered") {
+		t.Errorf("ExecScript must carry the recovery answer out to the CLI")
 	}
 }
 

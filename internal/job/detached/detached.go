@@ -215,7 +215,7 @@ func CommandScript(id, cwd string, env map[string]string, command string) string
 	b.WriteString(signalTraps)
 
 	if cwd != "" {
-		q := shell.Quote(cwd)
+		q := shell.PathQuote(cwd)
 		// printf format is fixed; the (possibly hostile) path is an argument.
 		p("cd -- %s 2>/dev/null || { rc=126; printf 'rhost: cannot change directory to %%s\\n' %s >&2; exit 0; }\n", q, q)
 	}

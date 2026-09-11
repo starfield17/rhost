@@ -26,6 +26,7 @@ persist across calls. For ordinary commands, prefer `+"`rhost exec`"+`.`)
 		newSessionReadCmd(),
 		newSessionCloseCmd(),
 		newSessionAttachCmd(),
+		newSessionRecoverCmd(),
 	)
 	return cmd
 }
@@ -114,18 +115,26 @@ func newSessionExecCmd() *cobra.Command {
 			res, aerr := a.SessionExec(cmd.Context(), host, session, command, timeout)
 			if aerr != nil {
 				audit.fail(aerr)
-				emitFailure("session.exec", host, aerr)
+				// A timeout is reported *with* the state of the session: the caller's
+				// next move depends on whether the pane is free or still busy, and a
+				// bare failure envelope would not say (§32: partial data on failure).
+				if jsonFlag {
+					_ = output.Failure("session.exec", host, sessionExecData(res), aerr).Write(os.Stdout)
+					exitCode = adapterExitCode(aerr)
+				} else {
+					sp := "not usable"
+					if res.SessionPreserved {
+						sp = "usable again"
+					}
+					fmt.Fprintf(os.Stderr, "rhost: %s: %s (session is %s)\n", aerr.Code, aerr.Message, sp)
+					exitCode = adapterExitCode(aerr)
+				}
 				return nil
 			}
 			code := res.ExitCode
 			audit.succeed("", command, &code)
 			if jsonFlag {
-				data := map[string]interface{}{
-					"session_id": res.SessionID,
-					"output":     res.Output,
-					"exit_code":  res.ExitCode,
-				}
-				_ = output.Success("session.exec", host, data).Write(os.Stdout)
+				_ = output.Success("session.exec", host, sessionExecData(res)).Write(os.Stdout)
 			} else {
 				_, _ = os.Stdout.WriteString(res.Output)
 				if res.Output != "" && !strings.HasSuffix(res.Output, "\n") {
@@ -138,6 +147,27 @@ func newSessionExecCmd() *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "per-command timeout")
 	return cmd
+}
+
+// sessionExecView is the `data` of session exec, in success and in failure: the
+// fields describe the session as it now is, which is exactly what a caller needs
+// when the command did not finish.
+type sessionExecView struct {
+	SessionID        string `json:"session_id"`
+	Output           string `json:"output"`
+	ExitCode         int    `json:"exit_code"`
+	TimedOut         bool   `json:"timed_out"`
+	SessionPreserved bool   `json:"session_preserved"`
+}
+
+func sessionExecData(res app.SessionExecResult) sessionExecView {
+	return sessionExecView{
+		SessionID:        res.SessionID,
+		Output:           res.Output,
+		ExitCode:         res.ExitCode,
+		TimedOut:         res.TimedOut,
+		SessionPreserved: res.SessionPreserved,
+	}
 }
 
 func newSessionSendCmd() *cobra.Command {

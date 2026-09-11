@@ -149,7 +149,7 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	pane := shell.Quote(meta.TmuxSession + ":0.0")
 	p("tmux kill-session -t %s 2>/dev/null\n", tmux)
 	if meta.InitialCwd != "" {
-		p("tmux new-session -d -s %s -x 220 -y 50 -c %s %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.Quote(meta.InitialCwd), shell.Quote(paneShellCmd))
+		p("tmux new-session -d -s %s -x 220 -y 50 -c %s %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.PathQuote(meta.InitialCwd), shell.Quote(paneShellCmd))
 	} else {
 		p("tmux new-session -d -s %s -x 220 -y 50 %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.Quote(paneShellCmd))
 	}
@@ -262,7 +262,20 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	// bail out early if the pane's shell dies (for example the command was `exit`).
 	p("SECONDS=0; found=0; died=0; floor=$((start + 1)); scan=$floor; while [ \"$SECONDS\" -lt %d ]; do rh_window && { found=1; break; }; if ! tmux has-session -t \"$TMUX\" 2>/dev/null; then died=1; break; fi; if [ \"$SECONDS\" -ge 5 ]; then sleep 1; elif [ \"$SECONDS\" -ge 1 ]; then sleep 0.5; else sleep 0.1; fi; done\n", timeoutSec)
 	b.WriteString("if [ \"$died\" = 1 ]; then echo RHOST_ERR=sessiondied; exit 0; fi\n")
-	b.WriteString("if [ \"$found\" != 1 ]; then tmux send-keys -t \"$TMUX:0.0\" C-c 2>/dev/null; echo RHOST_ERR=timeout; exit 0; fi\n")
+	// A command that outlived its deadline is interrupted, and then rhost *proves*
+	// the shell is usable again before handing the session back: Ctrl-C, followed by
+	// up to 5s waiting for the next command boundary. RHOST_RECOVERED is that proof.
+	// It is reported rather than assumed, because a Ctrl-C the pane ignored leaves a
+	// program holding the session — and the next caller must not find that out by
+	// sending a command into it.
+	b.WriteString("if [ \"$found\" != 1 ]; then\n")
+	b.WriteString("  tmux send-keys -t \"$TMUX:0.0\" C-c 2>/dev/null\n")
+	b.WriteString("  recovered=0; i=0\n")
+	b.WriteString("  while [ \"$i\" -lt 50 ]; do rh_window && { recovered=1; break; }; sleep 0.1; i=$((i+1)); done\n")
+	b.WriteString("  echo \"RHOST_RECOVERED=$recovered\"\n")
+	b.WriteString("  echo RHOST_ERR=timeout\n")
+	b.WriteString("  exit 0\n")
+	b.WriteString("fi\n")
 
 	// Locate the first D at/after start, emit exit code then the region before it.
 	p("dline=$(tail -c +$((start+1)) \"$LOG\" | grep -aboF %s | head -1)\n", `"$dpat"`)
@@ -402,6 +415,11 @@ type ExecOutcome struct {
 	Output   string
 	ExitCode int
 	Err      string // non-empty for a helper-level problem (timeout, nosession, …)
+	// Recovered says the pane came back to a prompt after the helper interrupted a
+	// timed-out command. It is only ever meaningful together with Err == "timeout",
+	// and "not recovered" is a different answer from "timed out": the session may
+	// still be holding a running program.
+	Recovered bool
 }
 
 // ParseExec parses ExecScript output.
@@ -409,6 +427,7 @@ func ParseExec(stdout string) ExecOutcome {
 	out := ExecOutcome{ExitCode: -1}
 	if err := fieldLine(stdout, "RHOST_ERR="); err != "" {
 		out.Err = err
+		out.Recovered = fieldLine(stdout, "RHOST_RECOVERED=") == "1"
 		return out
 	}
 	lines := strings.Split(stdout, "\n")

@@ -11,6 +11,11 @@
 # Test binary, built with `go test -c`
 *.test
 
+# The remote helper is Python embedded in the binary, and its own suite runs from
+# `go test`, so byte-code caches are a build artifact, not content.
+__pycache__/
+*.pyc
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*

@@ -25,6 +25,18 @@ func Quote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// PathQuote expands only the current remote user's home shorthand; all other
+// characters remain literal. This is evaluated on the remote host, not locally.
+func PathQuote(s string) string {
+	if s == "~" {
+		return `"$HOME"`
+	}
+	if strings.HasPrefix(s, "~/") {
+		return `"$HOME"/` + Quote(s[2:])
+	}
+	return Quote(s)
+}
+
 // ValidateEnvKey rejects names that are not valid POSIX environment variable
 // identifiers. This closes the `export FOO=bar\necho pwned` injection class.
 func ValidateEnvKey(k string) error {

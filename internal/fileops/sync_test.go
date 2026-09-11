@@ -48,6 +48,16 @@ func TestRejectSyncTarget(t *testing.T) {
 		{dst: "..", wantOK: false},
 		{dst: "./build", delete: true, wantOK: true},
 
+		// Spelled deeper than they are. The rules are applied to the cleaned path,
+		// so `..`, `.` and a doubled separator cannot argue a top-level directory
+		// into being two components deep — the original bypass, caught in review.
+		{dst: "/srv/../", delete: true, wantOK: false},
+		{dst: "/srv/.", delete: true, wantOK: false},
+		{dst: "/srv//", delete: true, wantOK: false},
+		{dst: "~/work/..", delete: true, wantOK: false},
+		{dst: "~/.", delete: true, wantOK: false},
+		{dst: "./.", wantOK: false},
+
 		// Globs reach the remote shell.
 		{dst: "/*", delete: true, wantOK: false},
 		{dst: "/home/*", wantOK: false},
@@ -191,6 +201,7 @@ func TestLocalArg(t *testing.T) {
 		{"model.py", "model.py"},
 		{"a:b.txt", "./a:b.txt"},                 // colon: would be read as host:path
 		{"-rf", "./-rf"},                         // leading dash: would be read as an option
+		{".cache:part", "./.cache:part"},         // a dotfile is still ambiguous with a colon
 		{"./x", "./x"},                           // already explicit
 		{"../x", "../x"},                         // already explicit
 		{"/tmp/x", "/tmp/x"},                     // absolute
@@ -217,6 +228,12 @@ func TestValidateTransferPaths(t *testing.T) {
 	if err := ValidateTransferPaths("./model.py", "gpu:~/work/foo/model.py"); err != nil {
 		t.Errorf("ordinary put rejected: %v", err)
 	}
+	// An IPv6 host is the shape that used to fool the split: the first colon is
+	// inside the address, so an unbracketed spec turned `/` into the "remote path"
+	// and let a root destination through.
+	if err := ValidateTransferPaths("file", RemoteSpec("user@2001:db8::1", "/")); err == nil {
+		t.Errorf("IPv6 host must not bypass destination protection")
+	}
 	for _, bad := range []struct{ src, dst string }{
 		{"", "gpu:x"},
 		{"   ", "gpu:x"},
@@ -227,6 +244,28 @@ func TestValidateTransferPaths(t *testing.T) {
 	} {
 		if err := ValidateTransferPaths(bad.src, bad.dst); err == nil {
 			t.Errorf("ValidateTransferPaths(%q, %q) accepted it", bad.src, bad.dst)
+		}
+	}
+}
+
+// TestRemoteSpecSplitIPv6 pins the round trip: a colon-bearing host is bracketed
+// the way scp and rsync want it, and reading the spec back finds the split after
+// the bracket rather than inside the address.
+func TestRemoteSpecSplitIPv6(t *testing.T) {
+	spec := RemoteSpec("user@2001:db8::1", "work/foo.txt")
+	if want := "user@[2001:db8::1]:work/foo.txt"; spec != want {
+		t.Fatalf("RemoteSpec = %q, want %q", spec, want)
+	}
+	host, path, ok := SplitRemoteSpec(spec)
+	if !ok || host != "user@[2001:db8::1]" || path != "work/foo.txt" {
+		t.Fatalf("SplitRemoteSpec(%q) = %q, %q, %v", spec, host, path, ok)
+	}
+	if h, p, ok := SplitRemoteSpec("gpu:~/x"); !ok || h != "gpu" || p != "~/x" {
+		t.Fatalf("plain spec stopped parsing correctly: %q %q %v", h, p, ok)
+	}
+	for _, notRemote := range []string{"./a:b", "/tmp/x:y", "user@[::1", "[::1]x"} {
+		if _, _, ok := SplitRemoteSpec(notRemote); ok {
+			t.Errorf("%q is a local path or malformed, and must not split as remote", notRemote)
 		}
 	}
 }

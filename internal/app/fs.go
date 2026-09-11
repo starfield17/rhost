@@ -24,19 +24,30 @@ type FsPutOptions struct {
 	LocalPath string
 	Remote    string
 	Timeout   time.Duration
+	// Resume and Checksum opt into the verified rsync route: partial-file
+	// resumption, and an end-to-end SHA-256 comparison after the copy. Both need
+	// rsync at both ends, and the checksum needs a remote `sha256sum`.
+	Resume   bool
+	Checksum bool
 }
 
 // FsGetOptions is one remote → local file copy.
 type FsGetOptions struct {
-	Host      string
-	Remote    string
+	Host string
+	// Remote names the file on the far side. LocalPath is `destination` as the
+	// user typed it: when it names an existing directory, the result reports the
+	// file inside it.
 	LocalPath string
-	// Destination as the user typed it; when it names an existing directory, the
-	// result reports the file inside it.
-	Timeout time.Duration
+	Remote    string
+	Timeout   time.Duration
+	// Resume and Checksum behave exactly as in FsPutOptions, in the other
+	// direction.
+	Resume   bool
+	Checksum bool
 }
 
-// FsSyncOptions is one directory sync, local → remote.
+// FsSyncOptions is one directory sync, in either direction: FsSync pushes the
+// local tree, FsMirror pulls a remote one.
 type FsSyncOptions struct {
 	Host      string
 	LocalPath string
@@ -45,6 +56,10 @@ type FsSyncOptions struct {
 	DryRun    bool
 	Excludes  []string
 	Timeout   time.Duration
+	// Checksum compares file content instead of size and mtime. It changes what
+	// rsync considers a difference; it is not the end-to-end verification that
+	// `fs put --checksum` performs.
+	Checksum bool
 }
 
 // FsTransferResult is the outcome of a single-file copy. `source` and
@@ -57,6 +72,11 @@ type FsTransferResult struct {
 	Size        int64  `json:"size"`
 	Multiplexed bool   `json:"multiplexed"`
 	DurationMS  int64  `json:"duration_ms"`
+	// ResumeEnabled describes the mode that was asked for, not a claim that bytes
+	// were actually reused — a first copy resumes from nothing. ChecksumVerified
+	// is the stronger statement: both ends hashed the same content.
+	ChecksumVerified bool `json:"checksum_verified"`
+	ResumeEnabled    bool `json:"resume_enabled"`
 }
 
 // FsSyncResult is the outcome of one sync — including a dry run, where `changes`
@@ -149,6 +169,9 @@ func clip(s string, max int) string {
 
 // FsPut copies one local file to a remote path.
 func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *errs.Error) {
+	if opts.Resume || opts.Checksum {
+		return a.verifiedTransfer(ctx, opts.Host, opts.LocalPath, opts.Remote, false, opts.Resume, opts.Checksum, opts.timeout())
+	}
 	local, err := fileops.LocalArg(opts.LocalPath)
 	if err != nil {
 		return FsTransferResult{}, transferValidation(err)
@@ -183,6 +206,9 @@ func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *
 
 // FsGet copies one remote file to a local path.
 func (a *App) FsGet(ctx context.Context, opts FsGetOptions) (FsTransferResult, *errs.Error) {
+	if opts.Resume || opts.Checksum {
+		return a.verifiedTransfer(ctx, opts.Host, opts.LocalPath, opts.Remote, true, opts.Resume, opts.Checksum, opts.timeout())
+	}
 	src := fileops.RemoteSpec(opts.Host, opts.Remote)
 	local, err := fileops.LocalArg(opts.LocalPath)
 	if err != nil {
@@ -253,6 +279,29 @@ func (a *App) FsSync(ctx context.Context, opts FsSyncOptions) (FsSyncResult, *er
 	// own exit status would report a tool failure instead.
 	if aerr := a.remoteHasRsync(ctx, opts.Host); aerr != nil {
 		return FsSyncResult{}, aerr
+	}
+	if opts.Delete {
+		// A local check cannot see that the remote `/srv/app` is a symlink to `/`,
+		// so a destructive sync also asks the remote what the destination actually
+		// names, and syncs to *that* (docs/ARCHITECTURE.md §28).
+		resolved, e := a.RemoteFile(ctx, opts.Host, map[string]interface{}{
+			"op": "resolve", "path": opts.Remote, "delete": true,
+		}, opts.timeout())
+		if e != nil {
+			return FsSyncResult{}, e
+		}
+		actual, ok := resolved["path"].(string)
+		if !ok {
+			return FsSyncResult{}, errs.New(errs.Internal, "remote destination probe returned no path", false)
+		}
+		o.Destination = actual
+		argv, remote, mux, err = fileops.SyncArgs(opts.Host, o, a.SSH.SSHOptions())
+		if err != nil {
+			return FsSyncResult{}, transferValidation(err)
+		}
+	}
+	if opts.Checksum {
+		argv = append([]string{"--checksum"}, argv...)
 	}
 
 	res, runErr := a.runTool(ctx, a.Transfers.RsyncBin, argv, opts.timeout())
@@ -327,6 +376,12 @@ func (a *App) remoteHasRsync(ctx context.Context, host string) *errs.Error {
 	case res.ExitCode == 0:
 		return nil
 	}
+	if res.ExitCode == 255 {
+		if e := classifySSH(string(res.Stderr)); e != nil {
+			return e
+		}
+		return errs.New(errs.SSHUnreachable, "could not probe rsync: "+firstLine(string(res.Stderr)), true)
+	}
 	return errs.New(errs.RemoteDependencyMissing,
 		"the remote host has no rsync, which fs sync needs; fs put and fs get work without it", false)
 }
@@ -336,6 +391,13 @@ func (a *App) remoteHasRsync(ctx context.Context, host string) *errs.Error {
 // machine, and scp cannot open a master through a directory that is missing.
 func (a *App) runTool(ctx context.Context, bin string, args []string, timeout time.Duration) (fileops.Result, error) {
 	_ = config.EnsureControlDir()
+	if bin == a.Transfers.RsyncBin {
+		var err error
+		args, err = a.Transfers.SafeRsyncPaths(ctx, args)
+		if err != nil {
+			return fileops.Result{}, err
+		}
+	}
 	return a.Transfers.Run(ctx, bin, args, timeout)
 }
 

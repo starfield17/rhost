@@ -12,6 +12,7 @@ package openssh
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"sort"
 	"strconv"
@@ -79,7 +80,7 @@ func BuildScript(spec ExecSpec) string {
 	b.WriteString("trap 'rm -f \"$RHOST_PF\"' EXIT\n")
 
 	if spec.Cwd != "" {
-		q := shell.Quote(spec.Cwd)
+		q := shell.PathQuote(spec.Cwd)
 		b.WriteString("cd -- " + q + " 2>/dev/null || { printf 'rhost: cannot change directory to %s\\n' " + q +
 			" >&2; printf '\\n" + markerToken(spec.Nonce) + ":%d\\n' 126; exit 0; }\n")
 	}
@@ -118,7 +119,10 @@ func BuildScript(spec ExecSpec) string {
 // remote account's login shell (which may be fish), so it uses only POSIX
 // single-quote quoting.
 func WrapScript(script string) string {
-	return "exec setsid bash -lc " + shell.Quote(script)
+	// Only ASCII base64 crosses the account's login-shell parser. In particular,
+	// fish and POSIX shells interpret backslashes inside single quotes differently.
+	encoded := base64.StdEncoding.EncodeToString([]byte(script))
+	return "exec setsid bash -lc " + shell.Quote("eval \"$(printf %s "+encoded+" | base64 -d)\"")
 }
 
 // ParseMarker extracts the completion marker emitted by BuildScript.

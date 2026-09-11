@@ -28,6 +28,10 @@ Paths follow scp's convention: a trailing slash on a synced directory means its
 contents, not the directory itself. rhost normalises it, so it is accepted
 either way.`)
 	cmd.AddCommand(newFsPutCmd(), newFsGetCmd(), newFsSyncCmd())
+	cmd.AddCommand(newFsMirrorCmd(), newFsBatchCmd())
+	for _, op := range []string{"read", "write", "patch", "grep", "glob"} {
+		cmd.AddCommand(newRemoteFileCmd(op))
+	}
 	return cmd
 }
 
@@ -38,6 +42,7 @@ func fsTimeoutFlags(cmd *cobra.Command, timeout *time.Duration) {
 
 func newFsPutCmd() *cobra.Command {
 	var timeout time.Duration
+	var resume, checksum bool
 	cmd := &cobra.Command{
 		Use:   "put <host> <local-path> <remote-path>",
 		Short: "Copy one local file to the remote host",
@@ -48,6 +53,7 @@ func newFsPutCmd() *cobra.Command {
 			a := app.NewDefault()
 			res, aerr := a.FsPut(cmd.Context(), app.FsPutOptions{
 				Host: host, LocalPath: local, Remote: remote, Timeout: timeout,
+				Resume: resume, Checksum: checksum,
 			})
 			if aerr != nil {
 				audit.fail(aerr)
@@ -64,11 +70,14 @@ func newFsPutCmd() *cobra.Command {
 		},
 	}
 	fsTimeoutFlags(cmd, &timeout)
+	cmd.Flags().BoolVar(&resume, "resume", false, "resume using rsync partial files and verify SHA-256")
+	cmd.Flags().BoolVar(&checksum, "checksum", false, "verify end-to-end SHA-256 using rsync and sha256sum")
 	return cmd
 }
 
 func newFsGetCmd() *cobra.Command {
 	var timeout time.Duration
+	var resume, checksum bool
 	cmd := &cobra.Command{
 		Use:   "get <host> <remote-path> <local-path>",
 		Short: "Copy one remote file to this machine",
@@ -79,6 +88,7 @@ func newFsGetCmd() *cobra.Command {
 			a := app.NewDefault()
 			res, aerr := a.FsGet(cmd.Context(), app.FsGetOptions{
 				Host: host, Remote: remote, LocalPath: local, Timeout: timeout,
+				Resume: resume, Checksum: checksum,
 			})
 			if aerr != nil {
 				audit.fail(aerr)
@@ -95,6 +105,8 @@ func newFsGetCmd() *cobra.Command {
 		},
 	}
 	fsTimeoutFlags(cmd, &timeout)
+	cmd.Flags().BoolVar(&resume, "resume", false, "resume using rsync partial files and verify SHA-256")
+	cmd.Flags().BoolVar(&checksum, "checksum", false, "verify end-to-end SHA-256 using rsync and sha256sum")
 	return cmd
 }
 
@@ -102,6 +114,7 @@ func newFsSyncCmd() *cobra.Command {
 	var (
 		doDelete bool
 		dryRun   bool
+		checksum bool
 		excludes []string
 		timeout  time.Duration
 	)
@@ -123,6 +136,7 @@ prune would be a disaster, and there is no flag that makes it safe.`,
 			res, aerr := a.FsSync(cmd.Context(), app.FsSyncOptions{
 				Host: host, LocalPath: local, Remote: remote,
 				Delete: doDelete, DryRun: dryRun, Excludes: excludes, Timeout: timeout,
+				Checksum: checksum,
 			})
 			if aerr != nil {
 				audit.fail(aerr)
@@ -147,6 +161,7 @@ prune would be a disaster, and there is no flag that makes it safe.`,
 	}
 	cmd.Flags().BoolVar(&doDelete, "delete", false,
 		"remove remote files that do not exist locally (destructive)")
+	cmd.Flags().BoolVar(&checksum, "checksum", false, "compare content checksums")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"report what would change without copying anything")
 	cmd.Flags().StringArrayVar(&excludes, "exclude", nil,
@@ -162,14 +177,30 @@ func renderFsTransfer(res app.FsTransferResult) {
 	fmt.Printf("transferred %s via %s\n", humanBytes(res.Size), res.Backend)
 	fmt.Printf("  %s\n", res.Source)
 	fmt.Printf("  -> %s\n", res.Destination)
+	if res.ChecksumVerified {
+		// Say so out loud: the whole point of asking for a verified copy is to see
+		// that the two ends agree, and silence would read as "not verified".
+		fmt.Fprintln(os.Stderr, "  verified: identical SHA-256 at both ends")
+	}
+	if res.ResumeEnabled {
+		fmt.Fprintln(os.Stderr, "  resumable: rsync partial files in .rhost-partial")
+	}
 }
 
 // renderFsSync prints exactly the plan the JSON carries (§28: agent JSON and
 // human preview stay consistent), one action per line.
 func renderFsSync(res app.FsSyncResult) {
-	head := "synced"
+	renderSyncDirection(res, "synced", "would sync (dry run, nothing copied)")
+}
+
+// renderSyncDirection is renderFsSync with the verbs supplied, because `mirror`
+// reuses both the result type and the plan format, and a person reading
+// "synced" while downloading a directory would be entitled to wonder which
+// direction ran.
+func renderSyncDirection(res app.FsSyncResult, applied, preview string) {
+	head := applied
 	if res.DryRun {
-		head = "would sync (dry run, nothing copied)"
+		head = preview
 	}
 	fmt.Printf("%s via %s%s\n", head, res.Backend, deleteNote(res.Delete))
 	fmt.Printf("  %s -> %s\n", res.Source, res.Destination)
@@ -193,7 +224,7 @@ func renderFsSync(res app.FsSyncResult) {
 
 func deleteNote(delete bool) string {
 	if delete {
-		return " (with --delete: remote files were pruned)"
+		return " (with --delete enabled)"
 	}
 	return ""
 }

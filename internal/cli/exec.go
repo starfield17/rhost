@@ -16,9 +16,10 @@ import (
 
 func newExecCmd() *cobra.Command {
 	var (
-		cwd     string
-		timeout time.Duration
-		envs    []string
+		cwd       string
+		timeout   time.Duration
+		envs      []string
+		maxOutput int
 	)
 	cmd := &cobra.Command{
 		Use:   "exec <host> [--] <command...>",
@@ -49,12 +50,17 @@ failures use 255, timeouts use 124.`,
 			}
 
 			a := app.NewDefault()
+			if maxOutput < 0 {
+				emitFailure("exec", host, errs.New(errs.ConfigInvalid, "max-output-bytes must be nonnegative", false))
+				return nil
+			}
 			res, aerr := a.Execute(cmd.Context(), app.ExecOptions{
-				Host:    host,
-				Command: command,
-				Cwd:     cwd,
-				Env:     env,
-				Timeout: timeout,
+				Host:           host,
+				Command:        command,
+				Cwd:            cwd,
+				Env:            env,
+				Timeout:        timeout,
+				MaxOutputBytes: maxOutput,
 			})
 			if aerr != nil {
 				audit.fail(aerr)
@@ -68,18 +74,45 @@ failures use 255, timeouts use 124.`,
 		},
 	}
 	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory on the remote host")
+	cmd.Flags().IntVar(&maxOutput, "max-output-bytes", 1024*1024, "maximum bytes per stream (0 = unlimited)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "foreground timeout (e.g. 30s, 2m)")
 	cmd.Flags().StringArrayVar(&envs, "env", nil, "environment variable KEY=VALUE (repeatable)")
 	return cmd
 }
 
-func execData(res app.ExecResult) map[string]interface{} {
-	return map[string]interface{}{
-		"exit_code":   res.ExitCode,
-		"stdout":      res.Stdout,
-		"stderr":      res.Stderr,
-		"timed_out":   res.TimedOut,
-		"duration_ms": res.Duration.Milliseconds(),
+// execView is the `data` of one exec result, and one row of exec-many. It is a
+// struct rather than a map so the field set is declared once, in the order it is
+// meant to be read: what the command returned, then how much of it was lost.
+//
+// The byte counts are the *true* totals the remote produced, so `stdout` being
+// shorter than `stdout_bytes` is what `stdout_truncated` means; and
+// `cleanup_confirmed` is false whenever a timed-out command could not be shown to
+// have stopped, which is a different fact from "it did not run".
+type execView struct {
+	ExitCode         int    `json:"exit_code"`
+	Stdout           string `json:"stdout"`
+	Stderr           string `json:"stderr"`
+	TimedOut         bool   `json:"timed_out"`
+	CleanupConfirmed bool   `json:"cleanup_confirmed"`
+	StdoutTruncated  bool   `json:"stdout_truncated"`
+	StderrTruncated  bool   `json:"stderr_truncated"`
+	StdoutBytes      int64  `json:"stdout_bytes"`
+	StderrBytes      int64  `json:"stderr_bytes"`
+	DurationMS       int64  `json:"duration_ms"`
+}
+
+func execData(res app.ExecResult) execView {
+	return execView{
+		ExitCode:         res.ExitCode,
+		Stdout:           res.Stdout,
+		Stderr:           res.Stderr,
+		TimedOut:         res.TimedOut,
+		CleanupConfirmed: res.CleanupConfirmed,
+		StdoutTruncated:  res.StdoutTruncated,
+		StderrTruncated:  res.StderrTruncated,
+		StdoutBytes:      res.StdoutBytes,
+		StderrBytes:      res.StderrBytes,
+		DurationMS:       res.Duration.Milliseconds(),
 	}
 }
 
@@ -89,6 +122,7 @@ func renderExecSuccess(host string, res app.ExecResult) {
 	} else {
 		_, _ = os.Stdout.WriteString(res.Stdout)
 		_, _ = os.Stderr.WriteString(res.Stderr)
+		noteTruncated(res)
 	}
 	exitCode = res.ExitCode
 }
@@ -104,8 +138,21 @@ func renderExecFailure(host string, res app.ExecResult, aerr *errs.Error) {
 		if res.Stderr != "" {
 			_, _ = os.Stderr.WriteString(res.Stderr)
 		}
+		noteTruncated(res)
+		if res.TimedOut && !res.CleanupConfirmed {
+			fmt.Fprintln(os.Stderr, "warning: the remote command may still be running; the process group could not be confirmed dead")
+		}
 	}
 	exitCode = adapterExitCode(aerr)
+}
+
+// noteTruncated tells a human that the text they are reading is not all of it.
+// In JSON the same fact is two booleans and two counters.
+func noteTruncated(res app.ExecResult) {
+	if res.StdoutTruncated || res.StderrTruncated {
+		fmt.Fprintf(os.Stderr, "rhost: output truncated (stdout %d bytes, stderr %d bytes total)\n",
+			res.StdoutBytes, res.StderrBytes)
+	}
 }
 
 // parseEnv parses repeated --env KEY=VALUE flags, validating each key.

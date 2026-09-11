@@ -47,6 +47,13 @@ func reject(format string, a ...interface{}) error {
 // whatever the user named — an alias, user@host, or a bare hostname — and is
 // never rewritten.
 func RemoteSpec(host, path string) string {
+	if strings.Contains(host, ":") && !strings.Contains(host, "[") {
+		if i := strings.LastIndex(host, "@"); i >= 0 {
+			host = host[:i+1] + "[" + host[i+1:] + "]"
+		} else {
+			host = "[" + host + "]"
+		}
+	}
 	return host + ":" + path
 }
 
@@ -63,7 +70,7 @@ func LocalArg(path string) (string, error) {
 	if strings.ContainsAny(path, "\n\x00") {
 		return "", reject("local path %q contains a newline or NUL", path)
 	}
-	if filepath.IsAbs(path) || strings.HasPrefix(path, ".") {
+	if filepath.IsAbs(path) || path == "." || path == ".." || strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
 		// ".", "..", "./x" and any absolute path are already unambiguous.
 		return path, nil
 	}
@@ -94,6 +101,16 @@ func ValidateTransferPaths(source, destination string) error {
 // through to OpenSSH untouched, which resolves it (AGENTS.md §5).
 func SplitRemoteSpec(arg string) (host, path string, ok bool) {
 	i := strings.Index(arg, ":")
+	if bracket := strings.IndexByte(arg, '['); bracket >= 0 && (i < 0 || bracket < i) {
+		end := strings.IndexByte(arg[bracket:], ']')
+		if end < 0 {
+			return "", arg, false
+		}
+		i = bracket + end + 1
+		if i >= len(arg) || arg[i] != ':' {
+			return "", arg, false
+		}
+	}
 	if i <= 0 || strings.Contains(arg[:i], "/") {
 		return "", arg, false
 	}

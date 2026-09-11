@@ -80,6 +80,10 @@ type Result struct {
 	ExitCode int
 	TimedOut bool
 	Duration time.Duration
+	// StdoutBytes and StderrBytes are what the remote produced, which can exceed
+	// the length of Stdout and Stderr when a cap was asked for.
+	StdoutBytes int64
+	StderrBytes int64
 }
 
 // options returns the shared OpenSSH options. ControlMaster=auto +
@@ -109,6 +113,18 @@ func (c *Client) options() []string {
 	return opts
 }
 
+// RunOptions tunes one ssh invocation. The zero value is exactly what Run does.
+type RunOptions struct {
+	// Timeout bounds the ssh process. A value <= 0 uses the 60s default.
+	Timeout time.Duration
+	// MaxOutputBytes bounds each stream in memory and in Result; 0 is unbounded.
+	// The remote command is unaffected: this is about what rhost carries back.
+	MaxOutputBytes int
+	// Stdin is written to ssh's stdin, so the remote command can read it. Most
+	// rhost commands leave it nil, which gives the remote process EOF at once.
+	Stdin []byte
+}
+
 // Run executes remoteCmd on target. remoteCmd is passed verbatim as a single
 // argument to ssh, so the caller is responsible for producing something the
 // remote login shell can parse.
@@ -116,8 +132,14 @@ func (c *Client) options() []string {
 // A non-nil error means ssh could not be started at all; otherwise the ssh exit
 // status is in Result.ExitCode and a transport-level timeout is in Result.TimedOut.
 func (c *Client) Run(ctx context.Context, target, remoteCmd string, timeout time.Duration) (Result, error) {
+	return c.RunWith(ctx, target, remoteCmd, RunOptions{Timeout: timeout})
+}
+
+// RunWith is Run with an output budget and an optional stdin payload.
+func (c *Client) RunWith(ctx context.Context, target, remoteCmd string, opts RunOptions) (Result, error) {
 	_ = config.EnsureControlDir()
 
+	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
@@ -126,10 +148,25 @@ func (c *Client) Run(ctx context.Context, target, remoteCmd string, timeout time
 
 	args := append(c.options(), "-T", "--", target, remoteCmd)
 	cmd := exec.CommandContext(cctx, c.cfg.SSHBin, args...)
-	var stdout, stderr bytes.Buffer
+	// A cap is honoured as "keep the first N bytes *and* the last few", so the
+	// caller's own cut to N lands inside the prefix rather than gluing the tail of
+	// the output onto its head. That is why the capture keeps tailKeep extra.
+	keep := opts.MaxOutputBytes
+	if keep > 0 {
+		keep += tailKeep
+	}
+	stdout, stderr := capture{limit: keep}, capture{limit: keep}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	cmd.Stdin = nil // no stdin: remote commands read EOF
+	if opts.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(opts.Stdin)
+	} else {
+		cmd.Stdin = nil // no stdin: remote commands read EOF
+	}
+	// WaitDelay is the backstop when the remote is gone but a child still holds the
+	// pipes: without it, cmd.Run could wait past the deadline for a process ssh
+	// has already stopped talking to.
+	cmd.WaitDelay = 2 * time.Second
 
 	var res Result
 	start := time.Now()
@@ -137,6 +174,7 @@ func (c *Client) Run(ctx context.Context, target, remoteCmd string, timeout time
 	res.Duration = time.Since(start)
 	res.Stdout = stdout.Bytes()
 	res.Stderr = stderr.Bytes()
+	res.StdoutBytes, res.StderrBytes = stdout.total, stderr.total
 
 	if cctx.Err() == context.DeadlineExceeded {
 		res.TimedOut = true

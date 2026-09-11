@@ -15,11 +15,14 @@ func classifyMissingMarker(res openssh.Result) *errs.Error {
 	stderr := string(res.Stderr)
 	lower := strings.ToLower(stderr)
 
-	// The wrapper itself could not start: the remote lacks bash or setsid. Quote
-	// the offending line, not just the first stderr line, which is often an
-	// unrelated banner when ssh is running at a higher log level.
+	// The wrapper itself could not start: the remote lacks bash, setsid, or a base64
+	// decoder that understands -d (WrapScript carries the script as base64 so that
+	// nothing in it has to survive the account's login shell). Quote the offending
+	// line, not just the first stderr line, which is often an unrelated banner when
+	// ssh is running at a higher log level.
 	if strings.Contains(lower, "command not found") &&
-		(strings.Contains(lower, "setsid") || strings.Contains(lower, "bash")) {
+		(strings.Contains(lower, "setsid") || strings.Contains(lower, "bash") ||
+			strings.Contains(lower, "base64")) {
 		return errs.New(errs.RemoteDependencyMissing,
 			lineMatching(stderr, "command not found"), false)
 	}

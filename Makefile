@@ -5,7 +5,7 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).BuildDate=$(DATE)
 
-.PHONY: build test test-live test-live-session test-live-jobs test-live-fs test-live-status test-live-all vet fmt check portability clean
+.PHONY: build test test-live test-live-session test-live-jobs test-live-fs test-live-status test-live-tools test-live-all vet fmt check portability clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/rhost
@@ -36,6 +36,13 @@ test-live-fs:
 test-live-status:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
 	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveStatus|TestLiveWatch' -v -timeout 10m
+
+# The tools suite (fs read/write/patch/grep/glob, verified transfer, exec-many,
+# tunnels, session recovery) is separate because it is the heaviest in remote
+# round trips, and because its tunnel tests open real listeners on both sides.
+test-live-tools:
+	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveTools|TestLiveTunnel' -v -timeout 20m
 
 test-live-all:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
