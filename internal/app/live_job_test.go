@@ -245,6 +245,72 @@ func TestLiveJobKillEscalates(t *testing.T) {
 	}
 }
 
+// TestLiveJobPIDReuseIsRefused is the §22 guard against the one unrecoverable
+// mistake this backend can make: signalling a process group because it inherited
+// a recycled pid. The job's recorded start time is rewritten so the live pid can
+// no longer be tied to the job — which is exactly what pid reuse looks like to an
+// observer — and rhost must then refuse to call it running and refuse to signal
+// it, while the job itself keeps running untouched.
+func TestLiveJobPIDReuseIsRefused(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+
+	env := c.mustJSON(t, "--json", "job", "start", host, "--name", "pidreuse",
+		"--", "i=0; while [ $i -lt 600 ]; do echo tick; sleep 1; i=$((i+1)); done")
+	id := env.str(t, "id")
+	defer cleanupJob(t, c, host, id)
+
+	dir := "${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/jobs/" + id
+	remote := func(command string) string {
+		t.Helper()
+		return c.mustJSON(t, "--json", "exec", host, "--", command).str(t, "stdout")
+	}
+	// Keep the real identity, then claim a start time no live process can have.
+	remote(`cp "` + dir + `/identity" "` + dir + `/identity.testbak" && sed -i 's/^start_ticks=.*/start_ticks=1/' "` + dir + `/identity"`)
+
+	if got := c.mustJSON(t, "--json", "job", "status", host, id).str(t, "state"); got != "stale" {
+		t.Errorf("state for a pid that is no longer this job's process = %q, want stale", got)
+	}
+
+	stopped := c.mustJSON(t, "--json", "job", "stop", host, id)
+	if stopped.bool(t, "signalled") {
+		t.Error("job stop must not signal a process group it cannot tie to the job")
+	}
+	if got := stopped.str(t, "state"); got != "stale" {
+		t.Errorf("state after refused stop = %q, want stale", got)
+	}
+
+	// The job must be *untouched*: it was never signalled, so it is still
+	// producing output. That is the whole point of refusing.
+	size := func() int {
+		t.Helper()
+		n, err := strconv.Atoi(strings.TrimSpace(remote(`wc -c < "` + dir + `/stdout.log"`)))
+		if err != nil {
+			t.Fatalf("could not read the job's stdout size: %v", err)
+		}
+		return n
+	}
+	before := size()
+	time.Sleep(3 * time.Second)
+	if after := size(); after <= before {
+		t.Errorf("job stopped producing output after a refused stop (size %d -> %d): it was signalled anyway", before, after)
+	}
+
+	// Restore the identity: a real job keeps it, and with it the stop is allowed
+	// again — the refusal was about the evidence, not about the job.
+	remote(`cp "` + dir + `/identity.testbak" "` + dir + `/identity"`)
+	if got := c.mustJSON(t, "--json", "job", "status", host, id).str(t, "state"); got != "running" {
+		t.Errorf("state after restoring the identity = %q, want running", got)
+	}
+	final := c.mustJSON(t, "--json", "job", "stop", host, id)
+	if !final.bool(t, "signalled") {
+		t.Error("job stop must signal once the identity verifies again")
+	}
+	if got := final.str(t, "state"); got != "stopped" {
+		t.Errorf("state after a verified stop = %q, want stopped", got)
+	}
+}
+
 // TestLiveJobFailureIsRecorded checks that a job's own non-zero status survives:
 // the stop call afterwards must not relabel a real result as "stopped".
 func TestLiveJobFailureIsRecorded(t *testing.T) {

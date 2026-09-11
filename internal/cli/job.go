@@ -25,7 +25,13 @@ interactive work, prefer a session.
 
 Address a job by the id that `+"`job start`"+` printed. A --name works as
 well for status, logs, stop and kill, but only while it matches exactly one job:
-names may collide, and a collision is an error rather than a guess.`)
+names may collide, and a collision is an error rather than a guess.
+
+A job is only ever reported as running, and only ever signalled, when its
+process identity is verified against the boot id and process start time recorded
+at launch. If the recorded pid now belongs to another process — or cannot be
+verified at all — the job is stale, nothing is signalled, and `+"`signalled`"+`
+in the JSON says so.`)
 	cmd.AddCommand(
 		newJobStartCmd(),
 		newJobListCmd(),
@@ -246,6 +252,10 @@ func runJobSignal(op string, cmd *cobra.Command, host, id, signal string, timeou
 	audit.succeed("", id, nil)
 	if jsonFlag {
 		_ = output.Success(op, host, res).Write(os.Stdout)
+	} else if !res.Signalled {
+		// Never print "sent" for a signal that was refused: the pid could not be
+		// tied to the job, which is exactly what this backend must not guess about.
+		fmt.Printf("%s: no signal sent (process identity not verified), state=%s\n", res.JobID, res.State)
 	} else {
 		fmt.Printf("%s: sent %s, state=%s\n", res.JobID, res.Signal, res.State)
 	}

@@ -30,6 +30,10 @@ func factsFromLines(lines []string, id string) (Facts, bool) {
 			f.PID, _ = strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "RHOST_PID=")))
 		case strings.HasPrefix(line, "RHOST_ALIVE="):
 			f.Alive = strings.TrimSpace(strings.TrimPrefix(line, "RHOST_ALIVE=")) == "yes"
+		case strings.HasPrefix(line, "RHOST_IDENTITY="):
+			f.Identity = IdentityState(strings.TrimSpace(strings.TrimPrefix(line, "RHOST_IDENTITY=")))
+		case strings.HasPrefix(line, "RHOST_SIGNALLED="):
+			f.Signalled = strings.TrimSpace(strings.TrimPrefix(line, "RHOST_SIGNALLED=")) == "yes"
 		case strings.HasPrefix(line, "RHOST_EXIT="):
 			// Strict on purpose: an unreadable or empty exit_code stays -1 ("no
 			// code recorded"). Atoi("") failing into a 0 would report a job that
@@ -108,28 +112,31 @@ type ListEntry struct {
 
 // ParseList parses ListScript output into one Facts per RHOST_META tab row.
 //
-// Row layout: id, pid, alive, exit, stopped, finished_at, meta(base64). The pid
-// is in the row so `job list` cannot claim pid 0 for a job that is running.
+// Row layout: id, pid, alive, identity, exit, stopped, finished_at, meta(base64).
+// The pid is in the row so `job list` cannot claim pid 0 for a job that is
+// running, and the identity is there so the row carries the same fact the state
+// machine reads.
 func ParseList(stdout string) []Facts {
 	var out []Facts
 	for _, line := range strings.Split(stdout, "\n") {
 		if !strings.HasPrefix(line, "RHOST_META\t") {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 8)
-		if len(parts) != 8 {
+		parts := strings.SplitN(line, "\t", 9)
+		if len(parts) != 9 {
 			continue
 		}
 		f := Facts{ID: parts[1], Alive: parts[3] == "yes", ExitCode: -1}
 		if n, err := strconv.Atoi(strings.TrimSpace(parts[2])); err == nil {
 			f.PID = n
 		}
-		if n, err := strconv.Atoi(strings.TrimSpace(parts[4])); err == nil {
+		f.Identity = IdentityState(strings.TrimSpace(parts[4]))
+		if n, err := strconv.Atoi(strings.TrimSpace(parts[5])); err == nil {
 			f.ExitCode = n
 		}
-		f.Stopped = parts[5] == "yes"
-		f.FinishedAt = parts[6]
-		if metaB64 := strings.TrimSpace(parts[7]); metaB64 != "" {
+		f.Stopped = parts[6] == "yes"
+		f.FinishedAt = parts[7]
+		if metaB64 := strings.TrimSpace(parts[8]); metaB64 != "" {
 			if raw, err := base64.StdEncoding.DecodeString(metaB64); err == nil {
 				var m Meta
 				if err := json.Unmarshal(raw, &m); err == nil {

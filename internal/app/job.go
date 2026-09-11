@@ -64,6 +64,11 @@ type JobSignalResult struct {
 	JobID  string `json:"job_id"`
 	Signal string `json:"signal"`
 	State  string `json:"state"`
+	// Signalled says whether a signal was actually delivered to a verified
+	// process group. A stale job reports false: rhost refused to signal a pid it
+	// could not tie to the job, and the caller must read the state, not assume
+	// the stop happened.
+	Signalled bool `json:"signalled"`
 }
 
 func newJobID() (string, error) {
@@ -83,6 +88,9 @@ func mapJobHelperErr(code detached.HelperErr) *errs.Error {
 		dep := strings.TrimPrefix(string(code), "no")
 		return errs.New(errs.RemoteDependencyMissing,
 			"remote host is missing "+dep+" (required by the job backend)", false)
+	case "noproc":
+		return errs.New(errs.RemoteDependencyMissing,
+			"remote host cannot provide process identity (/proc/self/stat): the job backend needs it to tell a job's process from a reused pid", false)
 	case "mkdir":
 		return errs.New(errs.JobStateUnknown, "could not create job state on the remote host", true)
 	case "startfailed":
@@ -315,9 +323,10 @@ func (a *App) JobSignal(ctx context.Context, host, ref, signal string, timeout t
 		return JobSignalResult{}, mapJobHelperErr(herr)
 	}
 	return JobSignalResult{
-		JobID:  id,
-		Signal: signal,
-		State:  string(detached.StateFromFacts(facts)),
+		JobID:     id,
+		Signal:    signal,
+		State:     string(detached.StateFromFacts(facts)),
+		Signalled: facts.Signalled,
 	}, nil
 }
 

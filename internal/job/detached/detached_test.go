@@ -10,9 +10,9 @@ import (
 )
 
 // TestStateMachine pins the documented state derivation (docs/ARCHITECTURE.md
-// §23): an exit-code file is authoritative, a live pid is running, a dead pid
-// with no exit code is stale (never success), and a stopped marker moves any
-// final outcome to "stopped".
+// §23): an exit-code file is authoritative, a live pid is running *only* when
+// its process identity is verified, and everything else is stale (never
+// success) or stopped once the process is actually gone.
 
 func TestStateFromFacts(t *testing.T) {
 	cases := []struct {
@@ -28,7 +28,16 @@ func TestStateFromFacts(t *testing.T) {
 	}, {
 		name: "stopped-request-then-signal", f: Facts{ExitCode: 143, Stopped: true}, want: StateStopped,
 	}, {
-		name: "running", f: Facts{PID: 41, Alive: true, ExitCode: -1}, want: StateRunning,
+		name: "running-identity-verified", f: Facts{PID: 41, Alive: true, Identity: IdentityVerified, ExitCode: -1}, want: StateRunning,
+	}, {
+		name: "stale-pid-reused", f: Facts{PID: 41, Alive: true, Identity: IdentityMismatch, ExitCode: -1}, want: StateStale,
+	}, {
+		// A job directory from before identity tracking, or a host without /proc:
+		// the pid is alive, but nothing ties it to this job, so "running" would be
+		// a fabricated fact.
+		name: "stale-live-but-unverifiable", f: Facts{PID: 41, Alive: true, Identity: IdentityUnavailable, ExitCode: -1}, want: StateStale,
+	}, {
+		name: "stale-identity-mismatch-beats-stopped-marker", f: Facts{PID: 41, Alive: true, Identity: IdentityMismatch, ExitCode: -1, Stopped: true}, want: StateStale,
 	}, {
 		name: "starting-no-pid-yet", f: Facts{PID: 0, Alive: false, ExitCode: -1}, want: StateStarting,
 	}, {
@@ -52,9 +61,13 @@ func TestStateFromFacts(t *testing.T) {
 // a pid, the only honest answers are running or stale, and the state machine
 // picks exactly those.
 func TestStartFactsDerivation(t *testing.T) {
-	f := ParseStartOrDie(t, "RHOST_JOB=j_abc\nRHOST_PID=123\nRHOST_ALIVE=yes\nRHOST_EXIT=-1\nRHOST_STOPPED=no\nRHOST_FINISHED_AT=\n")
+	f := ParseStartOrDie(t, "RHOST_JOB=j_abc\nRHOST_PID=123\nRHOST_ALIVE=yes\nRHOST_IDENTITY=verified\nRHOST_EXIT=-1\nRHOST_STOPPED=no\nRHOST_FINISHED_AT=\n")
 	if got := StateFromFacts(f); got != StateRunning {
 		t.Errorf("live pid should be running, got %s", got)
+	}
+	unverified := ParseStartOrDie(t, "RHOST_JOB=j_abc\nRHOST_PID=123\nRHOST_ALIVE=yes\nRHOST_IDENTITY=unavailable\nRHOST_EXIT=-1\nRHOST_STOPPED=no\nRHOST_FINISHED_AT=\n")
+	if got := StateFromFacts(unverified); got != StateStale {
+		t.Errorf("a live pid with no verifiable identity must be stale, got %s", got)
 	}
 }
 
@@ -68,6 +81,10 @@ func TestParseStartHelperError(t *testing.T) {
 func TestCommandScriptRecordsPidAndTrap(t *testing.T) {
 	s := CommandScript("j_x", "/work", map[string]string{"A": "1"}, "echo hi\nexit 4\n")
 	for _, want := range []string{
+		"rh_write_identity",
+		`> "$D/.identity.$$"`,
+		`mv -f "$D/.identity.$$" "$D/identity"`,
+		"/proc/sys/kernel/random/boot_id",
 		`printf '%s\n' "$$" > "$D/pid"`,
 		`> "$D/exit_code"`,
 		"trap '",
@@ -78,6 +95,17 @@ func TestCommandScriptRecordsPidAndTrap(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("CommandScript missing %q\n---\n%s", want, s)
 		}
+	}
+	// The identity must be *renamed* into place before the pid is written: that
+	// order is what lets every later observer read a complete identity whenever
+	// it sees a pid at all.
+	ident := strings.Index(s, "rh_write_identity\n")
+	pid := strings.Index(s, `> "$D/pid"`)
+	if ident < 0 || pid < 0 || ident > pid {
+		t.Errorf("identity must be written before the pid file:\n%s", s)
+	}
+	if strings.Contains(s, `printf '%s\n' "$$" > "$D/identity"`) {
+		t.Errorf("identity must be written atomically, not in place:\n%s", s)
 	}
 	// A stopped job must record its signal status, never the initial rc of 0:
 	// without these traps bash runs the EXIT trap after a SIGTERM death with rc
@@ -107,6 +135,8 @@ func TestStartScriptPreflightsAndDetaches(t *testing.T) {
 		"RHOST_ERR=nobash",
 		"RHOST_ERR=nosetsid",
 		"RHOST_ERR=nonohup",
+		"RHOST_ERR=noproc",
+		`[ -s "$DIR/identity" ]`,
 		"setsid nohup bash \"$DIR/command.sh\"",
 		`>"$DIR/stdout.log"`,
 		`2>"$DIR/stderr.log"`,
@@ -198,8 +228,8 @@ func TestScriptsQuoteTheJobHandle(t *testing.T) {
 // a column added to the script cannot silently shift meta into the pid field.
 func TestListScriptRowShape(t *testing.T) {
 	s := ListScript()
-	if !strings.Contains(s, `"$id" "$pid" "$alive" "$ec" "$stopped" "$fa" "$meta"`) {
-		t.Errorf("ListScript row must be id, pid, alive, exit, stopped, finished_at, meta:\n%s", s)
+	if !strings.Contains(s, `"$id" "$pid" "$alive" "$identity" "$ec" "$stopped" "$fa" "$meta"`) {
+		t.Errorf("ListScript row must be id, pid, alive, identity, exit, stopped, finished_at, meta:\n%s", s)
 	}
 	if !strings.Contains(s, `[ -d "$BASE/jobs" ] || exit 0`) {
 		t.Errorf("ListScript must tolerate a host with no jobs yet:\n%s", s)
@@ -208,13 +238,19 @@ func TestListScriptRowShape(t *testing.T) {
 
 func TestSignalScriptGroupKill(t *testing.T) {
 	s := SignalScript("j_x", false)
-	if !strings.Contains(s, `kill -TERM -"$pid" 2>/dev/null || true`) {
+	if !strings.Contains(s, `kill -TERM -"$pid" 2>/dev/null && signalled=yes || true`) {
 		t.Errorf("SignalScript must signal the process group: %s", s)
 	}
-	// The stopped marker must be written only while the process is alive, so a
-	// stop request never relabels an already-recorded result.
-	if !strings.Contains(s, "if [ \"$alive\" = yes ]; then\n: > \"$DIR/stopped\"") {
-		t.Errorf("SignalScript must gate the stopped marker on liveness: %s", s)
+	// The stopped marker and the signal itself are gated on a *verified* process
+	// identity: a live pid that cannot be tied to the job may belong to anything,
+	// and signalling it is the one unrecoverable mistake this backend can make.
+	if !strings.Contains(s, "if [ \"$alive\" = yes ] && [ \"$identity\" = verified ]; then\n: > \"$DIR/stopped\"") {
+		t.Errorf("SignalScript must gate the stopped marker and the signal on verified identity: %s", s)
+	}
+	// Whether a signal was actually delivered is reported, not assumed: the
+	// caller must be able to tell a refused stop from a delivered one.
+	if !strings.Contains(s, "signalled=no\n") || !strings.Contains(s, `RHOST_SIGNALLED=%s`) {
+		t.Errorf("SignalScript must report whether it signalled: %s", s)
 	}
 	// `kill` selects SIGKILL and nothing else may.
 	if !strings.Contains(SignalScript("j_x", true), "kill -KILL -") {
@@ -262,12 +298,12 @@ func TestParseLogsRoundTrip(t *testing.T) {
 func TestParseStatusCarriesMeta(t *testing.T) {
 	meta := NewMeta("j_1", "train", "/work", "python train.py")
 	mb := base64.StdEncoding.EncodeToString(mustMarshal(t, meta))
-	stdout := "RHOST_JOB=j_1\nRHOST_PID=7\nRHOST_ALIVE=no\nRHOST_EXIT=3\nRHOST_STOPPED=no\nRHOST_FINISHED_AT=2026-09-10T12:00:00Z\nRHOST_META=" + mb + "\n"
+	stdout := "RHOST_JOB=j_1\nRHOST_PID=7\nRHOST_ALIVE=no\nRHOST_IDENTITY=unavailable\nRHOST_EXIT=3\nRHOST_STOPPED=no\nRHOST_FINISHED_AT=2026-09-10T12:00:00Z\nRHOST_META=" + mb + "\n"
 	f, err := ParseStatus(stdout)
 	if err != "" {
 		t.Fatalf("ParseStatus: %s", err)
 	}
-	if f.ID != "j_1" || f.PID != 7 || f.Alive || f.ExitCode != 3 || f.FinishedAt == "" {
+	if f.ID != "j_1" || f.PID != 7 || f.Alive || f.Identity != IdentityUnavailable || f.ExitCode != 3 || f.FinishedAt == "" {
 		t.Errorf("facts wrong: %+v", f)
 	}
 	if f.Meta == nil || f.Meta.Command != "python train.py" || f.Meta.Backend != Backend {
@@ -278,13 +314,13 @@ func TestParseStatusCarriesMeta(t *testing.T) {
 func TestParseList(t *testing.T) {
 	meta := NewMeta("j_2", "", "", "echo x")
 	mb := base64.StdEncoding.EncodeToString(mustMarshal(t, meta))
-	stdout := "RHOST_META\tj_2\t4412\tyes\t-1\tno\t\t" + mb + "\n"
+	stdout := "RHOST_META\tj_2\t4412\tyes\tverified\t-1\tno\t\t" + mb + "\n"
 	list := ParseList(stdout)
 	if len(list) != 1 {
 		t.Fatalf("ParseList = %d entries, want 1", len(list))
 	}
 	f := list[0]
-	if f.ID != "j_2" || f.PID != 4412 || !f.Alive || f.ExitCode != -1 || f.Meta == nil {
+	if f.ID != "j_2" || f.PID != 4412 || !f.Alive || f.Identity != IdentityVerified || f.ExitCode != -1 || f.Meta == nil {
 		t.Errorf("list entry wrong: %+v", f)
 	}
 }
@@ -292,7 +328,7 @@ func TestParseList(t *testing.T) {
 // A list row with no pid must not become pid 0 by accident of parsing: an empty
 // field means "never had one", which is a different fact from 4412.
 func TestParseListRowWithoutPid(t *testing.T) {
-	list := ParseList("RHOST_META\tj_3\t\tno\t0\tno\t2026-09-10T12:00:00Z\t\n")
+	list := ParseList("RHOST_META\tj_3\t\tno\tunavailable\t0\tno\t2026-09-10T12:00:00Z\t\n")
 	if len(list) != 1 {
 		t.Fatalf("want 1 entry, got %d", len(list))
 	}
@@ -317,6 +353,58 @@ func TestParseStatusRejectsGarbageExitCode(t *testing.T) {
 	}
 	if got := StateFromFacts(f); got != StateStale {
 		t.Errorf("state = %s, want stale (never exited)", got)
+	}
+}
+
+// Whether a stop actually signalled anything is reported, not assumed: a job
+// whose pid cannot be tied to it must come back as "not signalled", so the agent
+// never reads a refusal as a stop.
+func TestParseStatusCarriesSignalled(t *testing.T) {
+	const shape = "RHOST_JOB=j_5\nRHOST_PID=7\nRHOST_ALIVE=no\nRHOST_IDENTITY=unavailable\nRHOST_SIGNALLED=%s\nRHOST_EXIT=-1\nRHOST_STOPPED=no\nRHOST_FINISHED_AT=\n"
+	refused, err := ParseStatus(strings.Replace(shape, "%s", "no", 1))
+	if err != "" {
+		t.Fatalf("ParseStatus: %s", err)
+	}
+	if refused.Signalled {
+		t.Errorf("RHOST_SIGNALLED=no must parse as not signalled: %+v", refused)
+	}
+	delivered, err := ParseStatus(strings.Replace(shape, "%s", "yes", 1))
+	if err != "" {
+		t.Fatalf("ParseStatus: %s", err)
+	}
+	if !delivered.Signalled {
+		t.Errorf("RHOST_SIGNALLED=yes must parse as signalled: %+v", delivered)
+	}
+	// A status script never reports the field at all, and that must not become a
+	// claim that something was signalled.
+	plain, err := ParseStatus("RHOST_JOB=j_5\nRHOST_PID=7\nRHOST_ALIVE=yes\nRHOST_IDENTITY=verified\nRHOST_EXIT=-1\nRHOST_STOPPED=no\nRHOST_FINISHED_AT=\n")
+	if err != "" {
+		t.Fatalf("ParseStatus: %s", err)
+	}
+	if plain.Signalled {
+		t.Errorf("a status response must not claim delivery: %+v", plain)
+	}
+}
+
+// The observer measures the process start time by cutting the stat line at its
+// *last* ')' — the comm field is parenthesised and may contain spaces, so a
+// positional read of the raw line would slice the wrong field — and it refuses
+// to call a mismatched pid alive.
+func TestFactsVarsVerifyProcessIdentity(t *testing.T) {
+	s := StatusScript("j_x")
+	for _, want := range []string{
+		`/proc/sys/kernel/random/boot_id`,
+		`sed -n 's/^.*) //p' "/proc/$pid/stat"`,
+		`awk '{print $20}'`,
+		`[ "$rstart" = "$curstart" ]`,
+		"identity=mismatch\n      alive=no",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("facts must compare the process identity (%q):\n%s", want, s)
+		}
+	}
+	if !strings.Contains(s, `[ -f "$DIR/identity" ]`) {
+		t.Errorf("facts must read the recorded identity:\n%s", s)
 	}
 }
 

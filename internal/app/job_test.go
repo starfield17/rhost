@@ -21,6 +21,7 @@ func TestMapJobHelperErr(t *testing.T) {
 		{"nobash", errs.RemoteDependencyMissing, false},
 		{"nosetsid", errs.RemoteDependencyMissing, false},
 		{"nonohup", errs.RemoteDependencyMissing, false},
+		{"noproc", errs.RemoteDependencyMissing, false},
 		{"mkdir", errs.JobStateUnknown, true},
 		{"startfailed", errs.JobStateUnknown, true},
 		{"malformed", errs.Internal, false},
