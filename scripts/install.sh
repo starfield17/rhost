@@ -7,6 +7,9 @@
 # replaced, and an existing binary is left in place if verification fails.
 #
 # Override the install directory with RHOST_INSTALL_DIR (default: ~/.local/bin).
+# Pin an exact version with RHOST_VERSION; without it the newest stable release
+# is installed, or the newest release of any kind while every release is a
+# prerelease.
 set -euo pipefail
 
 repo="starfield17/rhost"
@@ -26,18 +29,29 @@ case "$arch" in
   *) echo "unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 
+# The tag of the first release an endpoint reports, with the leading `v` removed.
+# A missing answer is not an error here: `releases/latest` 404s while every
+# release is a prerelease, which is exactly the state a project is in before its
+# first stable one, and the fallback below is the answer to that.
+latest_tag() {
+  curl -fsSL "$1" 2>/dev/null \
+    | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1 || true
+}
+
 version="${RHOST_VERSION:-}"
 if [ -z "$version" ]; then
-  version="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
-    | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)"
+  version="$(latest_tag "https://api.github.com/repos/${repo}/releases/latest")"
 fi
-[ -n "$version" ] || { echo "could not determine latest version" >&2; exit 1; }
+if [ -z "$version" ]; then
+  version="$(latest_tag "https://api.github.com/repos/${repo}/releases?per_page=1")"
+fi
+[ -n "$version" ] || { echo "could not determine the newest version" >&2; exit 1; }
 
 asset="rhost_${version}_${os}_${arch}"
 url="https://github.com/${repo}/releases/download/v${version}/${asset}"
 
 mkdir -p "$install_dir"
-echo "downloading $asset ..."
+echo "downloading rhost ${version} for ${os}/${arch} ..."
 # Everything lands in a temporary directory inside the install dir, so the rename
 # that publishes the binary is within one filesystem (atomic) and an existing
 # install is still there untouched if any step before it fails.

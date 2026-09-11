@@ -7,7 +7,14 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Both sides of the project are exercised: the remote side is Linux, and the
+    # first local side is macOS. OpenSSH, unix sockets, rsync (GNU vs openrsync)
+    # and PATH all differ between them, and those are what this tool is made of.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

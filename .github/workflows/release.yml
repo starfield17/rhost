@@ -9,7 +9,20 @@ permissions:
   contents: write
 
 jobs:
+  # A tag is not evidence that the code works. Everything the repository calls a
+  # gate runs here first, so a red tree cannot become a published binary.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23"
+      - name: Check (gofmt + vet + unit tests + portability, AGENTS.md §9)
+        run: make check
+
   build:
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -64,3 +77,7 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          # A tag with a hyphen is a semver prerelease, and it is marked as one:
+          # `install.sh` falls back to the newest release when no stable one
+          # exists, so "alpha" is a statement about maturity, not a hidden flag.
+          prerelease: ${{ contains(github.ref_name, '-') && 'true' || 'false' }}
