@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/starfield17/rhost/internal/app"
+	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/status"
 )
 

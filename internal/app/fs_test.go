@@ -157,6 +157,53 @@ func TestFsGetReportsTheFileItWrote(t *testing.T) {
 	}
 }
 
+func TestFsPutReportsEffectiveRemoteFile(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "artifact.bin")
+	if err := os.WriteFile(source, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	remoteDir := t.TempDir()
+	scp := stubTool(t, "scp", "exit 0")
+	a := newStubApp(scp, "rsync")
+
+	res, aerr := a.FsPut(context.Background(), FsPutOptions{
+		Host: "gpu", LocalPath: source, Remote: remoteDir,
+	})
+	if aerr != nil {
+		t.Fatal(aerr)
+	}
+	want := fileops.RemoteSpec("gpu", filepath.Join(remoteDir, filepath.Base(source)))
+	if res.Destination != want {
+		t.Errorf("destination = %q, want effective file %q", res.Destination, want)
+	}
+}
+
+func TestFsPutDoesNotClaimUnobservedMultiplexing(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "artifact.bin")
+	if err := os.WriteFile(source, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scp := stubTool(t, "scp", "exit 0")
+	ssh := stubTool(t, "ssh", `case " $* " in *" -O check "*) exit 1;; esac; /bin/sh -c "$last"`)
+	t.Setenv("RHOST_REMOTE_STATE", t.TempDir())
+	a := &App{
+		SSH: openssh.New(openssh.Config{
+			SSHBin:      ssh,
+			ControlPath: filepath.Join(t.TempDir(), "%C"),
+		}),
+		Transfers: &fileops.Runner{ScpBin: scp, RsyncBin: "rsync"},
+	}
+	res, aerr := a.FsPut(context.Background(), FsPutOptions{
+		Host: "gpu", LocalPath: source, Remote: "/tmp/artifact.bin",
+	})
+	if aerr != nil {
+		t.Fatal(aerr)
+	}
+	if res.Multiplexed {
+		t.Error("multiplexed=true without an answering ControlMaster")
+	}
+}
+
 func TestFsMapsToolFailures(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "f.txt")
 	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
