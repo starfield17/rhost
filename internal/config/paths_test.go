@@ -49,6 +49,28 @@ func TestEnsureControlDir(t *testing.T) {
 	}
 }
 
+func TestEnsurePrivateDirRejectsSymlinkAndTightensMode(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "state")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensurePrivateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("private dir mode = %v, %v; want 0700", info, err)
+	}
+
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensurePrivateDir(link); err == nil {
+		t.Error("a symlink must not be accepted as private state")
+	}
+}
+
 // TestControlPathFitsSocketPath is a regression caught against a real remote
 // host: a deep cache dir plus OpenSSH's fixed 40-byte %C expansion overflows
 // sun_path, and ssh then refuses every command with "ControlPath too long".

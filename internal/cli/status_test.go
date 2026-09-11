@@ -126,3 +126,10 @@ func TestHumanAgeRejectsGarbage(t *testing.T) {
 		t.Errorf("unparseable timestamp = %q, want -", got)
 	}
 }
+
+func TestOfflineWatchTickHasTimestamp(t *testing.T) {
+	res := offlineStatus(errs.New(errs.SSHUnreachable, "offline", true))
+	if _, err := time.Parse(time.RFC3339, res.ProbedAt); err != nil {
+		t.Errorf("offline watch timestamp = %q: %v", res.ProbedAt, err)
+	}
+}

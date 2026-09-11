@@ -78,6 +78,12 @@ func TestEnabledHonoursEnv(t *testing.T) {
 func TestRecordUsesPrivatePermissions(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state")
 	p := Path(dir)
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := (&Recorder{Path: p}).Record(Entry{Operation: "exec"}); err != nil {
 		t.Fatal(err)
 	}

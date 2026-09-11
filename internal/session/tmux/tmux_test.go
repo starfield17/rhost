@@ -112,6 +112,30 @@ func TestCreateScriptNotReadyCleansUp(t *testing.T) {
 	}
 }
 
+func TestCreateScriptSerializesNamesAndCleansInterruptedBootstrap(t *testing.T) {
+	s := CreateScript(NewMeta("s_abc", "dev", "", "bash"), "bash --noprofile --norc -i")
+	lock := indexOf(s, `flock -w 30 8`)
+	scan := indexOf(s, `for d in "$BASE"/sessions/*/`)
+	create := indexOf(s, `tmux new-session`)
+	arm := indexOf(s, `created=yes`)
+	meta := indexOf(s, `> "$DIR/meta.json"`)
+	disarm := indexOf(s, `created=no`)
+	for _, want := range []string{
+		`command -v flock`, `exec 8> "$BASE/sessions/.create.lock"`,
+		`trap cleanup EXIT HUP INT TERM`, `tmux kill-session`, `rm -rf "$DIR"`,
+	} {
+		if !contains(s, want) {
+			t.Errorf("CreateScript lifecycle guard missing %q:\n%s", want, s)
+		}
+	}
+	if lock < 0 || scan < 0 || lock > scan {
+		t.Errorf("duplicate-name scan is not under the global lock: lock=%d scan=%d", lock, scan)
+	}
+	if create < 0 || arm < create || meta < arm || disarm < meta {
+		t.Errorf("cleanup lifecycle is not create -> arm -> metadata -> disarm: %d %d %d %d", create, arm, meta, disarm)
+	}
+}
+
 func TestIntegrationScriptReadyPath(t *testing.T) {
 	s := integrationScript("s_abc")
 	for _, want := range []string{

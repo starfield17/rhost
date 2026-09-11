@@ -263,6 +263,14 @@ func TestValidateTransferPaths(t *testing.T) {
 	}
 }
 
+func TestValidateTransferPathsRejectsRemoteSourceGlob(t *testing.T) {
+	for _, source := range []string{"gpu:~/work/*.txt", "gpu:~/work/file?.txt", "gpu:~/work/[ab].txt"} {
+		if err := ValidateTransferPaths(source, "./download"); err == nil {
+			t.Errorf("remote single-file source %q accepted a glob", source)
+		}
+	}
+}
+
 // TestRemoteSpecSplitIPv6 pins the round trip: a colon-bearing host is bracketed
 // the way scp and rsync want it, and reading the spec back finds the split after
 // the bracket rather than inside the address.

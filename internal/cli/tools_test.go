@@ -193,6 +193,20 @@ func TestTunnelOpenValidationIsConfigurationError(t *testing.T) {
 	}
 }
 
+func TestDoctorHumanCapabilitiesIncludeRemoteHelpers(t *testing.T) {
+	t.Cleanup(saveGlobals())
+	jsonFlag = false
+	res := app.DoctorResult{Host: "example-host", Capabilities: map[string]bool{
+		"python3": true, "rg": true, "realpath": true,
+	}}
+	out := captureStdout(t, func() { renderDoctor(res) })
+	for _, name := range []string{"python3", "rg", "realpath"} {
+		if !strings.Contains(out, name) {
+			t.Errorf("doctor human output omitted %s:\n%s", name, out)
+		}
+	}
+}
+
 func TestLoadPatchRequiresHashAndEdits(t *testing.T) {
 	// A patch with no hash cannot be checked against anything, so it is refused
 	// before it is sent rather than becoming a remote FILE_CONFLICT.
