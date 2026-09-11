@@ -42,3 +42,5 @@ jobs:
         run: go test -race ./...
       - name: Build
         run: go build ./cmd/rhost
+      - name: Rehearse release artifacts
+        run: make dist

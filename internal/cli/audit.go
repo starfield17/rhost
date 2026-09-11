@@ -83,7 +83,8 @@ func newAuditCmd() *cobra.Command {
 		Long: `Read rhost's local audit log — a JSON Lines file of the operations this
 machine has run against remote hosts (docs/ARCHITECTURE.md §36).
 
-It records operations, not secrets: no environment maps and no file contents.
+It records bounded operation metadata: no environment maps and no file contents.
+Command summaries are not secret filters, so do not put credentials on a command line.
 Logging is fail-open and can be turned off with RHOST_AUDIT=0.
 
 By default the most recent 20 entries are shown; --limit 0 shows all.`,

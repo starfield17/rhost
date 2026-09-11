@@ -237,7 +237,7 @@ Memory        11.2 / 32 GiB
 Disk          380 / 950 GiB
 
 Accelerators
-NVIDIA RTX 4060
+Generic compute GPU
 GPU           93%
 VRAM          6.2 / 8.0 GiB
 

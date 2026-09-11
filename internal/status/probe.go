@@ -90,11 +90,16 @@ done
 # Optional NVIDIA telemetry. Missing nvidia-smi is normal (WSL, CPU-only, macOS
 # CI) and must not fail the snapshot (§29).
 if command -v nvidia-smi >/dev/null 2>&1; then
-  nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu \
-    --format=csv,noheader,nounits 2>/dev/null | awk -F',' '{
+  if gpu_rows=$(nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu \
+    --format=csv,noheader,nounits 2>/dev/null); then
+    em accelerators_probe ok
+    printf '%s\n' "$gpu_rows" | awk -F',' '{
       for (i = 1; i <= NF; i++) { gsub(/^[ \t]+|[ \t]+$/, "", $i) }
       printf "gpu=%s\t%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, $5, $6
     }'
+  else
+    em accelerators_probe failed
+  fi
 fi
 :`
 
@@ -124,48 +129,63 @@ func ParseProbe(out string) (Snapshot, error) {
 		if !ok {
 			continue
 		}
-		have[key] = true
-
 		switch key {
 		case "rhost_probe_version":
 			if n, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
 				version = n
+				have[key] = true
 			}
 		case "hostname":
 			snap.System.Hostname = val
+			have[key] = val != ""
 		case "os":
 			snap.System.OS = val
+			have[key] = val != ""
 		case "kernel":
 			snap.System.Kernel = val
+			have[key] = val != ""
 		case "arch":
 			snap.System.Arch = val
+			have[key] = val != ""
 		case "platform":
 			snap.System.Platform = val
+			have[key] = val != ""
 		case "uptime_seconds":
 			snap.System.UptimeSeconds = parseInt64(val)
+			have[key] = snap.System.UptimeSeconds != nil
 		case "load1":
 			snap.System.Load.One = parseFloat(val)
+			have[key] = snap.System.Load.One != nil
 		case "load5":
 			snap.System.Load.Five = parseFloat(val)
+			have[key] = snap.System.Load.Five != nil
 		case "load15":
 			snap.System.Load.Fifteen = parseFloat(val)
+			have[key] = snap.System.Load.Fifteen != nil
 		case "cpu_count":
 			snap.System.CPUCount = parseInt(val)
+			have[key] = snap.System.CPUCount != nil
 		case "cpu_percent":
 			snap.System.CPUPercent = parseFloat(val)
+			have[key] = snap.System.CPUPercent != nil
 		case "mem_total_kb":
 			snap.System.Memory.TotalBytes = kbToBytes(parseUint64(val))
+			have[key] = snap.System.Memory.TotalBytes != nil
 		case "mem_available_kb":
 			snap.System.Memory.AvailableBytes = kbToBytes(parseUint64(val))
+			have[key] = snap.System.Memory.AvailableBytes != nil
 		case "disk":
 			if d, mount, ok := parseDisk(val); ok && !seenDisk[mount] {
 				seenDisk[mount] = true
 				snap.System.Disks = append(snap.System.Disks, d)
+				have[key] = true
 			}
 		case "gpu":
 			if a, ok := parseGPU(val); ok {
 				snap.Accelerators = append(snap.Accelerators, a)
 			}
+		case "accelerators_probe":
+			have[key] = strings.TrimSpace(val) == "ok"
 		}
 	}
 
@@ -185,14 +205,19 @@ func parseDisk(val string) (Disk, string, bool) {
 		return Disk{}, "", false
 	}
 	pct := parseFloat(strings.TrimSuffix(strings.TrimSpace(f[4]), "%"))
+	total, used, available := parseUint64(f[1]), parseUint64(f[2]), parseUint64(f[3])
+	mount := strings.TrimSpace(f[5])
+	if total == nil || used == nil || available == nil || pct == nil || mount == "" {
+		return Disk{}, "", false
+	}
 	return Disk{
 		Filesystem:     strings.TrimSpace(f[0]),
-		TotalBytes:     kbToBytes(parseUint64(f[1])),
-		UsedBytes:      kbToBytes(parseUint64(f[2])),
-		AvailableBytes: kbToBytes(parseUint64(f[3])),
+		TotalBytes:     kbToBytes(total),
+		UsedBytes:      kbToBytes(used),
+		AvailableBytes: kbToBytes(available),
 		UsedPercent:    pct,
-		Mount:          strings.TrimSpace(f[5]),
-	}, strings.TrimSpace(f[5]), true
+		Mount:          mount,
+	}, mount, true
 }
 
 // parseGPU reads `index<TAB>name<TAB>util<TAB>mem_used_mib<TAB>mem_total_mib<TAB>temp`.
@@ -219,7 +244,7 @@ func missing(have map[string]bool, snap Snapshot) []string {
 	if !have["uptime_seconds"] {
 		u = append(u, "uptime")
 	}
-	if !have["load1"] {
+	if !have["load1"] || !have["load5"] || !have["load15"] {
 		u = append(u, "load")
 	}
 	if !have["cpu_count"] {
@@ -233,6 +258,9 @@ func missing(have map[string]bool, snap Snapshot) []string {
 	}
 	if len(snap.System.Disks) == 0 {
 		u = append(u, "disk")
+	}
+	if _, attempted := have["accelerators_probe"]; attempted && !have["accelerators_probe"] {
+		u = append(u, "accelerators")
 	}
 	return u
 }

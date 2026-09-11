@@ -1,8 +1,8 @@
 // Package audit writes a local, best-effort record of rhost's remote operations
 // (docs/ARCHITECTURE.md §36).
 //
-// It records *operations, not secrets*: never an environment map, never file
-// contents. The log is a JSON Lines file — one Entry per line — so it can be
+// It records bounded operation metadata: never an environment map, never file
+// contents. Command summaries are not a secret filter. The log is a JSON Lines file — one Entry per line — so it can be
 // tailed and parsed without a schema migration.
 //
 // Logging is deliberately fail-open: the caller is expected to report a write

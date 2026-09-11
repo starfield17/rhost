@@ -14,6 +14,8 @@ import (
 	"github.com/starfield17/rhost/internal/output"
 )
 
+const maxRemoteHelperBytes = 8 * 1024 * 1024
+
 // remoteFileOps is the set of subcommands that ride the embedded remote helper.
 // They are one family, not five commands: same host/path arguments, same JSON
 // request, same response envelope, different flags.
@@ -181,8 +183,8 @@ func newRemoteFileCmd(op string) *cobra.Command {
 // bounds the helper enforces remotely; checking them here costs nothing and
 // saves an SSH round trip on a mistake the caller can see immediately.
 func helperUsageError(op string, maxBytes, start, lines, limit, offset, context int) *errs.Error {
-	if maxBytes <= 0 {
-		return errs.New(errs.ConfigInvalid, "--max-bytes must be positive", false)
+	if maxBytes <= 0 || maxBytes > maxRemoteHelperBytes {
+		return errs.New(errs.ConfigInvalid, "--max-bytes must be between 1 and 8388608", false)
 	}
 	if op == "read" && (start < 1 || lines < 1) {
 		return errs.New(errs.ConfigInvalid, "--start and --lines must be positive", false)

@@ -39,6 +39,10 @@ latest_tag() {
 }
 
 version="${RHOST_VERSION:-}"
+
+# Accept the spelling people naturally copy from a Git tag, but keep release
+# URLs and asset names canonical (exactly one leading v on the tag only).
+version="${version#v}"
 if [ -z "$version" ]; then
   version="$(latest_tag "https://api.github.com/repos/${repo}/releases/latest")"
 fi
@@ -46,6 +50,9 @@ if [ -z "$version" ]; then
   version="$(latest_tag "https://api.github.com/repos/${repo}/releases?per_page=1")"
 fi
 [ -n "$version" ] || { echo "could not determine the newest version" >&2; exit 1; }
+case "$version" in
+  *[!0-9A-Za-z.+-]*) echo "invalid RHOST_VERSION: $version" >&2; exit 1 ;;
+esac
 
 asset="rhost_${version}_${os}_${arch}"
 url="https://github.com/${repo}/releases/download/v${version}/${asset}"

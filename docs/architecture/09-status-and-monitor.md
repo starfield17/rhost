@@ -30,7 +30,7 @@ Accelerators are an extensible list:
     {
       "vendor": "nvidia",
       "type": "gpu",
-      "name": "NVIDIA GeForce RTX 4060",
+      "name": "Generic Compute GPU",
       "utilization_percent": 93,
       "memory_used_bytes": 6657199308,
       "memory_total_bytes": 8589934592,
@@ -99,4 +99,3 @@ It should then rediscover tmux sessions and remote jobs instead of assuming cont
 v0.1 can be a terminal UI. A browser dashboard is not required.
 
 ---
-

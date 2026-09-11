@@ -81,7 +81,7 @@ Files:
   `message`. `SYNC_REJECTED` is the subset that rhost refused before running
   anything: a destination that is a glob, a whole home, or a top-level directory
   with `--delete`.
-- `fs batch` keeps per-entry results in `data.results[]` even when the run fails
+- `fs batch` keeps per-entry results in `data.items[]` even when the run fails
   overall: the aggregate exit status does not name which entry failed.
 
 Tunnels:
@@ -120,5 +120,5 @@ else now. Read its logs for what happened, then re-run if the work mattered.
 `RHOST_SSH_LOG_LEVEL=VERBOSE`; rhost keeps OpenSSH quiet by default.
 
 **You need to know what rhost did earlier.** `rhost audit --json` reads the local
-trail (operations, not secrets). It is the only record of operations this machine
+trail (bounded operation metadata, never environment maps or file contents). It is the only record of operations this machine
 performed; the remote side has none of its own.

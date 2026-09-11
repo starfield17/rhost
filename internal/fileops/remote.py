@@ -33,6 +33,7 @@ EDIT_LIMIT = 8 * 1024 * 1024
 # Ceiling for one streamed search record. rg has already buffered the line, so
 # reading it is not the risk; holding a multi-gigabyte line in this process is.
 RECORD_LIMIT = 8 * 1024 * 1024
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 
 class Failure(Exception):
@@ -55,10 +56,19 @@ def request_path(q):
 
 def check_capacity(q):
     """The caller's response budget, validated before anything is read."""
-    cap = int(q.get('max_bytes') or 0)
-    if cap <= 0:
-        raise Failure('CONFIG_INVALID', 'max_bytes must be positive')
+    cap = integer(q, 'max_bytes', 0, 'CONFIG_INVALID')
+    if cap <= 0 or cap > MAX_RESPONSE_BYTES:
+        raise Failure('CONFIG_INVALID', 'max_bytes must be between 1 and %d' %
+                      MAX_RESPONSE_BYTES)
     return cap
+
+
+def integer(obj, key, default=None, code='CONFIG_INVALID'):
+    """Read one JSON integer without accepting bool, float or numeric text."""
+    value = obj.get(key, default)
+    if type(value) is not int:
+        raise Failure(code, '%s must be an integer' % key)
+    return value
 
 
 def resolve(q, path):
@@ -184,11 +194,16 @@ def search(q, path, op):
     mode = q.get('mode') or 'content'
     if mode not in ('content', 'files', 'count'):
         raise Failure('CONFIG_INVALID', 'mode must be content, files or count')
-    limit, offset = int(q.get('limit', 100)), int(q.get('offset', 0))
+    if not os.path.exists(path):
+        raise Failure('FILE_NOT_FOUND', 'no such directory: %s' % path)
+    if not os.path.isdir(path):
+        raise Failure('INVALID_TARGET', 'search root is not a directory: %s' % path)
+    limit = integer(q, 'limit', 100)
+    offset = integer(q, 'offset', 0)
     if limit <= 0 or offset < 0:
         raise Failure('CONFIG_INVALID', 'limit must be positive and offset nonnegative')
     cap = check_capacity(q)
-    if 'pattern' not in q:
+    if type(q.get('pattern')) is not str:
         raise Failure('CONFIG_INVALID', 'a pattern is required')
 
     args = ['rg']
@@ -209,8 +224,13 @@ def search(q, path, op):
         if q.get('ignore_case'):
             args.append('-i')
         if q.get('glob'):
+            if type(q['glob']) is not str:
+                raise Failure('CONFIG_INVALID', 'glob must be a string')
             args += ['-g', q['glob']]
-        args += ['-C', str(int(q.get('context', 0))), '-e', q['pattern']]
+        context = integer(q, 'context', 0)
+        if context < 0:
+            raise Failure('CONFIG_INVALID', 'context must be nonnegative')
+        args += ['-C', str(context), '-e', q['pattern']]
     args += ['--', '.']
 
     rows, used, seen, truncated = [], 0, 0, False
@@ -224,11 +244,19 @@ def search(q, path, op):
                     seen += 1
                     continue
                 cost = len(json.dumps(row))
-                if len(rows) >= limit or used + cost > cap:
+                if len(rows) >= limit:
+                    truncated = True
+                    break
+                if used + cost > cap:
+                    # This record has been consumed but cannot fit even on an
+                    # otherwise empty page. Advance past it so the cursor can
+                    # never deadlock on the same oversized result.
+                    seen += 1
                     truncated = True
                     break
                 rows.append(row)
                 used += cost
+                seen += 1
             if truncated:
                 proc.terminate()
             rc = proc.wait()
@@ -242,7 +270,7 @@ def search(q, path, op):
                 proc.kill()
                 proc.wait()
             proc.stdout.close()
-    return {'path': path, 'results': rows, 'truncated': truncated, 'next': offset + len(rows)}
+    return {'path': path, 'results': rows, 'truncated': truncated, 'next': seen}
 
 
 def read(q, path):
@@ -252,7 +280,8 @@ def read(q, path):
     the second pass; an external edit between the two passes is reported as a
     conflict instead of returning half-new content.
     """
-    start, count = int(q.get('start', 1)), int(q.get('lines', 200))
+    start = integer(q, 'start', 1)
+    count = integer(q, 'lines', 200)
     if start < 1 or count < 1:
         raise Failure('CONFIG_INVALID', 'start and lines must be positive')
     cap = check_capacity(q)
@@ -339,10 +368,12 @@ def requested_mode(q):
     value = q.get('file_mode')
     if value in (None, ''):
         return None
-    try:
-        return int(str(value), 8) & 0o7777
-    except ValueError:
+    if type(value) is not str or len(value) not in (3, 4) or any(c not in '01234567' for c in value):
         raise Failure('CONFIG_INVALID', 'file_mode must be an octal permission such as 0644')
+    mode = int(value, 8)
+    if mode > 0o7777:
+        raise Failure('CONFIG_INVALID', 'file_mode must be between 0000 and 07777')
+    return mode
 
 
 def write_or_patch(q, path):
@@ -359,6 +390,10 @@ def write_or_patch(q, path):
     """
     op = q['op']
     parent = os.path.dirname(path)
+    if not os.path.exists(parent):
+        raise Failure('FILE_NOT_FOUND', 'no such parent directory: %s' % parent)
+    if not os.path.isdir(parent):
+        raise Failure('INVALID_TARGET', 'parent is not a directory: %s' % parent)
     with contextlib.ExitStack() as stack:
         dfd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
         stack.callback(os.close, dfd)
@@ -433,21 +468,34 @@ def apply_patch(old, edits):
     the file as it was read — a patch that would depend on an earlier edit's
     renumbering is rejected rather than silently mis-applied.
     """
+    if type(edits) is not list:
+        raise Failure('INVALID_PATCH', 'edits must be an array')
+    for e in edits:
+        if type(e) is not dict:
+            raise Failure('INVALID_PATCH', 'each edit must be an object')
+        if set(e) != {'start', 'end', 'text'}:
+            raise Failure('INVALID_PATCH', 'each edit needs only start, end and text')
+        integer(e, 'start', code='INVALID_PATCH')
+        integer(e, 'end', code='INVALID_PATCH')
+        if type(e['text']) is not str:
+            raise Failure('INVALID_PATCH', 'edit text must be a string')
     lines = old.decode('utf-8').splitlines(keepends=True)
-    ordered = sorted(edits, key=lambda e: int(e['start']))
+    ordered = sorted(edits, key=lambda e: e['start'])
     previous = 0
     for e in ordered:
-        start, end = int(e['start']), int(e['end'])
+        start, end = e['start'], e['end']
         if start <= previous or start < 1 or end < start or end > len(lines):
             raise Failure('INVALID_PATCH',
                           'edits must be non-overlapping 1-based inclusive ranges inside the file')
         previous = end
     for e in reversed(ordered):
-        lines[int(e['start']) - 1:int(e['end'])] = [e['text']]
+        lines[e['start'] - 1:e['end']] = [e['text']]
     return ''.join(lines).encode('utf-8')
 
 
 def run(q):
+    if type(q) is not dict:
+        raise Failure('CONFIG_INVALID', 'request must be a JSON object')
     op = q.get('op')
     path = request_path(q)
     if op == 'resolve':

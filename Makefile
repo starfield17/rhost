@@ -19,7 +19,7 @@ BASE_LDFLAGS  := -X $(PKG).Commit=$(COMMIT) -X $(PKG).BuildDate=$(DATE)
 LDFLAGS       := -X $(PKG).Version=$(VERSION) $(BASE_LDFLAGS)
 DIST_LDFLAGS  := -X $(PKG).Version=$(ARTIFACT_VERSION) $(BASE_LDFLAGS)
 
-.PHONY: build dist test test-live test-live-session test-live-jobs test-live-fs test-live-status test-live-tools test-live-all vet fmt check portability contract clean
+.PHONY: build dist test test-live test-live-session test-live-jobs test-live-fs test-live-status test-live-tools test-live-all vet fmt fmtcheck check portability contract install-test clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/rhost
@@ -30,8 +30,22 @@ build:
 # published build byte for byte.
 dist:
 	@set -eu; \
-	rm -rf "$(DIST_DIR)"; \
-	mkdir -p "$(DIST_DIR)"; \
+	dist="$(DIST_DIR)"; \
+	case "$$dist" in ''|.|..|/) echo "refusing unsafe DIST_DIR=$$dist" >&2; exit 2;; esac; \
+	[ ! -L "$$dist" ] || { echo "refusing symlink DIST_DIR=$$dist" >&2; exit 2; }; \
+	parent=$$(dirname "$$dist"); base=$$(basename "$$dist"); mkdir -p "$$parent"; \
+	abs=$$(cd "$$parent" && pwd -P)/$$base; cwd=$$(pwd -P); \
+	[ "$$abs" != "$$cwd" ] && [ "$$abs" != / ] && [ "$$abs" != "$${HOME:-/nonexistent}" ] || \
+		{ echo "refusing broad DIST_DIR=$$abs" >&2; exit 2; }; \
+	mkdir -p "$$dist"; \
+	for item in "$$dist"/* "$$dist"/.[!.]* "$$dist"/..?*; do \
+		[ -e "$$item" ] || continue; name=$$(basename "$$item"); \
+		case "$$name" in \
+			rhost_*_darwin_amd64|rhost_*_darwin_amd64.sha256|rhost_*_darwin_arm64|rhost_*_darwin_arm64.sha256|rhost_*_linux_amd64|rhost_*_linux_amd64.sha256|rhost_*_linux_arm64|rhost_*_linux_arm64.sha256) [ -f "$$item" ] || { echo "refusing non-file release artifact $$item" >&2; exit 2; };; \
+			*) echo "refusing to remove unexpected DIST_DIR content: $$item" >&2; exit 2;; \
+		esac; \
+	done; \
+	for item in "$$dist"/rhost_*_darwin_amd64 "$$dist"/rhost_*_darwin_amd64.sha256 "$$dist"/rhost_*_darwin_arm64 "$$dist"/rhost_*_darwin_arm64.sha256 "$$dist"/rhost_*_linux_amd64 "$$dist"/rhost_*_linux_amd64.sha256 "$$dist"/rhost_*_linux_arm64 "$$dist"/rhost_*_linux_arm64.sha256; do [ -e "$$item" ] && rm -- "$$item" || true; done; \
 	for target in $(RELEASE_TARGETS); do \
 		goos="$${target%%/*}"; goarch="$${target##*/}"; \
 		out="rhost_$(ARTIFACT_VERSION)_$${goos}_$${goarch}"; \
@@ -95,8 +109,11 @@ fmtcheck:
 portability:
 	./scripts/check-portability.sh
 
-contract:
+contract: install-test
 	./scripts/check-release-contract.sh
+
+install-test:
+	./scripts/test-install.sh
 
 clean:
 	rm -rf bin

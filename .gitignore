@@ -75,6 +75,7 @@ reffer/
 /bin/
 /dist/
 /rhost
+audit.jsonl
 
 # local-only scratch: real host names, addresses, test logs belong here and
 # nowhere else (AGENTS.md §1)

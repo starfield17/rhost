@@ -80,14 +80,15 @@ diagnostic; it does not change any security setting.
 `rhost audit --json` reads it back (most recent 20 by default, `--limit 0` for
 all, `--host H` to filter). `RHOST_AUDIT=0` turns it off.
 
-It records **operations, not secrets**: no environment maps, no file contents, no
+It records bounded operation metadata: no environment maps, no file contents, no
 `session send` payloads, and a command summary truncated to one bounded line.
 That is a bound, not a filter: a secret typed into a command line is still
 recorded, which is why secrets do not belong there.
 
 Auditing is fail-open: a write failure never blocks the remote operation. Which
-operations get a line: anything that *did* something — `fs` writes, transfers and
+operations get a line: actions plus the explicit `doctor` and `status` snapshots — `fs` writes, transfers and
 every batch entry, session create/exec/recover/close, job start/stop/kill, tunnel
-open/close — including the ones that failed, because a refused remote write is
-exactly the history worth keeping. Reads (`fs read/grep/glob`, `status`,
-`doctor`, `hosts`, `audit`) are polling and are not recorded.
+open/close, `doctor`, and `status` — including failures. Other reads
+(`fs read/grep/glob`, `hosts`, `audit`) and `watch` are polling and are not
+recorded. The file is local state; do not place `RHOST_STATE_DIR` in a repository
+or upload the audit log to GitHub.

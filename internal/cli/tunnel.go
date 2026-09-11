@@ -46,6 +46,11 @@ say: a denied reverse bind is reported as OpenSSH said it, never worked around.`
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			audit := startAudit("tunnel.open", args[0])
+			if aerr := validateTunnelOpen(kind, listen, destination, expose); aerr != nil {
+				audit.fail(aerr)
+				emitFailure("tunnel.open", args[0], aerr)
+				return nil
+			}
 			t, err := tunnelClient().OpenTunnel(c.Context(), args[0], kind, listen, destination, expose)
 			if err != nil {
 				// Retryable, because the common causes here are transport-shaped (a
@@ -133,10 +138,20 @@ func tunnelClient() *openssh.Client {
 // the same problem as a refused forward, and an agent that wants to clean up
 // needs to be able to tell "already gone" from "could not be stopped".
 func tunnelErr(err error) *errs.Error {
+	if errors.Is(err, openssh.ErrInvalidTunnel) {
+		return errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
+	}
 	if errors.Is(err, openssh.ErrNoTunnel) {
 		return errs.Wrap(errs.TunnelNotFound, err.Error(), false, err)
 	}
 	return errs.Wrap(errs.TunnelFailed, err.Error(), true, err)
+}
+
+func validateTunnelOpen(kind, listen, destination string, expose bool) *errs.Error {
+	if err := openssh.ValidateTunnel(kind, listen, destination, expose); err != nil {
+		return tunnelErr(err)
+	}
+	return nil
 }
 
 // emitTunnel renders one tunnel; `open` returns the record it just created.

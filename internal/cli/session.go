@@ -290,6 +290,11 @@ func newSessionAttachCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
+			if jsonFlag {
+				emitFailure("session.attach", host, errs.New(errs.UsageError,
+					"session attach is interactive and does not support --json", false))
+				return nil
+			}
 			a := app.NewDefault()
 			if aerr := a.SessionAttach(cmd.Context(), host, session); aerr != nil {
 				emitFailure("session.attach", host, aerr)

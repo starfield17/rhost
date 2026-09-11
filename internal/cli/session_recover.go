@@ -49,8 +49,6 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 				emitFailure("session.recover", host, aerr)
 				return nil
 			}
-			audit.succeed("", "key C-c", nil)
-
 			// Ctrl-C reaches the program first and the prompt follows, so the pane
 			// can still look busy for a moment after a successful interrupt. A busy
 			// refusal is retried briefly; anything else is reported as it is.
@@ -61,7 +59,14 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 				if aerr == nil || aerr.Code != errs.SessionBusy {
 					break
 				}
-				time.Sleep(250 * time.Millisecond)
+				timer := time.NewTimer(250 * time.Millisecond)
+				select {
+				case <-c.Context().Done():
+					timer.Stop()
+					aerr = errs.New(errs.RemoteCommandTimeout, "recovery cancelled while waiting for the shell", true)
+					attempt = 4
+				case <-timer.C:
+				}
 			}
 			preserved := aerr == nil && res.SessionPreserved
 			if aerr == nil && !preserved {
@@ -75,6 +80,7 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 				"session_preserved": preserved,
 			}
 			if aerr != nil {
+				audit.fail(aerr)
 				// Not emitFailure: the partial data is the answer here, and an agent
 				// needs session_preserved even when the recovery failed.
 				if jsonFlag {
@@ -85,6 +91,7 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 				exitCode = adapterExitCode(aerr)
 				return nil
 			}
+			audit.succeed("", "key C-c and responsiveness probe", nil)
 			if jsonFlag {
 				_ = output.Success("session.recover", host, data).Write(os.Stdout)
 			} else {

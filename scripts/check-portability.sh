@@ -32,7 +32,7 @@ cd "$(dirname "$0")/.."
 # the strings it forbids. Without that, tracking this script would make it fail
 # its own scan.
 # Hardware families and network identifiers: always a leak, no exceptions.
-patterns_hard='mac''book|mac[ _-]''book|think''pad|think''centre|lat''itude|insp''iron|surface[ _-]''studio|orange''pi|orange[ _-]?''pi|rasp''berry|rasp[ _-]?''pi|jet''son|banana[ _-]?''pi|rock[ _-]?''pro|nano''pi|rad''xa|friendly''arm|fine[ _-]?''riscv|beagle''bone|rk3[0-9]{3}|s9[0-9]{2}|192\.16''8\.[0-9]|10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]|169\.25''4\.|[A-Za-z0-9._%+-]+@[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[A-Za-z0-9_-]+\.lo''cal\b'
+patterns_hard='mac''book|mac[ _-]''book|think''pad|think''centre|lat''itude|insp''iron|surface[ _-]''studio|orange''pi|orange[ _-]?''pi|rasp''berry|rasp[ _-]?''pi|jet''son|banana[ _-]?''pi|rock[ _-]?''pro|nano''pi|rad''xa|friendly''arm|fine[ _-]?''riscv|beagle''bone|ge''force|\brt''x[ _-]?[0-9]{3,4}\b|rk3[0-9]{3}|s9[0-9]{2}|192\.16''8\.[0-9]|10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]|169\.25''4\.|[A-Za-z0-9._%+-]+@[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|[A-Za-z0-9_-]+\.lo''cal\b'
 
 # Home paths: a concrete account name is a leak, a documented placeholder is not.
 patterns_path='/home/[A-Za-z0-9._-]+/|/Users/[A-Za-z0-9._-]+/|[A-Za-z]:[\\/]Users[\\/]'

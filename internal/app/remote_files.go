@@ -91,5 +91,10 @@ func helperOutputBudget(request map[string]interface{}) int {
 	if maxBytes <= 0 {
 		maxBytes = 256 * 1024
 	}
-	return 2*maxBytes + 64*1024
+	const overhead = 64 * 1024
+	maxInt := int(^uint(0) >> 1)
+	if maxBytes > (maxInt-overhead)/2 {
+		return maxInt
+	}
+	return 2*maxBytes + overhead
 }

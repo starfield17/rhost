@@ -456,8 +456,8 @@ func SignalScript(id string, kill bool) string {
 		factsVars() +
 		"signalled=no\n" +
 		"if [ \"$alive\" = yes ] && [ \"$identity\" = verified ]; then\n" +
-		": > \"$DIR/stopped\"\n" +
 		"kill -" + signal + " -\"$pid\" 2>/dev/null && signalled=yes || true\n" +
+		"[ \"$signalled\" = yes ] && : > \"$DIR/stopped\"\n" +
 		"i=0; while [ \"$i\" -lt " + strconv.Itoa(signalGraceTicks) + " ]; do [ \"$alive\" = no ] && break; sleep " + signalPollDelay + "\n" +
 		factsVars() + "  i=$((i+1))\ndone\n" +
 		"fi\n" +

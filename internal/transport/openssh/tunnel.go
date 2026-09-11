@@ -42,6 +42,10 @@ type Tunnel struct {
 // is a different answer from "the master died", which is what `stale` means.
 var ErrNoTunnel = errors.New("no such tunnel")
 
+// ErrInvalidTunnel marks a forward rejected entirely from local arguments.
+// Callers map it to CONFIG_INVALID rather than a retryable transport failure.
+var ErrInvalidTunnel = errors.New("invalid tunnel configuration")
+
 // Status values are stable names, not prose: `alive` means the dedicated master
 // answered, `stale` means the record outlived it.
 const (
@@ -169,6 +173,22 @@ func (c *Client) OpenTunnel(ctx context.Context, host, kind, listen, destination
 	return t, nil
 }
 
+// ValidateTunnel checks a forward without creating directories, starting SSH or
+// writing a record. It lets the CLI classify deterministic argument errors
+// before treating later OpenSSH failures as retryable transport failures.
+func ValidateTunnel(kind, listen, destination string, expose bool) error {
+	if _, err := forwardFlag(kind); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTunnel, err)
+	}
+	if _, err := forwardSpec(kind, listen, destination); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTunnel, err)
+	}
+	if err := checkBind(listen, expose); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTunnel, err)
+	}
+	return nil
+}
+
 // CloseTunnel stops exactly one tunnel's master and removes its record. A record
 // whose master is already gone is still closed: the point is to leave nothing
 // half-remembered behind.
@@ -249,6 +269,9 @@ func forwardSpec(kind, listen, destination string) (string, error) {
 	}
 	spec := listen
 	if kind == "socks" {
+		if destination != "" {
+			return "", fmt.Errorf("--destination is not used for a socks forward")
+		}
 		return spec, nil
 	}
 	if _, _, err := net.SplitHostPort(destination); err != nil {
