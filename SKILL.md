@@ -20,7 +20,10 @@ Implemented:
 - `rhost exec <host> -- <command...>` — stateless foreground execution
 - `rhost session ...` — persistent tmux-backed sessions (create/list/exec/send/read/close/attach)
 - `rhost job ...` — detached background jobs (start/list/status/logs/stop/kill)
-- `rhost fs ...` — file transfer: `put`, `get` (scp) and `sync` (rsync)
+- `rhost fs ...` — `put/get/sync/mirror/batch`, plus `read/write/patch/grep/glob`
+- `rhost exec-many` — bounded parallel or sequential multi-target execution
+- `rhost tunnel open/list/close` — dedicated OpenSSH-managed forwarding
+- `rhost session recover` — interrupt and verify shell responsiveness
 - `rhost status <host>` — one read-only snapshot of system + managed state
 - `rhost watch <host>` — live-refreshing monitor (human view; owns no state)
 - `rhost audit` — read the local audit log of remote operations
@@ -60,7 +63,7 @@ present.
 ## 3. Default execution: `exec`
 
 ```bash
-rhost exec <host> --json --cwd ~/work/foo --timeout 60s -- pytest -q
+rhost exec <host> --json --cwd '~/work/foo' --timeout 60s -- pytest -q
 rhost exec <host> --json --env CUDA_VISIBLE_DEVICES=0 -- python check.py
 rhost exec <host> --json -- 'echo hi | wc -l'
 ```
@@ -74,7 +77,12 @@ Rules:
   could contain rhost flags.
 - The process exit status mirrors the remote command. **255 = adapter failure,
   124 = timeout.** `--json` gives the authoritative result: `data.exit_code`,
-  `data.stdout`, `data.stderr`, `data.timed_out`.- On timeout the remote process group is killed, not just the local ssh.
+  `data.stdout`, `data.stderr`, `data.timed_out`.
+- Output defaults to 1 MiB per stream. Check `stdout_truncated` and
+  `stderr_truncated`; use a job for durable output. Unlimited output requires
+  explicit `--max-output-bytes 0`.
+- On timeout, remote cleanup is attempted. If `cleanup_confirmed` is false,
+  the command may still be running; do not blindly retry side effects.
 
 Exit-code policy — a status in 0–254 always belongs to the **remote** command:
 
@@ -100,7 +108,7 @@ debugger, an interactive CLI, or exploratory shell work where `cd`/`env` should
 carry over. For ordinary commands, prefer `exec`.
 
 ```bash
-rhost session create <host> --json --name debug --cwd ~/work/foo
+rhost session create <host> --json --name debug --cwd '~/work/foo'
 rhost session list <host> --json
 rhost session exec <host> debug --json -- 'cd src && pytest -q'
 rhost session exec <host> debug --json -- pwd        # cwd persisted
@@ -135,7 +143,7 @@ build, a benchmark. A job is not a long `exec` and not a session: it has no
 interactive shell, only a command, two log files, and an exit status.
 
 ```bash
-rhost job start <host> --json --cwd ~/work/foo -- python train.py
+rhost job start <host> --json --cwd '~/work/foo' -- python train.py
 rhost job start <host> --json --name train-1 --env CUDA_VISIBLE_DEVICES=0 -- ./train.sh
 rhost job list <host> --json
 rhost job status <host> <job-id> --json
@@ -185,11 +193,11 @@ Rules:
 ## 3d. Moving files: `fs`
 
 ```bash
-rhost fs put <host> ./model.py ~/work/foo/model.py --json
-rhost fs get <host> ~/work/foo/results.json ./results.json --json
-rhost fs sync <host> ./project ~/work/project --json --dry-run   # plan only
-rhost fs sync <host> ./project ~/work/project --json             # apply
-rhost fs sync <host> ./project ~/work/project --json --delete --dry-run
+rhost fs put <host> ./model.py '~/work/foo/model.py' --json
+rhost fs get <host> '~/work/foo/results.json' ./results.json --json
+rhost fs sync <host> ./project '~/work/project' --json --dry-run   # plan only
+rhost fs sync <host> ./project '~/work/project' --json             # apply
+rhost fs sync <host> ./project '~/work/project' --json --delete --dry-run
 ```
 
 Rules:
@@ -218,6 +226,34 @@ Rules:
 - Errors: `TRANSFER_FAILED` (the tool's own first complaint is in `message`),
   `SYNC_REJECTED` (a refused destination), `REMOTE_DEPENDENCY_MISSING`,
   `REMOTE_COMMAND_TIMEOUT` if `--timeout` (default 5m) runs out.
+
+### Reading and editing remote files
+
+```bash
+rhost fs read  <host> '~/work/project/main.go' --json   # slice + whole-file sha256
+rhost fs write <host> '~/work/foo/note.txt' --from ./note.txt --if-hash <sha> --json
+rhost fs patch <host> '~/work/project/main.go' --patch ./patch.json --json
+rhost fs grep  <host> 'TODO' '~/work/project' --mode content --limit 100 --json
+rhost fs glob  <host> '*.go' '~/work/project' --json
+rhost fs mirror <host> '~/work/project' ./download --dry-run --json
+rhost fs batch  <host> --manifest ./transfers.json --json
+```
+
+- These five ride an embedded Python helper on the far side, so they need remote
+  `python3` (and `rg` for the two searches) and nothing else; `doctor` reports
+  them, and rhost never installs anything (AGENTS.md §5).
+- **Read before you write.** `fs read` returns the SHA-256 of the whole file, and
+  replacing or patching an existing file without that hash is refused. A hash you
+  did not just read is a guess about the file's current contents.
+- A new file is created `0600` and an existing one keeps its permissions; pass
+  `--mode 0755` to name them, which is how a written script becomes runnable.
+- Reads are bounded (default 200 lines / 256 KiB) and searches too (default 100
+  records); `truncated` is in the JSON. `next` is the offset to pass back as
+  `--offset` for the following page — pagination is by *records*, not bytes.
+- `fs mirror` is `sync` with the direction in the name (download); `fs batch` is
+  an ordered manifest of `put`/`get` pairs. Both keep per-item results: check
+  every row, because the aggregate exit code says only that *something* failed.
+- Edits are UTF-8 text, limited to 8 MiB, and never applied through a symlink.
 
 ---
 
@@ -252,7 +288,68 @@ Rules:
   until interrupted.
 - Prefer `status` for a single reading; `watch` is a human live view.
 
+### 3f. Several hosts, ports, and a wedged shell
+
+```bash
+rhost exec-many --host a --host b --parallel 2 --json -- 'uname -a'
+rhost exec-many --host a --host b --serial --delay 2s --stop-on-error --json -- ./deploy.sh
+rhost tunnel open <host> --kind local --listen localhost:8080 --destination localhost:8000 --json
+rhost tunnel open <host> --kind reverse --listen localhost:9000 --destination localhost:3000 --json
+rhost tunnel open <host> --kind socks --listen localhost:1080 --json
+rhost tunnel list --json
+rhost tunnel close <id> --json
+rhost session recover <host> <session> --json
+```
+
+- `exec-many` runs **one command on several targets** and returns one row each, in
+  the order the flags were given. It is foreground orchestration, not a scheduler:
+  if it must survive your laptop closing, start a `job` on each host instead.
+- `--stop-on-error` stops *scheduling* new targets; a command already running on
+  another host is not cancelled, and its row is not evidence that the fleet is
+  clean. `--delay` is per worker, so `--serial --delay 5s` is a five-second gap
+  between targets.
+- Read each row's `error` and `exit_code`: the process exit code is an aggregate
+  (0 all good, 1 a remote failure or a skipped target, 255 an adapter failure) and
+  says nothing about which host.
+- A tunnel is a **dedicated OpenSSH master with a record outside this process**: it
+  keeps running after the CLI exits, and `list` is how you find ids you did not
+  keep. It is not a service check — `alive` means the forward exists, not that
+  anything answers on the other end; probe the port yourself.
+- Forwards bind to loopback unless you pass `--allow-exposure`, which is a request
+  to let other machines through: a reverse forward can put a remote service on your
+  own network. The remote `sshd` has its own say, and a denied bind is reported as
+  OpenSSH said it.
+- `session recover` is for a session that stopped answering: it sends one
+  interrupt and checks the shell responds. It does not recreate a session that has
+  gone (that would silently discard the state you were trying to keep), and it can
+  interrupt a program that was only slow — so it is audited.
+
 ## 4. Recovering from failures
+
+For remote source work, prefer `fs read` and structured `fs grep/glob`. Read
+before editing: use the returned SHA-256 with `fs write --if-hash` or in a patch
+JSON (`sha256`, `edits` with inclusive `start/end` and replacement `text`).
+`FILE_CONFLICT` requires re-reading and merging. These operations need Python 3;
+search also needs rg. They never install dependencies or elevate privileges.
+
+Use `fs mirror` for directory downloads, and `fs batch --manifest` for ordered
+file pairs. `--resume` and `--checksum` opt into rsync plus end-to-end hash
+verification. Check every batch result: aggregate success envelopes may contain
+failed entries and a nonzero process exit status.
+
+For `exec-many`, inspect each result's `error` and `exit_code`. Its process exit
+codes are aggregate 0/1/255, unlike single-host exec. `--stop-on-error` leaves
+already-started commands running to completion.
+
+Use `session_preserved` after a timeout; `session recover` may interrupt the
+active program and verifies shell responsiveness. Tunnels are persistent
+OpenSSH resources: retain their ID, list to rediscover, and close when finished.
+Loopback is the default; opening a listener elsewhere requires explicit intent.
+A tunnel outlives the CLI process that opened it, so treat an ID you did not
+print as lost: `tunnel list` is the only way back to it. Closing `rhost` never
+closes a tunnel, and nothing restarts one after a reboot.
+
+Quote remote `~/...` paths so the local shell does not expand its own home.
 
 Read `error.code` from the JSON envelope, never the message text:
 
@@ -272,13 +369,39 @@ Read `error.code` from the JSON envelope, never the message text:
 - `SESSION_NOT_FOUND` — session gone (closed, or ended by `exit` inside it);
   recreate it.
 - `SESSION_UNHEALTHY` — another writer holds the session lock; retry after a
-  moment. Concurrent writers are unsafe by design.
+  moment. Concurrent writers are unsafe by design. `session recover` also reports
+  it when a session did not answer its probe, which means the pane is wedged (a
+  `sudo` prompt, an interactive program), not that the session is gone.
 - `JOB_NOT_FOUND` — no job with that id (or unique name) on that host. The id
   may be from another host, or the remote state was deleted; rediscover with
   `job list`.
 - `JOB_STATE_UNKNOWN` — the job exists but its state could not be read or
   written (remote state dir unwritable, helper killed mid-write). Retryable: the
   job itself is usually unaffected.
+- `FILE_NOT_FOUND` — the remote path does not exist. `fs read/write/patch` take
+  remote paths, which the local shell cannot stat: resolve with `fs glob` instead
+  of guessing.
+- `FILE_CONFLICT` — the `--if-hash` you supplied no longer describes the file, or
+  the file changed while it was being read or replaced. Re-read and merge; never
+  replay an old hash.
+- `INVALID_TARGET` — rhost will not write through a symlink, into a directory, or
+  onto anything that is not a regular file. Inspect the path; do not retry.
+- `INVALID_PATCH` — the edit ranges overlap, are not 1-based inclusive, or run
+  past the file. The file was not touched.
+- `SEARCH_FAILED` — the remote `rg` refused the pattern or could not read the
+  tree. This is the search equivalent of a command failing, not a connection
+  problem.
+- `INVALID_TEXT` / `FILE_TOO_LARGE` — the bytes are not something these commands
+  can hold: content that is not valid UTF-8 (a binary file read with `fs read`, or
+  a `fs write` of one), or a file over the 8 MiB editing limit. Use `fs put`,
+  `fs get` or `fs sync` for binary and large content.
+- `REMOTE_TRANSFER_FAILED` / `BATCH_FAILED` — the transfer ran and the remote side
+  said no. Unlike a local `TRANSFER_FAILED`, this says nothing about your own
+  machine. For `batch`, read `data.results[]`: the aggregate exit code does not
+  name which entry failed.
+- `TUNNEL_FAILED` / `TUNNEL_NOT_FOUND` — a forward could not be opened, or an id
+  has no live record. `tunnel list` is how you rediscover ids; the id is the only
+  way to close a forward, so keep it from `open`'s `data.id`.
 - `INTERNAL` — adapter bug; report it with the JSON envelope attached.
 
 ---
@@ -295,3 +418,13 @@ secrets: no environment maps, and `session send` records the key but never the
 injected data. Read it back with `rhost audit --json` (most recent 20 by default;
 `--limit 0` for all, `--host H` to filter). Set `RHOST_AUDIT=0` to turn it off.
 Auditing is fail-open: a write failure never blocks a remote operation.
+
+What gets a line is an operation that *did* something: writes and transfers
+(`fs put/get/sync/mirror/batch`, each entry of a batch under its own operation),
+`fs write` and `fs patch`, session create/exec/recover/close, job start/stop/kill,
+`tunnel open` and `tunnel close` — including the ones that failed, since a refused
+remote write is exactly the history you want later. Reads are not: `fs read`,
+`fs grep`, `fs glob`, `status`, `doctor`, `hosts` and `audit` are polling, and
+recording them would turn the trail into a log of how often something asked.
+A `tunnel open` line carries the kind, the bind address and the destination, so an
+exposed forward is auditable after the fact.

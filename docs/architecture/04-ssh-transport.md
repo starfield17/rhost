@@ -79,6 +79,32 @@ Start one master, run multiple `rhost exec` invocations as separate OS processes
 
 Do not infer this from timing alone. Use an observable OpenSSH control check or debug evidence in integration tests.
 
+### Tunnels are a second namespace of masters (implemented)
+
+`rhost tunnel open` starts its *own* OpenSSH process with its own control socket
+and `-N` (no remote command), because a port forward has to outlive the command
+that asked for it while staying independent of the shared one:
+
+- the shared master is opened with `ControlPersist`, so it is *idle*-timed and
+  closing it is nobody's business per-command; a tunnel's master has no such
+  margin — it is closed by `tunnel close <id>`, by an explicit kill of its own
+  socket, or not at all;
+- `tunnel close` must never take the shared socket down, since that would stop
+  `exec`, `session` and `job` traffic for every other caller. The two namespaces
+  are therefore separate directories under the same state root, and the shared
+  socket name is derived from the target by the same rule `exec` uses, so a
+  tunnel does not "discover" it;
+- the record of a tunnel (id, host, kind, bind, destination) lives in a file, not
+  in memory: the CLI process that opened it is gone by the time anyone wants to
+  close it (AGENTS.md §4). `list` rediscoveres the directory and asks OpenSSH
+  `-O check` for each entry rather than trusting the file's own claim.
+
+A forward is OpenSSH's, not rhost's: what `sshd` permits (`GatewayPorts`,
+`permitreverse`, the address a bind may use) is answered by OpenSSH's stderr,
+quoted verbatim under the taxonomy's `TUNNEL_FAILED`. rhost adds one local rule —
+loopback unless `--allow-exposure` — because that is the one decision that would
+otherwise be made silently on the caller's behalf.
+
 ---
 
 ## 9. Command construction

@@ -165,7 +165,7 @@ Status: implemented and verified against a real remote Linux host over SSH
 
 ---
 
-## 49. Milestone 6 — hardening
+## 49. Milestone 6 — hardening and remote development tools
 
 Only after daily use:
 
@@ -181,7 +181,9 @@ release signing/checksums
 
 Then evaluate whether a local daemon is actually justified.
 
-Status: in progress.
+Status: in progress. Implemented and verified against a real remote Linux host
+over SSH — `make test-live-tools` for the file, exec and tunnel surface, and
+`make test-live-session` for recovery (both part of `make test-live-all`):
 
 - **audit**: implemented (§36) — a local JSONL trail of remote operations,
   fail-open, disabled with `RHOST_AUDIT=0`, read back with `rhost audit`.
@@ -189,8 +191,50 @@ Status: in progress.
   own process group and kills the whole group on cancellation, with `WaitDelay`
   as a backstop, so the transfer is stopped rather than abandoned when a child
   holds the stdout/stderr pipes.
-- still open: **output truncation policy**, **config migration**, **shell
-  recovery**, **installer checksum verification**, **release signing**.
+- **output truncation policy**: one rule for every command that reads the remote
+  side — a limit is always *reported*, never silently applied. `exec` and
+  `exec-many` take `--max-output-bytes` (1 MiB default, `0` for unlimited) and
+  answer with `stdout_truncated`/`stderr_truncated` plus the remote byte counts;
+  the capture keeps the beginning *and* the end of a stream, because the tail of a
+  failed command is where its reason is; a bounded output still proves the command
+  finished, since the completion marker is looked for in the whole capture and is
+  never evicted by the bound.
+- **shell recovery**: `session exec` reports `session_preserved`, and
+  `rhost session recover` is the explicit repair path — interrupt, then prove the
+  pane answers again. It never recreates a session behind the caller's back
+  (§20), which is why it reports a lost session instead of making a new one.
+
+The same round added the tools that daily use asked for, and they are listed here
+rather than in a new milestone because they share one purpose: letting an agent do
+source work on the remote without downloading the tree.
+
+- **remote file operations** (`fs read/write/patch/grep/glob`, Part VIII): one
+  embedded, dependency-free Python helper answers a JSON request over the existing
+  exec transport, so no path or file content is ever re-parsed by a shell (§28's
+  lesson applied to the read side). Writes are compare-and-swap on the hash that
+  `read` returned, atomic within the directory, and refuse symlink targets; the
+  helper's own error codes are part of §33.
+- **directory download and ordered transfer** (`fs mirror`, `fs batch`): `mirror`
+  is `sync` with the direction stated in the command, and `batch` is one manifest
+  of `put`/`get` pairs whose envelope keeps per-entry results — a partial failure
+  is a report, not a truncation of the run.
+- **verified transfer** (`--resume`, `--checksum`): rsync's own partial-file and
+  integrity mechanisms for a single file, plus an end-to-end SHA-256 comparison
+  that does not depend on the transfer tool's opinion of what it copied.
+  `resume_enabled` describes what was *asked for*; `checksum_verified` describes
+  what was *proven*.
+- **bounded parallel execution** (`exec-many`): several targets, one command, a
+  worker cap, and per-target rows; it is foreground orchestration and does not
+  pretend to be a durable scheduler (§7's job model stays the only one).
+- **tunnels** (Part IV): three forwarding kinds on a dedicated OpenSSH master per
+  forward, with a record outside the CLI process so the forward outlives the
+  invocation that made it (§2), loopback-only by default, and `list` reporting
+  OpenSSH's own answer about each master rather than a guess from the record.
+
+Still open: **config migration**, **installer checksum verification**,
+**release signing**, and the daemon evaluation. `scripts/install.sh` still has to
+be run against a real release layout before its checksum path can be called
+verified.
 
 ---
 

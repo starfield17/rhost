@@ -46,9 +46,10 @@ Human progress may go to stderr.
 
 ## 33. Error taxonomy
 
-Start small and stable.
-
-Candidate codes:
+Start small and stable. The published set is `internal/errs.Codes()`, mirrored in
+`schemas/result-v1.schema.json` and checked against it by `internal/output`'s tests,
+so a code that exists in the enum but not in the schema (or the reverse) fails the
+build. Agents branch on these values, never on the message text.
 
 ```text
 USAGE_ERROR
@@ -64,9 +65,26 @@ SESSION_UNHEALTHY
 JOB_NOT_FOUND
 JOB_STATE_UNKNOWN
 TRANSFER_FAILED
+REMOTE_TRANSFER_FAILED
+BATCH_FAILED
 SYNC_REJECTED
+FILE_NOT_FOUND
+FILE_CONFLICT
+INVALID_TARGET
+INVALID_PATCH
+SEARCH_FAILED
 UNSUPPORTED_REMOTE_OS
 ```
+
+The five `FILE_*`/`INVALID_*`/`SEARCH_FAILED` codes come from the remote helper
+(`internal/fileops/remote.py`) and travel back inside the envelope as JSON rather
+than as text the caller has to scrape. They are *failures of the operation on the
+remote*, not of SSH, which is why they are separate from `TRANSFER_FAILED`: an agent
+retrying `SSH_UNREACHABLE` is reasonable, retrying `FILE_CONFLICT` is not. Because
+that vocabulary is a second contract, it is whitelisted on the way in
+(`errs.KnownCode`) — a remote that returns a made-up code cannot put a code into
+`error.code` that the taxonomy has never heard of; such an answer is reported as
+`INTERNAL` with the raw string kept in the message.
 
 Keep low-level OpenSSH stderr available for diagnosis but do not force the agent to classify behavior by matching English error strings.
 

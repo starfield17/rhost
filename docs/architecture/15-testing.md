@@ -55,7 +55,14 @@ that distinction is the product (AGENTS.md §4).
 | job persistence, signals, log cursors | `make test-live-jobs` |
 | file transfer, rsync plan, explicit `--delete` | `make test-live-fs` |
 | status snapshot, watch stream, watch offline | `make test-live-status` |
+| remote file ops, verified transfer, `exec-many`, tunnels, session recovery | `make test-live-tools` |
 | everything | `make test-live-all` |
+
+The embedded remote helper has its own suite in the language it runs in:
+`internal/fileops/remote_test.py`, driven from Go by `remote_helper_test.go` so it
+is part of `make test` and cannot drift quietly. On a machine with no usable
+python3 it is reported as a named *skip*, because a missing suite must be visible
+(§39); the live SSH suite still exercises the real remote path end to end.
 
 ---
 
