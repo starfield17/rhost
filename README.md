@@ -7,7 +7,7 @@ reusable execution node — without re-deriving SSH, quoting, timeout, and
 persistence mechanics on every operation. It orchestrates your existing OpenSSH
 configuration and never duplicates SSH authentication or host-key policy.
 
-> Status: **v0.1.0-alpha.1**. The v0.1 surface is implemented and verified against
+> Status: **v0.1.0-alpha.2**. The v0.1 surface is implemented and verified against
 > a real remote Linux host over SSH: `hosts`, `doctor`, `exec`, `exec-many`,
 > `session` (including `recover`), `job`, `fs` (transfer, and the remote
 > read/write/patch/grep/glob helper), `tunnel`, `status`, `watch`, and a local

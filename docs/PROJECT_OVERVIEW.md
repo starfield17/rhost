@@ -1,9 +1,10 @@
 # Remote Host Adapter — Project Overview
 
 > Working name: **rhost**  
-> Status: **v0.1.0-alpha.1** — implemented through Milestone 6: `hosts`,  
+> Status: **v0.1.0-alpha.2** — implemented through Milestone 6: `hosts`,  
 > `doctor`, `exec`, `exec-many`, `session`, `job`, `fs`, `tunnel`, `status`,  
-> `watch`, `audit`. Open: config migration, release signing, daemon evaluation  
+> `watch`, `audit`. Open: config migration, release signing (artifacts carry  
+> build-provenance attestations), daemon evaluation  
 > Primary form: **Skill + source repository + single release binary**  
 > Local side: macOS or Linux (what CI runs; other OpenSSH platforms untested)  
 > Remote side: any SSH-reachable Linux host (native, container, or WSL2)
