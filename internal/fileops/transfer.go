@@ -200,6 +200,12 @@ func (r *Runner) Run(ctx context.Context, bin string, args []string, timeout tim
 	// Closed stdin: scp must never stop to ask for a password in a context where
 	// authentication is supposed to come from keys or an agent (AGENTS.md §5).
 	cmd.Stdin = strings.NewReader("")
+	// A timeout must stop the tool, not merely abandon it: the tool runs in its own
+	// process group and cancellation kills the group (see configureProcessGroup),
+	// and WaitDelay is the backstop for a child that somehow escapes it and keeps
+	// stdout/stderr open.
+	configureProcessGroup(cmd)
+	cmd.WaitDelay = transferKillGrace
 
 	start := time.Now()
 	res := Result{}
@@ -207,14 +213,25 @@ func (r *Runner) Run(ctx context.Context, bin string, args []string, timeout tim
 	res.Duration = time.Since(start)
 	res.Stdout, res.Stderr = stdout.Bytes(), stderr.Bytes()
 
+	timedOut := errors.Is(cctx.Err(), context.DeadlineExceeded)
 	var ee *exec.ExitError
 	switch {
+	case err == nil:
+		res.ExitCode = 0
 	case errors.As(err, &ee):
 		res.ExitCode = ee.ExitCode()
-	case err != nil:
+	case errors.Is(err, exec.ErrWaitDelay):
+		// WaitDelay fired: the process is gone (or the deadline elapsed) but its I/O
+		// did not settle. On a real timeout this is still a timeout and is reported
+		// below; without one it is not a silent success.
+		if !timedOut {
+			return res, err
+		}
+		res.ExitCode = 124
+	default:
 		return res, err
 	}
-	if errors.Is(cctx.Err(), context.DeadlineExceeded) {
+	if timedOut {
 		res.TimedOut = true
 		// A killed transfer exits with whatever it was doing; the timeout is the
 		// fact that matters, so make it distinguishable from a tool failure.
@@ -224,3 +241,7 @@ func (r *Runner) Run(ctx context.Context, bin string, args []string, timeout tim
 	}
 	return res, nil
 }
+
+// transferKillGrace bounds how long Run waits for a killed tool's I/O to settle,
+// so a child that escaped the process group cannot hang it indefinitely.
+const transferKillGrace = 2 * time.Second

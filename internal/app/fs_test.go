@@ -185,7 +185,14 @@ func TestFsMapsToolFailures(t *testing.T) {
 	}
 
 	// A transfer that outlives its budget is a timeout, the same code exec uses.
-	slow := stubTool(t, "scp", "sleep 5; exit 0")
+	//
+	// The stub explicitly forks a shell that backgrounds the sleep and waits for
+	// it, so a child holding the inherited stdout/stderr pipe exists when the tool
+	// is killed — the scenario the timeout must handle. A plain `sleep 5; exit 0`
+	// only reproduced it on Linux (dash forks the sleep), not on macOS (bash often
+	// exec'd it), which is why the failure was CI-only: the timeout left the tool
+	// running for the full 5s.
+	slow := stubTool(t, "scp", "/bin/sh -c 'sleep 5 & wait'")
 	a = newStubApp(slow, "rsync")
 	start := time.Now()
 	_, aerr = a.FsPut(context.Background(), FsPutOptions{
