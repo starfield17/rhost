@@ -114,18 +114,44 @@ func SyncArgs(host string, o SyncOptions, sshOpts []string) (args []string, remo
 
 // remoteShell renders rsync's -e value and reports whether it still carries rhost's
 // options (false means the transfer cannot reuse the multiplexed connection).
+//
+// rsync splits its own -e string with shell-like rules, so an option containing
+// whitespace is single-quoted instead of dropped: without the quotes the option
+// would reach ssh as two arguments, and the old fallback turned that into a whole
+// non-multiplexed transfer. Quoting was verified against GNU rsync and against
+// the openrsync macOS ships; the shell-style `'\”` escape was *not* (openrsync
+// rejects it as an unterminated quote), so an option containing a single quote
+// still falls back rather than being mangled into something nearer to a bug.
 func remoteShell(sshOpts []string) (string, bool) {
 	quoted := make([]string, 0, len(sshOpts)+1)
 	for _, o := range sshOpts {
-		if strings.ContainsAny(o, " \t\n") {
+		if strings.ContainsAny(o, "\n\x00") {
 			return "ssh", false
 		}
-		quoted = append(quoted, o)
+		q, ok := quoteRSH(o)
+		if !ok {
+			return "ssh", false
+		}
+		quoted = append(quoted, q)
 	}
 	if len(quoted) == 0 {
 		return "ssh", false
 	}
 	return "ssh " + strings.Join(quoted, " "), true
+}
+
+// quoteRSH single-quotes an option that contains whitespace, which rsync's own
+// splitter removes again before ssh sees the argument. An option that cannot be
+// represented that way reports false, and the caller syncs over a fresh
+// connection instead.
+func quoteRSH(o string) (string, bool) {
+	if !strings.ContainsAny(o, " \t") {
+		return o, true
+	}
+	if strings.Contains(o, "'") {
+		return "", false
+	}
+	return "'" + o + "'", true
 }
 
 // Action is what a change line says is about to happen. Coarse on purpose: the

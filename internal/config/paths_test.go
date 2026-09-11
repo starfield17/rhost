@@ -77,6 +77,27 @@ func TestControlPathFitsSocketPath(t *testing.T) {
 	}
 }
 
+// TestControlDirAvoidsWhitespaceRoot covers the other reason to move the sockets:
+// rsync splits its own -e string, and a ControlPath containing a space would have
+// to be quoted inside it. The socket path is a value rhost chooses, so it chooses
+// one that needs no quoting — and keeps `fs sync` multiplexed.
+func TestControlDirAvoidsWhitespaceRoot(t *testing.T) {
+	spacey := filepath.Join(string(filepath.Separator), "tmp", "rhost cache with space")
+	got := controlDirIn(spacey)
+	if !strings.HasPrefix(got, socketFallbackRoot) {
+		t.Errorf("a cache root containing whitespace must move the sockets, got %q", got)
+	}
+	if strings.ContainsAny(got, " \t\n") {
+		t.Errorf("the fallback path still contains whitespace: %q", got)
+	}
+	// The fallback is about the path, not about sync in general: a clean root is
+	// still used exactly as given.
+	clean := filepath.Join(string(filepath.Separator), "tmp", "rhost-cache")
+	if got := controlDirIn(clean); got != filepath.Join(clean, "ssh") {
+		t.Errorf("a clean shallow root should be used as-is, got %q", got)
+	}
+}
+
 // TestControlPathIsDerivedFromControlDir keeps the two in step: the directory
 // rhost creates is the directory it binds in. A mismatch made ssh fail with
 // "unix_listener: cannot bind to path ...: No such file or directory".

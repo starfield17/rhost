@@ -258,6 +258,31 @@ func TestLiveFsSyncPlanAndApply(t *testing.T) {
 	}
 }
 
+// TestLiveFsSyncWithSpaceInCacheRoot is the end-to-end half of the ControlPath
+// rule: a cache root containing whitespace is moved to a short, whitespace-free
+// socket root, so rsync's -e string stays a plain word and the transfer still
+// rides the ControlMaster every other command uses.
+func TestLiveFsSyncWithSpaceInCacheRoot(t *testing.T) {
+	host := liveHost(t)
+	spacey := filepath.Join(t.TempDir(), "rhost cache")
+	if err := os.MkdirAll(spacey, 0o700); err != nil {
+		t.Fatalf("cache dir: %v", err)
+	}
+	c := withCacheDir(t, liveCLI{bin: buildBinary(t)}, spacey)
+
+	src := localTree(t)
+	dst := remoteTemp(t, c, host) + "/spaced"
+	// Open the connection first, so the sync below can only succeed by reusing it.
+	c.mustJSON(t, "--json", "exec", host, "--", "true")
+	c.mustJSON(t, "--json", "fs", "sync", host, src, dst)
+	if !remoteHas(t, c, host, dst+"/a.txt") {
+		t.Error("a sync with whitespace in the cache root did not copy the tree")
+	}
+	if pid := c.masterPID(t, host); pid <= 0 {
+		t.Errorf("no reusable master behind the whitespace cache root (pid=%d)", pid)
+	}
+}
+
 // TestLiveFsSyncRejectsDangerousTarget exercises the §28 rule end to end: the
 // refusal happens before anything is copied, so the remote home stays untouched.
 func TestLiveFsSyncRejectsDangerousTarget(t *testing.T) {

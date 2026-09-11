@@ -30,9 +30,11 @@ func CacheDir() string {
 // single source of truth for where those sockets live: EnsureControlDir creates
 // exactly this directory, and ControlPath is derived from it.
 //
-// A deep cache root plus OpenSSH's fixed 40-byte %C expansion can overflow
-// sun_path, and ssh then fails with "ControlPath too long"; in that case a short
-// per-user root is used instead.
+// Two shapes of cache root cannot be used as the socket home, and both move to
+// the same short per-user root: a deep one plus OpenSSH's fixed 40-byte %C
+// expansion overflows sun_path (ssh then refuses every command with "ControlPath
+// too long"), and one containing whitespace cannot ride rsync's -e string, which
+// would silently cost a multiplexed `fs sync` its connection reuse.
 func ControlDir() string {
 	return controlDirIn(CacheDir())
 }
@@ -51,10 +53,18 @@ const hashTokenLen = 40
 
 func controlDirIn(root string) string {
 	dir := filepath.Join(root, "ssh")
-	if socketFits(dir) {
+	if socketFits(dir) && rshSafe(dir) {
 		return dir
 	}
 	return filepath.Join(socketFallbackRoot, fmt.Sprintf("rhost-%d", os.Getuid()), "ssh")
+}
+
+// rshSafe reports whether a socket path can travel inside rsync's -e string.
+// rsync splits that string itself, so a path with whitespace would have to be
+// quoted inside it — one more parsing rule for a value rhost can simply choose
+// differently. The fallback root is short, fixed and whitespace-free.
+func rshSafe(dir string) bool {
+	return !strings.ContainsAny(dir, " \t\n")
 }
 
 // socketFits reports whether the expanded ControlPath under dir stays inside

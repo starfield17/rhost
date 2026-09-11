@@ -157,17 +157,32 @@ func TestSyncArgsDoNotFollowSymlinks(t *testing.T) {
 	}
 }
 
-// The ControlPath template is a path the user's environment chooses; a space in
-// it cannot survive rsync's whitespace splitting of -e. Falling back to a fresh
-// connection is the honest answer, and `multiplexed` is how the JSON says so.
-func TestSyncArgsDowngradeWhenOptionsCannotTravel(t *testing.T) {
+// The ControlPath template is a path the user's environment chooses. rsync
+// splits -e itself but honours quotes (measured against GNU rsync and the
+// openrsync macOS ships), so a space no longer costs the transfer its
+// multiplexed connection. An option that cannot be represented at all — the
+// shell-style escaped quote is not part of rsync's splitter — still falls back,
+// and `multiplexed` is how the JSON says so.
+func TestSyncArgsQuoteOrDowngradeOptions(t *testing.T) {
 	argv, _, mux, err := SyncArgs("gpu", SyncOptions{Source: "project", Destination: "~/p"},
 		[]string{"-o", "ControlPath=/tmp/r host/%C"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !mux {
+		t.Error("a ControlPath containing a space can be quoted; it must not cost the master")
+	}
+	if got := argv[len(argv)-3]; got != "ssh -o 'ControlPath=/tmp/r host/%C'" {
+		t.Errorf("-e value = %q, want the option quoted as one word", got)
+	}
+
+	argv, _, mux, err = SyncArgs("gpu", SyncOptions{Source: "project", Destination: "~/p"},
+		[]string{"-o", "ControlPath=/tmp/it's here/%C"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if mux {
-		t.Error("a ControlPath containing a space cannot reuse the master; say so instead")
+		t.Error("an option containing a single quote cannot travel in -e; say so instead")
 	}
 	if got := argv[len(argv)-3]; got != "ssh" {
 		t.Errorf("-e value = %q, want the bare default %q", got, "ssh")
