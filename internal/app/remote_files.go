@@ -4,22 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/fileops"
 	"github.com/starfield17/rhost/internal/shell"
 )
-
-// remoteHelpers is what one request needs from the remote account beyond bash:
-// python3 always, and rg for the two search operations. A missing helper is a
-// capability answer (`REMOTE_DEPENDENCY_MISSING`), and doctor already reports it
-// — rhost never installs anything to work around it (AGENTS.md §5).
-var remoteHelpers = map[string]string{
-	"grep": "rg",
-	"glob": "rg",
-}
 
 // RemoteFile runs one structured request against the embedded remote helper and
 // returns its decoded response.
@@ -48,9 +38,6 @@ func (a *App) RemoteFile(ctx context.Context, host string, request map[string]in
 	program := "import base64; exec(base64.b64decode(\"" +
 		base64.StdEncoding.EncodeToString([]byte(fileops.RemoteProgram)) + "\"))"
 	command := "command -v python3 >/dev/null 2>&1 || exit 127; "
-	if helper, ok := remoteHelpers[fmt.Sprint(request["op"])]; ok {
-		command += "command -v " + helper + " >/dev/null 2>&1 || exit 127; "
-	}
 	command += "python3 -c " + shell.Quote(program)
 
 	res, e := a.Execute(ctx, ExecOptions{
@@ -64,12 +51,8 @@ func (a *App) RemoteFile(ctx context.Context, host string, request map[string]in
 		return nil, e
 	}
 	if res.ExitCode == 127 {
-		need := "python3"
-		if helper, ok := remoteHelpers[fmt.Sprint(request["op"])]; ok {
-			need += " and " + helper
-		}
 		return nil, errs.New(errs.RemoteDependencyMissing,
-			"this operation needs remote "+need+"; rhost reports it, it does not install it", false)
+			"this operation needs remote python3; rhost reports it, it does not install it", false)
 	}
 	var out map[string]interface{}
 	if err := json.Unmarshal([]byte(res.Stdout), &out); err != nil {
@@ -89,9 +72,8 @@ func (a *App) RemoteFile(ctx context.Context, host string, request map[string]in
 	return out, errs.New(errs.Code(code), message, false)
 }
 
-// helperOutputBudget bounds the transport, not the helper: a search that hits
-// its own cap stays far below this, so exceeding it means the helper itself
-// misbehaved.
+// helperOutputBudget leaves room for the JSON response around a bounded file
+// payload while still limiting a misbehaving helper.
 func helperOutputBudget(request map[string]interface{}) int {
 	maxBytes, _ := request["max_bytes"].(int)
 	if maxBytes <= 0 {

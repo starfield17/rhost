@@ -47,8 +47,8 @@ func Success(operation, host string, data interface{}) Envelope {
 // ErrorOf renders one adapter error as the envelope's error object.
 //
 // It is exported because a command whose *aggregate* outcome is a success can
-// still contain failed items — exec-many and fs batch report per-target results
-// inside one document — and each of those needs the same machine-readable shape
+// still contain failed items — fs batch reports per-file results inside one
+// document — and each of those needs the same machine-readable shape
 // (AGENTS.md §6: an agent branches on error.code, never on text).
 func ErrorOf(err *errs.Error) *ErrorPayload {
 	if err == nil {

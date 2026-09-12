@@ -25,6 +25,8 @@ const (
 	HostKeyFailed           Code = "HOST_KEY_FAILED"
 	RemoteDependencyMissing Code = "REMOTE_DEPENDENCY_MISSING"
 	RemoteCommandTimeout    Code = "REMOTE_COMMAND_TIMEOUT"
+	RemoteCommandCancelled  Code = "REMOTE_COMMAND_CANCELLED"
+	OutputWriteFailed       Code = "OUTPUT_WRITE_FAILED"
 	// SessionBusy is the answer to `session exec` on a pane whose foreground is
 	// not the managed shell: a REPL or debugger owns the terminal, so a pasted
 	// command would land in it. It is retryable because the caller can interrupt
@@ -41,7 +43,6 @@ const (
 	FileConflict        Code = "FILE_CONFLICT"
 	FileTooLarge        Code = "FILE_TOO_LARGE"
 	InvalidText         Code = "INVALID_TEXT"
-	SearchFailed        Code = "SEARCH_FAILED"
 	TunnelFailed        Code = "TUNNEL_FAILED"
 	// Codes owned by the remote file helper (internal/fileops/remote.py). They
 	// describe what the helper refused, because only the remote side can tell
@@ -59,10 +60,11 @@ const (
 // schema test compares this list with schemas/result-v1.schema.json.
 var allCodes = []Code{
 	UsageError, ConfigInvalid, HostUnknown, SSHUnreachable, SSHAuthFailed,
-	HostKeyFailed, RemoteDependencyMissing, RemoteCommandTimeout, SessionBusy,
+	HostKeyFailed, RemoteDependencyMissing, RemoteCommandTimeout, RemoteCommandCancelled,
+	OutputWriteFailed, SessionBusy,
 	SessionNotFound, SessionUnhealthy, JobNotFound, JobStateUnknown, TransferFailed, SyncRejected,
 	UnsupportedRemoteOS, Internal, FileConflict, FileTooLarge, InvalidText,
-	SearchFailed, TunnelFailed, FileNotFound, InvalidTarget, InvalidPatch,
+	TunnelFailed, FileNotFound, InvalidTarget, InvalidPatch,
 	TunnelNotFound,
 }
 

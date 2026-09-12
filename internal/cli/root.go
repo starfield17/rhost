@@ -4,11 +4,18 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/starfield17/rhost/internal/app"
 	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/output"
 )
@@ -80,17 +87,36 @@ func newGroup(use, short, long string) *cobra.Command {
 }
 
 func newRootCmd() *cobra.Command {
+	var (
+		host, cwd string
+		envs      []string
+		timeout   time.Duration
+		maxOutput int
+	)
 	root := &cobra.Command{
 		Use:   "rhost",
-		Short: "Remote host adapter for coding agents and humans",
-		Long: `rhost treats an SSH-reachable machine as a reusable execution node.
+		Short: "Run ordinary commands on an SSH-reachable host",
+		Long: `rhost runs an ordinary shell command in a remote execution context.
 
-It orchestrates your existing OpenSSH configuration and never duplicates SSH
-authentication or host-key policy. Hosts are named exactly as you would name
-them to ssh: an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
+Use --host TARGET -- 'command' for the normal path. rhost orchestrates your
+existing OpenSSH configuration and never duplicates authentication or host-key
+policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 	}
+	root.Flags().StringVar(&host, "host", "", "SSH target for direct command execution")
+	root.Flags().StringVar(&cwd, "cwd", "", "working directory on the remote host")
+	root.Flags().StringArrayVar(&envs, "env", nil, "environment variable KEY=VALUE (repeatable)")
+	root.Flags().DurationVar(&timeout, "timeout", 0, "execution deadline; 0 waits until completion")
+	root.Flags().IntVar(&maxOutput, "max-output-bytes", 0, "captured bytes per stream (0 = unlimited; JSON defaults to 1 MiB)")
 	root.PersistentFlags().BoolVar(&jsonFlag, "json", false, "emit machine-readable JSON on stdout")
-	root.RunE = func(c *cobra.Command, _ []string) error {
+	root.RunE = func(c *cobra.Command, args []string) error {
+		if host != "" {
+			if c.ArgsLenAtDash() < 0 || len(args) != 1 {
+				emitFailure("exec", host, errs.New(errs.UsageError,
+					"direct execution requires exactly one shell command after --", false))
+				return nil
+			}
+			return runDirectExec(c, host, args[0], cwd, envs, timeout, maxOutput)
+		}
 		if jsonFlag {
 			emitFailure("usage", "", errs.New(errs.UsageError, "rhost needs a subcommand", false))
 			return nil
@@ -99,17 +125,98 @@ them to ssh: an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 	}
 	root.AddCommand(
 		newExecCmd(),
-		newExecManyCmd(),
 		newTunnelCmd(),
 		newDoctorCmd(),
 		newHostsCmd(),
 		newSessionCmd(),
 		newJobCmd(),
 		newFsCmd(),
-		newStatusCmd(),
-		newWatchCmd(),
 		newAuditCmd(),
 		newVersionCmd(),
 	)
 	return root
+}
+
+func runDirectExec(cmd *cobra.Command, host, command, cwd string, envs []string, timeout time.Duration, maxOutput int) error {
+	if timeout < 0 || maxOutput < 0 || maxOutput > maxCLIOutputBytes {
+		emitFailure("exec", host, errs.New(errs.ConfigInvalid,
+			"--timeout must be non-negative and --max-output-bytes between 0 and 67108864", false))
+		return nil
+	}
+	env, err := parseEnv(envs)
+	if err != nil {
+		emitFailure("exec", host, configErr(err))
+		return nil
+	}
+	if !cmd.Flags().Changed("max-output-bytes") {
+		if jsonFlag {
+			maxOutput = 1024 * 1024
+		} else {
+			maxOutput = -1
+		}
+	}
+
+	ctx, cancel := context.WithCancel(cmd.Context())
+	defer cancel()
+	sigch := make(chan os.Signal, 1)
+	signal.Notify(sigch, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigch)
+	signal.Ignore(syscall.SIGPIPE)
+	defer signal.Reset(syscall.SIGPIPE)
+	var sig atomic.Int32
+	go func() {
+		select {
+		case s := <-sigch:
+			if s == os.Interrupt {
+				sig.Store(int32(syscall.SIGINT))
+			} else {
+				sig.Store(int32(syscall.SIGTERM))
+			}
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	var stdout, stderr io.Writer = os.Stdout, os.Stderr
+	if jsonFlag {
+		stdout, stderr = nil, nil
+	}
+	audit := startAudit("exec", host)
+	res, aerr := app.NewDefault().ExecuteStream(ctx, app.StreamExecOptions{
+		ExecOptions: app.ExecOptions{Host: host, Command: command, Cwd: cwd, Env: env,
+			Timeout: timeout, MaxOutputBytes: maxOutput},
+		Stdin: os.Stdin, Stdout: stdout, Stderr: stderr,
+	})
+	if n := sig.Load(); n != 0 {
+		if n == int32(syscall.SIGINT) {
+			res.CancelSignal = "SIGINT"
+		} else {
+			res.CancelSignal = "SIGTERM"
+		}
+	}
+	if aerr != nil {
+		audit.fail(aerr)
+		if jsonFlag {
+			_ = output.Failure("exec", host, execData(res), aerr).Write(os.Stdout)
+		} else {
+			fmt.Fprintf(os.Stderr, "rhost: %s: %s\n", aerr.Code, aerr.Message)
+		}
+		if aerr.Code == errs.RemoteCommandCancelled {
+			if res.CancelSignal == "SIGINT" {
+				exitCode = 130
+			} else {
+				exitCode = 143
+			}
+		} else {
+			exitCode = adapterExitCode(aerr)
+		}
+		return nil
+	}
+	code := res.ExitCode
+	audit.succeed(cwd, command, &code)
+	if jsonFlag {
+		_ = output.Success("exec", host, execData(res)).Write(os.Stdout)
+	}
+	exitCode = code
+	return nil
 }

@@ -16,25 +16,22 @@
                      │  disposable     │
                      └────────┬────────┘
                               │
-                 ┌────────────┼─────────────┐
-                 │            │             │
-                 ▼            ▼             ▼
-          human formatting   JSON       watch/TUI
-                 │            │             │
-                 └────────────┼─────────────┘
+                         ┌────┴────┐
+                         ▼         ▼
+                  streamed I/O    JSON
+                         └────┬────┘
                               ▼
                      ┌─────────────────┐
                      │ application     │
                      │ use-cases       │
                      └────────┬────────┘
                               │
-          ┌───────────────────┼────────────────────┐
-          ▼                   ▼                    ▼
-     transport            persistence          telemetry
-     OpenSSH              adapters             probes
-          │                   │                    │
-          ├──────────────┬────┴─────────┬──────────┤
-          ▼              ▼              ▼          ▼
+          ┌───────────────────┴────────────────────┐
+          ▼                                        ▼
+     OpenSSH transport                    persistence adapters
+          │                                        │
+          ├──────────────┬───────────────┬─────────┤
+          ▼              ▼               ▼         ▼
        SSH exec       remote tmux   remote jobs   remote FS
           │              │              │          │
           └──────────────┴───────┬──────┴──────────┘
@@ -60,7 +57,6 @@ This table is an architectural contract.
 | job metadata/logs | remote state directory | rediscoverable |
 | host aliases/auth | `~/.ssh/config` | do not duplicate SSH |
 | adapter config | local `rhost` config | project-specific defaults do not belong here |
-| UI/watch state | reconstructed | monitor must not own runtime state |
 
 Do not add in-memory ownership where a process restart would violate this table.
 

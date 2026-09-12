@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -75,15 +76,25 @@ func (c *Client) Config() Config { return c.cfg }
 
 // Result is the raw outcome of one ssh invocation.
 type Result struct {
-	Stdout   []byte
-	Stderr   []byte
-	ExitCode int
-	TimedOut bool
-	Duration time.Duration
+	Stdout    []byte
+	Stderr    []byte
+	ExitCode  int
+	TimedOut  bool
+	Cancelled bool
+	Duration  time.Duration
 	// StdoutBytes and StderrBytes are what the remote produced, which can exceed
 	// the length of Stdout and Stderr when a cap was asked for.
 	StdoutBytes int64
 	StderrBytes int64
+}
+
+// PipeOptions runs ssh with caller-owned streams. A zero timeout means no
+// execution deadline; cancellation still comes from ctx.
+type PipeOptions struct {
+	Timeout time.Duration
+	Stdin   io.Reader
+	Stdout  io.Writer
+	Stderr  io.Writer
 }
 
 // options returns the shared OpenSSH options. ControlMaster=auto +
@@ -205,5 +216,47 @@ func (c *Client) RunWith(ctx context.Context, target, remoteCmd string, opts Run
 		return res, runErr
 	}
 	res.ExitCode = 0
+	return res, nil
+}
+
+// RunPipe executes one SSH command without buffering its streams in the
+// transport. It is used by the command-line-shaped execution path, where bytes
+// must be observable before the remote process exits.
+func (c *Client) RunPipe(ctx context.Context, target, remoteCmd string, opts PipeOptions) (Result, error) {
+	if err := config.EnsureControlDir(); err != nil {
+		return Result{}, err
+	}
+	cctx := ctx
+	cancel := func() {}
+	if opts.Timeout > 0 {
+		cctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+	}
+	defer cancel()
+
+	args := append(c.options(), "-T", "--", target, remoteCmd)
+	cmd := exec.CommandContext(cctx, c.cfg.SSHBin, args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = opts.Stdin, opts.Stdout, opts.Stderr
+	cmd.WaitDelay = 2 * time.Second
+
+	var res Result
+	start := time.Now()
+	runErr := cmd.Run()
+	res.Duration = time.Since(start)
+	if cctx.Err() == context.DeadlineExceeded {
+		res.TimedOut = true
+		return res, nil
+	}
+	if ctx.Err() != nil {
+		res.Cancelled = true
+		return res, nil
+	}
+	if runErr != nil {
+		var ee *exec.ExitError
+		if errors.As(runErr, &ee) {
+			res.ExitCode = ee.ExitCode()
+			return res, nil
+		}
+		return res, runErr
+	}
 	return res, nil
 }

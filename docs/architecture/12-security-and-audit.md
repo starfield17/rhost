@@ -58,10 +58,10 @@ overridable with `RHOST_STATE_DIR`), and `rhost audit [--json] [--limit N]
   operation proceeds, so a full or read-only disk cannot brick remote work.
 - Records bounded operation metadata: no environment maps and no file contents, and
   `session send` records the key but never the injected data.
-- Audited operations are the remote actions and snapshots — `exec`, `doctor`,
-  `status`, `session create/exec/send/close`, `job start/stop/kill`,
-  `fs put/get/sync`. List/read/log-poll commands and `watch` are not audited, so
-  the trail records actions rather than polling noise.
+- Audited operations are direct and compatibility execution, `doctor`, session
+  and job mutations, file writes/transfers, and tunnel mutations. List, read,
+  and log-poll commands are not audited, so the trail records actions rather
+  than polling noise.
 - Audit state is local-only. Do not point `RHOST_STATE_DIR` at a repository or
   upload `audit.jsonl`; the repository ignore rules provide a final backstop.
 - Turned off with `RHOST_AUDIT=0`.

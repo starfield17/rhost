@@ -1,6 +1,6 @@
-// Command rhost is a general-purpose remote-host adapter for coding agents and
-// humans. It orchestrates the system OpenSSH client so that an agent can treat
-// an SSH-reachable machine as a reusable execution node.
+// Command rhost runs ordinary shell commands in an SSH-reachable remote context.
+// It also exposes the few explicit operations that need persistence or protected
+// cross-machine state.
 //
 // This file only wires the CLI together; all remote-control logic lives under
 // internal/.

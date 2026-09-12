@@ -83,7 +83,7 @@ failures use 255, timeouts use 124.`,
 	return cmd
 }
 
-// execView is the `data` of one exec result, and one row of exec-many. It is a
+// execView is the `data` of one exec result. It is a
 // struct rather than a map so the field set is declared once, in the order it is
 // meant to be read: what the command returned, then how much of it was lost.
 //
@@ -96,6 +96,8 @@ type execView struct {
 	Stdout           string `json:"stdout"`
 	Stderr           string `json:"stderr"`
 	TimedOut         bool   `json:"timed_out"`
+	Cancelled        bool   `json:"cancelled"`
+	CancelSignal     string `json:"cancel_signal,omitempty"`
 	CleanupConfirmed bool   `json:"cleanup_confirmed"`
 	StdoutTruncated  bool   `json:"stdout_truncated"`
 	StderrTruncated  bool   `json:"stderr_truncated"`
@@ -110,6 +112,8 @@ func execData(res app.ExecResult) execView {
 		Stdout:           res.Stdout,
 		Stderr:           res.Stderr,
 		TimedOut:         res.TimedOut,
+		Cancelled:        res.Cancelled,
+		CancelSignal:     res.CancelSignal,
 		CleanupConfirmed: res.CleanupConfirmed,
 		StdoutTruncated:  res.StdoutTruncated,
 		StderrTruncated:  res.StderrTruncated,

@@ -12,8 +12,8 @@ This file is the **map**. The architecture is expanded under
 [`docs/architecture/`](architecture/), one file per Part, so a reader — human or
 agent — can load only the part a task needs instead of a 1900-line document.
 
-Section numbers `§0`–`§53` are stable. Every `docs/ARCHITECTURE.md §N`
-reference in the code, `AGENTS.md`, `README.md` and `skills/rhost/SKILL.md` still resolves:
+Section numbers are stable. Every `docs/ARCHITECTURE.md §N` reference in code
+and contributor documentation resolves:
 find §N in the list below to see which file holds it. Each Part file links back
 to this map.
 
@@ -74,12 +74,6 @@ to this map.
 - [27. v0.1 transfer backend](architecture/08-files.md#27-v01-transfer-backend)
 - [28. Safe synchronization](architecture/08-files.md#28-safe-synchronization)
 
-## [Part IX — status and monitor](architecture/09-status-and-monitor.md)
-
-- [29. `status`](architecture/09-status-and-monitor.md#29-status)
-- [30. Remote probe design](architecture/09-status-and-monitor.md#30-remote-probe-design)
-- [31. `watch`](architecture/09-status-and-monitor.md#31-watch)
-
 ## [Part X — structured output](architecture/10-structured-output.md)
 
 - [32. JSON is a public compatibility surface](architecture/10-structured-output.md#32-json-is-a-public-compatibility-surface)
@@ -116,7 +110,6 @@ to this map.
 - [45. Milestone 2 — sessions](architecture/16-milestones.md#45-milestone-2--sessions)
 - [46. Milestone 3 — jobs](architecture/16-milestones.md#46-milestone-3--jobs)
 - [47. Milestone 4 — files](architecture/16-milestones.md#47-milestone-4--files)
-- [48. Milestone 5 — status/watch](architecture/16-milestones.md#48-milestone-5--statuswatch)
 - [49. Milestone 6 — hardening](architecture/16-milestones.md#49-milestone-6--hardening)
 
 ## [Part XVII — deferred architecture](architecture/17-deferred-architecture.md)

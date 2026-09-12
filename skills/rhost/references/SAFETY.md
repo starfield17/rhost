@@ -25,10 +25,10 @@ the tool itself provides.
 
 ```bash
 # no: the token is in the audit log, the process table, and your shell history
-rhost exec <host> -- curl -H 'Authorization: Bearer sk-...' https://api.example
+rhost --host <host> -- 'curl -H "Authorization: Bearer <token>" https://api.example'
 
 # yes: the value stays on the remote side
-rhost exec <host> -- 'curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.example'
+rhost --host <host> -- 'curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.example'
 ```
 
 `session send --data` records the *key* or the fact that data was sent, never the
@@ -85,10 +85,8 @@ It records bounded operation metadata: no environment maps, no file contents, no
 That is a bound, not a filter: a secret typed into a command line is still
 recorded, which is why secrets do not belong there.
 
-Auditing is fail-open: a write failure never blocks the remote operation. Which
-operations get a line: actions plus the explicit `doctor` and `status` snapshots — `fs` writes, transfers and
-every batch entry, session create/exec/recover/close, job start/stop/kill, tunnel
-open/close, `doctor`, and `status` — including failures. Other reads
-(`fs read/grep/glob`, `hosts`, `audit`) and `watch` are polling and are not
-recorded. The file is local state; do not place `RHOST_STATE_DIR` in a repository
-or upload the audit log to GitHub.
+Auditing is fail-open: a write failure never blocks the remote operation. Direct
+commands, file writes and transfers, every batch entry, session mutations, job
+mutations, tunnel open/close, and `doctor` are recorded, including failures.
+Read-only `fs read`, `hosts`, and `audit` are not. The file is local state; do not
+place `RHOST_STATE_DIR` in a repository or upload the audit log to GitHub.

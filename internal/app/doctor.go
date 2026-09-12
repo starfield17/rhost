@@ -21,7 +21,6 @@ type DoctorResult struct {
 	StateDir         string          `json:"state_dir"`
 	StateDirWritable bool            `json:"state_dir_writable"`
 	WSL              bool            `json:"wsl"`
-	SystemdUser      bool            `json:"systemd_user"`
 	Capabilities     map[string]bool `json:"capabilities"`
 }
 
@@ -37,7 +36,7 @@ em home "$HOME"
 ls="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)"
 [ -n "$ls" ] || ls="${SHELL:-unknown}"
 em login_shell "$ls"
-for c in bash tmux nohup setsid ps rsync sha256sum base64 stty nvidia-smi systemctl git flock python3 rg realpath; do
+for c in bash tmux nohup setsid ps rsync sha256sum base64 stty flock python3 realpath; do
   if command -v "$c" >/dev/null 2>&1; then em "have_$c" yes; else em "have_$c" no; fi
 done
 # The job backend ties a job's pid to the process that wrote it through /proc;
@@ -47,7 +46,7 @@ rd="${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}"
 if mkdir -p "$rd" 2>/dev/null && [ -w "$rd" ]; then em state_dir_writable yes; else em state_dir_writable no; fi
 em state_dir "$rd"
 if grep -qi microsoft /proc/version 2>/dev/null; then em wsl yes; else em wsl no; fi
-if systemctl --user >/dev/null 2>&1; then em systemd_user yes; else em systemd_user no; fi`
+`
 
 // Doctor probes a host's capabilities without assuming them.
 func (a *App) Doctor(ctx context.Context, host string, timeout time.Duration) (DoctorResult, *errs.Error) {
@@ -83,7 +82,6 @@ func (a *App) Doctor(ctx context.Context, host string, timeout time.Duration) (D
 		StateDir:         kv["state_dir"],
 		StateDirWritable: kv["state_dir_writable"] == "yes",
 		WSL:              kv["wsl"] == "yes",
-		SystemdUser:      kv["systemd_user"] == "yes",
 		Capabilities:     caps,
 	}, nil
 }

@@ -1,4 +1,4 @@
-"""One-shot remote file operations, used by `rhost fs read/write/patch/grep/glob`.
+"""One-shot remote file operations, used by `rhost fs read/write/patch`.
 
 The program is embedded into the rhost binary and executed by a *remote* python3
 (AGENTS.md §5: nothing is installed here, a missing interpreter is reported as a
@@ -11,7 +11,7 @@ Stability rules this file has to keep:
 * `error` is always one of the codes in internal/errs; an unexpected exception
   becomes `INTERNAL`, never a guess;
 * a response is bounded by the request's own `max_bytes`, so a large file or a
-  large search can never make the CLI drain an unbounded stream;
+  large read can never make the CLI drain an unbounded stream;
 * nothing is written unless the request's hash precondition still matches.
 """
 import base64
@@ -21,17 +21,14 @@ import hashlib
 import json
 import os
 import stat
-import subprocess
 import sys
 import tempfile
 
-# Editing limit, in bytes, for a whole file. Reads and searches are bounded by
+# Editing limit, in bytes, for a whole file. Reads are bounded by
 # the caller's max_bytes instead; this bounds *writes*, where the whole new body
 # has to be held in memory to be hashed and compared.
 EDIT_LIMIT = 8 * 1024 * 1024
 
-# Ceiling for one streamed search record. rg has already buffered the line, so
-# reading it is not the risk; holding a multi-gigabyte line in this process is.
 RECORD_LIMIT = 8 * 1024 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
@@ -95,33 +92,6 @@ def resolve(q, path):
     return {'path': actual}
 
 
-def read_record(pipe, cap):
-    """One complete line from `pipe`, as (bytes, complete).
-
-    A record ends at its newline, at the end of the stream, or at RECORD_LIMIT —
-    whichever comes first, and only the last of those is incomplete. A file whose
-    final line has no trailing newline is the ordinary case (most editors write
-    one), so treating "no newline" as truncation would drop the last line of every
-    such file and point the caller at flags that could never help.
-
-    A line is read even when it is longer than the caller's budget — `rg` has
-    already buffered it — but never longer than RECORD_LIMIT, so a match inside a
-    2 GB single-line file cannot make the helper allocate 2 GB.
-    """
-    chunks, used = [], 0
-    step = max(cap + 1, 65536)
-    while used < RECORD_LIMIT:
-        chunk = pipe.readline(min(step, RECORD_LIMIT - used))
-        if not chunk:
-            break  # end of stream: what was read is the whole record
-        chunks.append(chunk)
-        used += len(chunk)
-        if chunk.endswith(b'\n'):
-            break
-    line = b''.join(chunks)
-    return line, used < RECORD_LIMIT
-
-
 def clip_text(text, budget):
     """Clip to a byte budget without cutting a rune in half."""
     if budget <= 0:
@@ -132,148 +102,19 @@ def clip_text(text, budget):
     return raw[:budget].decode('utf-8', 'ignore'), True
 
 
-def records(pipe, op, mode, cap):
-    """Yield one normalised result row per record `pipe` reports.
-
-    `rg`'s own JSON is an event stream — `begin`/`match`/`end`/`stats`, with every
-    field nested under `data`. Passing that through would put a tool's wire
-    format into rhost's contract, and cost about four times the bytes of the
-    matching text, so the search budget would buy less than it appears to. These
-    rows are the stable shape instead.
-    """
-    per_record = max(cap // 8, 512)
-    while True:
-        raw, complete = read_record(pipe, cap)
-        if not raw:
-            return
-        if not complete:
-            raise Failure('SEARCH_FAILED',
-                          'a single result exceeded %d bytes; narrow the pattern or raise max_bytes'
-                          % RECORD_LIMIT)
-        text = raw.decode('utf-8', 'replace').rstrip('\n')
-        if op == 'grep' and mode == 'content':
-            try:
-                event = json.loads(text)
-                kind = event.get('type')
-                if kind not in ('match', 'context'):
-                    continue
-                data = event['data']
-                row = {'path': relative(data['path']['text']), 'line': data['line_number'],
-                       'context': kind == 'context'}
-                body, clipped = clip_text(data['lines']['text'].rstrip('\n'), per_record)
-                row['text'] = body
-                if clipped:
-                    row['text_truncated'] = True
-                if kind == 'match' and data.get('column_number'):
-                    row['column'] = data['column_number']
-            except (ValueError, KeyError, TypeError):
-                raise Failure('SEARCH_FAILED', 'cannot parse this search result: %s' % text[:200])
-        elif op == 'grep' and mode == 'count':
-            # `--count` prints `path:count`; the count is after the last colon, so
-            # a filename containing one still parses.
-            try:
-                name, count = text.rsplit(':', 1)
-                row = {'path': relative(name), 'count': int(count)}
-            except ValueError:
-                raise Failure('SEARCH_FAILED', 'cannot parse this search result: %s' % text[:200])
-        else:
-            row = {'path': relative(text)}
-        yield row
-
-
-def relative(name):
-    """Paths are reported relative to the search root, without a leading `./`."""
-    return name[2:] if name.startswith('./') else name
-
-
-def search(q, path, op):
-    """`rg`-backed grep/glob, capped while the results stream in.
-
-    The budget is applied per record and in total, and the child is killed once it
-    is spent, so a recursive search of a huge tree costs `max_bytes` rather than
-    one whole tree. `truncated` says which happened, and `next` is the offset to
-    pass back for the following page.
-    """
-    mode = q.get('mode') or 'content'
-    if mode not in ('content', 'files', 'count'):
-        raise Failure('CONFIG_INVALID', 'mode must be content, files or count')
-    if not os.path.exists(path):
-        raise Failure('FILE_NOT_FOUND', 'no such directory: %s' % path)
-    if not os.path.isdir(path):
-        raise Failure('INVALID_TARGET', 'search root is not a directory: %s' % path)
-    limit = integer(q, 'limit', 100)
-    offset = integer(q, 'offset', 0)
-    if limit <= 0 or offset < 0:
-        raise Failure('CONFIG_INVALID', 'limit must be positive and offset nonnegative')
-    cap = check_capacity(q)
-    if type(q.get('pattern')) is not str:
-        raise Failure('CONFIG_INVALID', 'a pattern is required')
-
-    args = ['rg']
-    if q.get('hidden'):
-        args.append('--hidden')
-    if q.get('no_ignore'):
-        args.append('--no-ignore')
-    if op == 'glob':
-        args += ['--files', '--sort', 'path', '-g', q['pattern']]
-    else:
-        args += ['--sort', 'path']
-        if mode == 'content':
-            args.append('--json')
-        elif mode == 'files':
-            args.append('--files-with-matches')
-        else:
-            args.append('--count')
-        if q.get('ignore_case'):
-            args.append('-i')
-        if q.get('glob'):
-            if type(q['glob']) is not str:
-                raise Failure('CONFIG_INVALID', 'glob must be a string')
-            args += ['-g', q['glob']]
-        context = integer(q, 'context', 0)
-        if context < 0:
-            raise Failure('CONFIG_INVALID', 'context must be nonnegative')
-        args += ['-C', str(context), '-e', q['pattern']]
-    args += ['--', '.']
-
-    rows, used, seen, truncated = [], 0, 0, False
-    with tempfile.TemporaryFile() as errors:
-        proc = subprocess.Popen(args, cwd=path, stdout=subprocess.PIPE, stderr=errors)
-        try:
-            for row in records(proc.stdout, op, mode, cap):
-                # Counted for pagination, budgeted for the response: an offset
-                # skips records, it does not skip bytes.
-                if seen < offset:
-                    seen += 1
-                    continue
-                cost = len(json.dumps(row))
-                if len(rows) >= limit:
-                    truncated = True
-                    break
-                if used + cost > cap:
-                    # This record has been consumed but cannot fit even on an
-                    # otherwise empty page. Advance past it so the cursor can
-                    # never deadlock on the same oversized result.
-                    seen += 1
-                    truncated = True
-                    break
-                rows.append(row)
-                used += cost
-                seen += 1
-            if truncated:
-                proc.terminate()
-            rc = proc.wait()
-            # rg exits 1 for "no matches", which is an empty success, and 2 for a
-            # real error. Anything else is the tool's own failure, quoted.
-            if not truncated and rc not in (0, 1):
-                errors.seek(0)
-                raise Failure('SEARCH_FAILED', errors.read(4096).decode('utf-8', 'replace').strip())
-        finally:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait()
-            proc.stdout.close()
-    return {'path': path, 'results': rows, 'truncated': truncated, 'next': seen}
+def read_record(pipe, cap):
+    """Read one complete line without holding more than RECORD_LIMIT bytes."""
+    chunks, used = [], 0
+    step = max(cap + 1, 65536)
+    while used < RECORD_LIMIT:
+        chunk = pipe.readline(min(step, RECORD_LIMIT - used))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        used += len(chunk)
+        if chunk.endswith(b'\n'):
+            break
+    return b''.join(chunks), used < RECORD_LIMIT
 
 
 def read(q, path):
@@ -512,8 +353,6 @@ def run(q):
     path = request_path(q)
     if op == 'resolve':
         return resolve(q, path)
-    if op in ('grep', 'glob'):
-        return search(q, path, op)
     if op == 'read':
         return read(q, path)
     if op in ('write', 'patch'):

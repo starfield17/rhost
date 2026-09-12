@@ -239,6 +239,61 @@ func TestNoCommandAtAllIsAUsageError(t *testing.T) {
 	}
 }
 
+func TestDirectExecutionRequiresOneShellStringAfterDash(t *testing.T) {
+	t.Cleanup(saveGlobals())
+	for _, args := range [][]string{
+		{"rhost", "--json", "--host", "example-host", "ls"},
+		{"rhost", "--json", "--host", "example-host", "--", "ls", "-a"},
+		{"rhost", "--json", "--host", "example-host", "--"},
+	} {
+		os.Args = args
+		out := captureStdout(t, func() { _ = Run() })
+		var doc struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+			t.Fatalf("%v: %v: %q", args, err, out)
+		}
+		if doc.Error.Code != "USAGE_ERROR" {
+			t.Errorf("%v: code = %q", args, doc.Error.Code)
+		}
+	}
+}
+
+func TestDirectExecutionRejectsNegativeOutputLimit(t *testing.T) {
+	t.Cleanup(saveGlobals())
+	os.Args = []string{"rhost", "--json", "--host", "example-host", "--max-output-bytes", "-1", "--", "true"}
+	out := captureStdout(t, func() { _ = Run() })
+	var doc struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil || doc.Error.Code != "CONFIG_INVALID" {
+		t.Fatalf("negative limit: expected CONFIG_INVALID, got %q (%v)", out, err)
+	}
+}
+
+func TestRemovedCommandsAreUsageErrors(t *testing.T) {
+	t.Cleanup(saveGlobals())
+	for _, args := range [][]string{
+		{"status"}, {"watch"}, {"exec-many"}, {"fs", "grep"}, {"fs", "glob"},
+	} {
+		os.Args = append([]string{"rhost", "--json"}, args...)
+		out := captureStdout(t, func() { _ = Run() })
+		var doc struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil || doc.Error.Code != "USAGE_ERROR" {
+			t.Errorf("%v: expected USAGE_ERROR, got %q (%v)", args, out, err)
+		}
+	}
+}
+
 func TestSessionAttachRejectsJSONBeforeSSH(t *testing.T) {
 	t.Cleanup(saveGlobals())
 	os.Args = []string{"rhost", "--json", "session", "attach", "example-host", "dev"}

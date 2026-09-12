@@ -29,7 +29,7 @@ contents, not the directory itself. rhost normalises it, so it is accepted
 either way.`)
 	cmd.AddCommand(newFsPutCmd(), newFsGetCmd(), newFsSyncCmd())
 	cmd.AddCommand(newFsMirrorCmd(), newFsBatchCmd())
-	for _, op := range []string{"read", "write", "patch", "grep", "glob"} {
+	for _, op := range []string{"read", "write", "patch"} {
 		cmd.AddCommand(newRemoteFileCmd(op))
 	}
 	return cmd

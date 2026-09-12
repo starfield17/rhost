@@ -31,7 +31,7 @@ type ExecOptions struct {
 	Timeout time.Duration
 	// Stdin is fed to the remote command. It exists for the helpers that take a
 	// structured request rather than a path, so no argument ever has to be quoted
-	// into a shell (fs read/write/grep/glob use it).
+	// into a shell (fs read/write/patch use it).
 	Stdin []byte
 	// MaxOutputBytes bounds each output stream *in the CLI's memory and in the
 	// JSON*. 0 means unbounded, which is what `exec` used to do always; the
@@ -45,12 +45,14 @@ type ExecOptions struct {
 // say whether `Stdout`/`Stderr` are all of it, and `CleanupConfirmed` separates
 // "this run is over" from "this run is over and I proved the remote stopped".
 type ExecResult struct {
-	Host     string
-	ExitCode int
-	Stdout   string
-	Stderr   string
-	Duration time.Duration
-	TimedOut bool
+	Host         string
+	ExitCode     int
+	Stdout       string
+	Stderr       string
+	Duration     time.Duration
+	TimedOut     bool
+	Cancelled    bool
+	CancelSignal string
 
 	StdoutBytes      int64
 	StderrBytes      int64

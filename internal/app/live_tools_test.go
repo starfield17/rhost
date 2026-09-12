@@ -54,26 +54,6 @@ func TestLiveTools(t *testing.T) {
 	// Re-applying the same patch must be *refused*, not applied twice: the hash the
 	// patch carries no longer describes the file. This is the whole reason the
 	// command group is safe to hand to an agent.
-	for _, op := range []string{"grep", "glob"} {
-		pattern := "gamma"
-		if op == "glob" {
-			pattern = "*.txt"
-		}
-		result := c.mustJSON(t, "--json", "fs", op, host, pattern, dir)
-		var rows []interface{}
-		result.field(t, "results", &rows)
-		if len(rows) != 1 {
-			t.Fatalf("%s results: %s", op, result.Data)
-		}
-	}
-	for _, mode := range []string{"files", "count"} {
-		result := c.mustJSON(t, "--json", "fs", "grep", host, "gamma", dir, "--mode", mode)
-		var rows []interface{}
-		result.field(t, "results", &rows)
-		if len(rows) != 1 {
-			t.Fatalf("search mode %s: %s", mode, result.Data)
-		}
-	}
 	c.mustJSON(t, "--json", "fs", "put", host, local, dir+"/verified.txt", "--checksum")
 	c.mustJSON(t, "--json", "fs", "get", host, dir+"/verified.txt", filepath.Join(t.TempDir(), "get.txt"), "--resume")
 	c.mustJSON(t, "--json", "fs", "put", host, local, dir+"/file with space.txt", "--checksum")
@@ -97,12 +77,6 @@ func TestLiveTools(t *testing.T) {
 	capped.field(t, "stdout_truncated", &truncated)
 	if len(capped.str(t, "stdout")) != 1000 || !truncated || capped.num(t, "stdout_bytes") != 100000 {
 		t.Fatalf("bounded output: %s", capped.Data)
-	}
-	many := c.mustJSON(t, "--json", "exec-many", "--host", host, "--host", host, "--", "printf batch")
-	var rows []map[string]interface{}
-	many.field(t, "results", &rows)
-	if len(rows) != 2 || rows[0]["stdout"] != "batch" || rows[1]["stdout"] != "batch" {
-		t.Fatalf("batch exec: %s", many.Data)
 	}
 }
 

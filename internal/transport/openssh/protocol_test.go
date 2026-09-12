@@ -28,6 +28,14 @@ func TestBuildScriptContainsProtocol(t *testing.T) {
 	}
 }
 
+func TestBuildStreamScriptUsesNULBoundaries(t *testing.T) {
+	s := BuildStreamScript(ExecSpec{Command: "echo ok", Nonce: "abc"})
+	if !strings.Contains(s, `printf '\000__RHOST_BEGIN_abc__\n'`) ||
+		!strings.Contains(s, `printf '\000__RHOST_DONE_abc__:%d\n'`) {
+		t.Fatalf("stream protocol has no NUL boundary:\n%s", s)
+	}
+}
+
 func TestParseMarker(t *testing.T) {
 	const nonce = "abc123"
 	marker := "\n__RHOST_DONE_" + nonce + "__:7\n"

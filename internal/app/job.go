@@ -281,8 +281,7 @@ func (a *App) JobList(ctx context.Context, host string, timeout time.Duration) (
 	return jobsFromList(string(res.Stdout)), nil
 }
 
-// jobsFromList is the shared parser for `job list` and the jobs section of a
-// status snapshot, so both views derive state the same way.
+// jobsFromList parses the facts returned by `job list` into derived states.
 func jobsFromList(stdout string) []JobInfo {
 	factsList := detached.ParseList(stdout)
 	sort.Slice(factsList, func(i, j int) bool { return factsList[i].ID < factsList[j].ID })

@@ -28,7 +28,6 @@ rhost/
 │   │   ├── session.go
 │   │   ├── job.go
 │   │   ├── fs.go
-│   │   ├── status.go
 │   │   └── doctor.go
 │   │
 │   ├── transport/
@@ -56,11 +55,6 @@ rhost/
 │   │   ├── transfer.go
 │   │   └── sync.go
 │   │
-│   ├── telemetry/
-│   │   ├── linux.go
-│   │   ├── nvidia.go
-│   │   └── model.go
-│   │
 │   ├── host/
 │   │   ├── registry.go
 │   │   └── capabilities.go
@@ -73,8 +67,6 @@ rhost/
 │   │   ├── json.go
 │   │   └── human.go
 │   │
-│   └── watch/
-│       └── watch.go
 │
 ├── schemas/
 │   └── result-v1.schema.json
@@ -99,7 +91,6 @@ Backend packages implement mechanisms:
 - `session/tmux`
 - `job/detached`
 - `fileops`
-- `telemetry`
 
 `output` only formats models already produced by the application layer.
 
@@ -107,60 +98,14 @@ Use Go `internal/` aggressively. Do not create a generic `utils/` package.
 
 ---
 
-## 4. Suggested core interfaces
+## 4. Core interfaces
 
-Do not over-abstract before the first implementation exists. These interfaces are enough to separate semantics from mechanisms.
+The application layer currently depends directly on the single OpenSSH transport
+and concrete persistence backends. Do not introduce an executor, session manager,
+or job manager interface until a second implementation actually needs it.
 
-Conceptually:
-
-```go
-type ExecRequest struct {
-    Host    string
-    Command string
-    Cwd     string
-    Env     map[string]string
-    Timeout time.Duration
-}
-
-type ExecResult struct {
-    Host       string
-    ExitCode   int
-    Stdout     []byte
-    Stderr     []byte
-    Duration   time.Duration
-    TimedOut   bool
-}
-
-type Executor interface {
-    Exec(ctx context.Context, req ExecRequest) (ExecResult, error)
-}
-```
-
-Session:
-
-```go
-type SessionManager interface {
-    Create(ctx context.Context, req CreateSessionRequest) (Session, error)
-    List(ctx context.Context, host string) ([]Session, error)
-    Exec(ctx context.Context, req SessionExecRequest) (SessionExecResult, error)
-    Send(ctx context.Context, req SessionSendRequest) error
-    Read(ctx context.Context, req SessionReadRequest) (SessionReadResult, error)
-    Close(ctx context.Context, host, id string) error
-}
-```
-
-Job:
-
-```go
-type JobManager interface {
-    Start(ctx context.Context, req StartJobRequest) (Job, error)
-    List(ctx context.Context, host string) ([]Job, error)
-    Status(ctx context.Context, host, id string) (JobStatus, error)
-    Logs(ctx context.Context, req JobLogsRequest) (JobLogChunk, error)
-    Signal(ctx context.Context, host, id string, sig string) error
-}
-```
-
-Keep these internal until a second frontend genuinely needs a public Go library.
+CLI and JSON representations remain outside `internal/app`; remote shell
+construction and marker parsing remain under the OpenSSH/session backends. This
+keeps a future frontend possible without making it a present abstraction cost.
 
 ---

@@ -42,7 +42,7 @@ func TestAuditTimerRecordsFailure(t *testing.T) {
 	t.Setenv("RHOST_STATE_DIR", state)
 	t.Setenv("RHOST_AUDIT", "1")
 
-	startAudit("status", "gpu").fail(nil) // nil error must not panic
+	startAudit("doctor", "gpu").fail(nil) // nil error must not panic
 
 	raw, err := os.ReadFile(audit.Path(state))
 	if err != nil {
@@ -52,7 +52,7 @@ func TestAuditTimerRecordsFailure(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &e); err != nil {
 		t.Fatal(err)
 	}
-	if e.OK || e.Operation != "status" {
+	if e.OK || e.Operation != "doctor" {
 		t.Errorf("failure entry = %+v", e)
 	}
 }
@@ -75,7 +75,7 @@ func TestReadAuditLogSkipsCorruptLines(t *testing.T) {
 		`{"time":"t","host":"gpu","operation":"exec","ok":true}`,
 		``,
 		`not json at all`,
-		`{"time":"t2","host":"other","operation":"status","ok":true}`,
+		`{"time":"t2","host":"other","operation":"doctor","ok":true}`,
 	}, "\n")
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -87,7 +87,7 @@ func TestReadAuditLogSkipsCorruptLines(t *testing.T) {
 	if len(entries) != 2 {
 		t.Fatalf("got %d entries, want 2 (blank + corrupt skipped): %+v", len(entries), entries)
 	}
-	if got := filterAuditHost(entries, "other"); len(got) != 1 || got[0].Operation != "status" {
+	if got := filterAuditHost(entries, "other"); len(got) != 1 || got[0].Operation != "doctor" {
 		t.Errorf("filterAuditHost = %+v", got)
 	}
 }

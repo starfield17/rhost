@@ -32,26 +32,9 @@ SSH aliases must not appear in tracked files (`AGENTS.md` §1).
 - `known_hosts`;
 - host key policy.
 
-### Adapter config
-
-Use a separate local config only for rhost-specific settings.
-
-Example:
-
-```toml
-[hosts.gpu]
-ssh = "gpu"
-default_shell = "bash"
-remote_state_dir = "~/.local/state/rhost"
-tags = ["gpu", "wsl2"]
-
-[defaults]
-control_persist = "15m"
-foreground_timeout = "60s"
-watch_interval = "2s"
-```
-
-Do not put private keys or passwords here.
+There is no required rhost host registry or default-host configuration. Add
+adapter configuration only when a setting cannot belong to the invocation,
+OpenSSH, or the remote environment. Never put private keys or passwords there.
 
 ---
 
@@ -72,8 +55,6 @@ ps available
 remote state dir writable
 rsync available locally
 rsync available remotely
-nvidia-smi available
-systemd --user available
 WSL detected or not
 ```
 
@@ -96,4 +77,3 @@ Example JSON should expose the same facts mechanically.
 Do not auto-install missing packages in v0.1.
 
 ---
-

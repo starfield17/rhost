@@ -1,80 +1,57 @@
 ---
 name: rhost
-description: Run commands, persistent sessions, detached jobs, and file operations on an SSH-reachable remote host with the rhost CLI. Use when work must execute on a remote machine (GPU box, build server, test host, Linux node) instead of this machine.
+description: Run an ordinary command on an SSH-reachable remote host with local-like stdin, output, and exit behavior; use explicit job, session, file, or tunnel operations only when their extra guarantee is required.
 ---
 
-# rhost — remote host adapter
+# rhost
 
-`rhost` treats an SSH-reachable machine as a reusable execution node. It
-orchestrates your existing OpenSSH configuration and never duplicates SSH
-authentication or host-key policy. There is no server to run and no state on this
-machine that the remote side depends on: sessions live in remote tmux, jobs in
-detached remote processes.
+Use the command you would run locally and add only the remote execution context:
 
-Use it when the work belongs on the remote host. For work that is local to this
-machine, use the ordinary tools.
+```bash
+rhost --host <host> --cwd '<remote-directory>' -- '<shell command>'
+```
 
-**Always pass `--json`, and branch on `error.code`.** Never parse human output or
-English messages when a JSON form exists.
+The string after `--` runs in a fresh remote login-bash context. Pipes,
+redirections, variables, and compound syntax inside that string are remote.
+Pipes outside the quoted string are local:
 
-## Rules that always hold
+```bash
+rhost --host <host> -- 'cat result.txt | sort'   # sort is remote
+rhost --host <host> -- 'cat result.txt' | sort  # sort is local
+```
 
-- **Probe before relying.** `rhost doctor <host> --json` once per host. Do not
-  assume `tmux`, `rsync`, `python3`, `rg`, or anything else exists: a missing
-  dependency is `REMOTE_DEPENDENCY_MISSING`, and rhost never installs one.
-- **Never put a secret on a command line.** Command text is written to the local
-  audit log and visible to `ps` on the remote host. Use the environment or a file
-  that already holds it.
-- **Never weaken SSH to make something work.** Host-key checking stays on, keys
-  and passwords are not persisted, and `HOST_KEY_FAILED` means investigate.
-- **After a disconnect, re-query; never assume.** `session list` and `job list`
-  are the truth, not what this process remembers.
-- **Preview destructive file operations.** `fs sync --dry-run` first; `--delete`
-  prunes remote-only files and is refused for whole-home or top-level targets.
-- **Respect the exit-code policy.** A status in 0–254 is the remote command's
-  own; 124 is a foreground timeout (`REMOTE_COMMAND_TIMEOUT`); 255 is an adapter
-  failure, whose reason is `error.code`. When a remote command can itself exit
-  124 or 255, read the JSON envelope instead of inferring from the status.
+Human mode streams stdout/stderr and forwards stdin. It has no default execution
+deadline. Add `--timeout` only when the step has a meaningful bound. Use `--json`
+when the result must be classified programmatically; branch on `error.code`, and
+inspect `data.exit_code`, truncation, timeout/cancellation, and
+`cleanup_confirmed` rather than parsing English output.
 
-## Choose the tool
+## Rules
 
-| need | use |
+- Pass exactly one shell command after `--`. Quote it as one local argument.
+- Treat `--cwd` as a remote path. Quote a leading `~` so the local shell does not
+  expand it.
+- Do not place secrets in command text. It is visible to the remote process list,
+  shell history, and rhost's bounded local audit summary.
+- Do not weaken OpenSSH host-key or authentication policy. Diagnose failures with
+  `rhost doctor <host> --json` when needed.
+- Never retry a timed-out, cancelled, or disconnected side effect until
+  `cleanup_confirmed` or a separate remote check establishes its state.
+- Run remote search and observation with existing remote commands such as `rg`,
+  `find`, `ps`, `df`, or platform tools.
+
+## Reach for a specialized operation only when needed
+
+| requirement | operation |
 |---|---|
-| one command, no state to keep | `rhost exec` |
-| cwd, env, or a REPL must persist across calls | `rhost session` |
-| the work must outlive the connection | `rhost job` |
-| move, read, or edit files | `rhost fs` |
-| what is happening on the host | `rhost status`; `rhost watch` is for humans |
-| one command on several hosts | `rhost exec-many` |
-| a port forward that outlives this call | `rhost tunnel` |
+| command must outlive this process or connection | `rhost job` |
+| interactive shell, REPL, or debugger state must persist | `rhost session` |
+| bytes must cross between local and remote filesystems | `rhost fs` |
+| text replacement needs a hash precondition and atomic write | `rhost fs read/write/patch` |
+| port forward must survive the creating invocation | `rhost tunnel` |
+| SSH or dependency diagnosis | `rhost doctor` |
 
-Read [references/CLI.md](references/CLI.md) for the commands and their flags,
-[references/RECOVERY.md](references/RECOVERY.md) when something failed, and
-[references/SAFETY.md](references/SAFETY.md) before a destructive, exposing, or
-secret-touching operation.
-
-## The three answers that decide the next step
-
-- `exec` is **stateless**: each call is a fresh login shell. Pass `--cwd`,
-  `--env`, `--timeout` explicitly.
-- `session exec` runs a command in the managed shell, and **refuses with
-  `SESSION_BUSY`** when a program — a REPL, a debugger, an editor — owns the
-  pane. That is not a broken session: drive the program with `session send` and
-  `session read`, or interrupt it with `session recover`. A refused command never
-  ran, so nothing has to be undone.
-- A job is `running` only while its process identity is verified. `stale` means
-  the recorded process is gone **or** its pid now belongs to another process:
-  never a success, and `job stop`/`job kill` report `signalled: false` when they
-  refuse to signal a process group they cannot tie to the job. `data.exit_code`
-  is the result that counts; a job terminated by its own stop records `143`.
-
-## Capabilities
-
-`hosts`, `doctor`, `exec`, `exec-many`, `session`
-(create/list/exec/send/read/close/attach/recover), `job`
-(start/list/status/logs/stop/kill), `fs`
-(put/get/sync/mirror/batch/read/write/patch/grep/glob), `tunnel`
-(open/list/close), `status`, `watch`, `audit`, `version`.
-
-If a command is not in that list, it does not exist yet. `rhost <command> --help`
-is authoritative for the build in front of you; never invent a flag.
+Read [references/CLI.md](references/CLI.md) for those commands,
+[references/RECOVERY.md](references/RECOVERY.md) after a failure, and
+[references/SAFETY.md](references/SAFETY.md) before destructive file or exposed
+tunnel operations.

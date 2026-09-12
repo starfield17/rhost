@@ -5,6 +5,7 @@
 Before declaring an implementation task complete, ask:
 
 - Did this change preserve the three distinct execution semantics?
+- Could this behavior be an ordinary remote command instead of a new rhost operation?
 - Does any promised persistent state die with the CLI process?
 - Is OpenSSH still the source of truth for auth and host verification?
 - Did I add a project-specific concept to a generic adapter?
@@ -16,4 +17,3 @@ Before declaring an implementation task complete, ask:
 - Did I test on the real client → remote Linux/WSL2 path for behavior that mocks cannot prove?
 
 If a persistence feature has not survived a real process exit and reconnect, it is not implemented yet.
-

@@ -178,9 +178,14 @@ func buildBinary(t *testing.T) string {
 
 // run executes one rhost process and returns its exit status and streams.
 func (c liveCLI) run(t *testing.T, args ...string) (stdout, stderr string, code int) {
+	return c.runInput(t, "", args...)
+}
+
+func (c liveCLI) runInput(t *testing.T, input string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := exec.Command(c.bin, args...)
 	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+c.cache)
+	cmd.Stdin = strings.NewReader(input)
 	var so, se bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &so, &se
 	err := cmd.Run()
@@ -312,6 +317,17 @@ func TestLiveExec(t *testing.T) {
 	if got := strings.TrimSpace(again.str(t, "stdout")); got == "/var/log" {
 		t.Errorf("exec leaked cwd between invocations: %q", got)
 	}
+
+	// The primary surface keeps one shell string intact and forwards stdin.
+	stdout, stderr, exit := c.runInput(t, "streamed input\n", "--host", host,
+		"--cwd", "/var/log", "--", "cat; pwd >&2")
+	if stdout != "streamed input\n" || strings.TrimSpace(stderr) != "/var/log" || exit != 0 {
+		t.Errorf("direct execution: stdout=%q stderr=%q exit=%d", stdout, stderr, exit)
+	}
+	direct := c.mustJSON(t, "--json", "--host", host, "--", "printf direct-json")
+	if got := direct.str(t, "stdout"); got != "direct-json" {
+		t.Errorf("direct JSON stdout = %q", got)
+	}
 }
 
 // TestLiveExecTimeout checks the foreground timeout kills the remote process
@@ -342,6 +358,44 @@ func TestLiveExecTimeout(t *testing.T) {
 	if strings.Contains(procs, "sleep "+sleepFor) {
 		t.Errorf("remote process group survived the timeout: 'sleep %s' is still running\n%s",
 			sleepFor, strings.Join(matchingLines(procs, "sleep "+sleepFor), "\n"))
+	}
+}
+
+func TestLiveExecDirectCancellation(t *testing.T) {
+	host := liveHost(t)
+	c := cli(t)
+	sleepFor := strconv.Itoa(800 + time.Now().Nanosecond()%100)
+	cmd := exec.Command(c.bin, "--json", "--host", host, "--", "sleep "+sleepFor)
+	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+c.cache)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	// Leave enough time for a cold SSH connection and the remote wrapper to
+	// publish its pid. Cancelling before that point is the separate, honest
+	// cleanup_confirmed=false case: there may have been nothing remote to kill.
+	time.Sleep(6 * time.Second)
+	if err := cmd.Process.Signal(os.Interrupt); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.Wait()
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 130 {
+		t.Fatalf("cancel exit = %v, want 130; stdout=%s", err, stdout.String())
+	}
+	var env envelope
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &env); err != nil {
+		t.Fatalf("cancel output is not JSON: %v: %q", err, stdout.String())
+	}
+	if env.Error == nil || env.Error.Code != string(errs.RemoteCommandCancelled) ||
+		!env.bool(t, "cancelled") || !env.bool(t, "cleanup_confirmed") {
+		t.Fatalf("cancel result did not confirm cleanup: %s", stdout.String())
+	}
+	time.Sleep(500 * time.Millisecond)
+	procs := c.mustJSON(t, "--json", "--host", host, "--", "ps -eo args").str(t, "stdout")
+	if strings.Contains(procs, "sleep "+sleepFor) {
+		t.Fatalf("cancelled remote process survived: sleep %s", sleepFor)
 	}
 }
 

@@ -4,36 +4,19 @@
 
 ## 53. First release
 
-The first release is usable when a coding agent can execute this workflow through only the shipped Skill and binary:
+A coding agent can take a command it would run locally, add an SSH target and
+remote working directory, and receive its input/output/status without learning a
+second command vocabulary:
 
-```text
-discover/doctor host
-       ↓
-sync code
-       ↓
-run stateless test
-       ↓
-inspect result
-       ↓
-open persistent interactive session when needed
-       ↓
-start durable long job
-       ↓
-continue other work
-       ↓
-poll logs/status after reconnect
+```bash
+rhost --host <host> --cwd '/home/<user>/<project>' -- 'go test ./...'
 ```
 
-And a human can independently run:
+Foreground cancellation cleans the remote process group or reports uncertainty.
+Connection reuse survives the CLI. A task uses session, job, file, or tunnel
+operations only when it needs persistent state, detached lifetime, cross-machine
+transfer, protected editing, or forwarding.
 
-```text
-rhost watch <host>
-rhost session attach <host> <session>
-```
-
-without changing the runtime model.
-
-The remote host must feel like a reusable compute node, not like a collection of handcrafted SSH commands.
-
----
+All of these claims are verified against a real remote Linux host using a target
+supplied at runtime through `RHOST_TEST_HOST`.
 

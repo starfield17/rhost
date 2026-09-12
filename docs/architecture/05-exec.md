@@ -1,77 +1,43 @@
 [← Architecture map](../ARCHITECTURE.md)
 
-# Part V — `exec`
+# Part V — foreground execution
 
 ## 10. CLI surface
 
-Target shape:
+The primary interface adds a remote context to one existing shell command:
 
 ```bash
-rhost exec <host> [flags] -- <command...>
+rhost --host <host> [--cwd <remote-directory>] [--env KEY=value] -- '<command>'
 ```
 
-Examples:
+Exactly one string follows `--`. It is a shell program interpreted remotely;
+rhost does not pretend to preserve an argv array after a local shell has already
+parsed it.
 
-```bash
-rhost exec gpu -- pwd
+Human mode connects local stdin and streams remote stdout/stderr. It has no
+default execution deadline or output cap. JSON mode collects bounded stream
+prefixes and emits exactly one versioned result document after completion.
 
-rhost exec gpu \
-  --cwd ~/work/foo \
-  --timeout 30s \
-  -- pytest -q
+The older `rhost exec <host> -- <command...>` surface remains for compatibility
+and keeps its existing timeout and capture defaults. It calls the same execution
+protocol but is not the interface taught to new agents.
 
-rhost exec gpu \
-  --env CUDA_VISIBLE_DEVICES=0 \
-  --json \
-  -- python scripts/check.py
-```
+The result records the remote status, independent stream byte counts, truncation,
+duration, timeout/cancellation, and whether cleanup was confirmed. A non-zero
+remote status is still a successfully completed adapter operation.
 
-### Semantics
+## 11. Foreground timeout and cancellation
 
-Each call gets a fresh remote execution context.
+A direct command waits until it finishes unless the caller supplies `--timeout`
+or the local process receives SIGINT/SIGTERM. Either event terminates the local
+SSH process and starts a separate bounded cleanup request for the recorded remote
+process group.
 
-Returned model:
+`cleanup_confirmed` distinguishes a command we killed from “the control path ended
+but remote state is uncertain.” An uncertain side effect is never retried
+automatically. Work intentionally meant to outlive the connection uses `job`.
 
-```json
-{
-  "schema_version": 1,
-  "operation": "exec",
-  "ok": false,
-  "host": "gpu",
-  "data": {
-    "exit_code": 1,
-    "stdout": "...",
-    "stderr": "...",
-    "timed_out": false,
-    "duration_ms": 831
-  },
-  "error": null
-}
-```
-
-`ok` means the adapter operation completed as designed. The remote command may still have a non-zero `exit_code`.
-
-For shell scripting, the CLI process should normally mirror the remote command's exit status when execution reached the remote process. Infrastructure/adapter failures should use a documented separate convention.
-
-The JSON document remains the authoritative diagnosis.
-
----
-
-## 11. Foreground timeout
-
-Foreground operations must have an upper bound.
-
-A reasonable default may exist for humans, but the Skill should teach agents to set explicit timeouts for uncertain operations.
-
-When a task is expected to outlive a foreground timeout, the correct action is:
-
-```text
-use `job`, not a larger and larger `exec` timeout
-```
-
-Cancellation must attempt to terminate the remote foreground process, not only kill the local `ssh` subprocess.
-
-Design and test this explicitly; OpenSSH process termination alone is not sufficient evidence that the remote child died.
-
----
-
+The stdout protocol uses unpredictable begin/completion markers. Human mode
+parses them incrementally so command bytes are forwarded before completion while
+protocol bytes and login-profile noise stay out of user output. JSON mode applies
+the same boundaries while retaining only the requested prefix.

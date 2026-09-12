@@ -2,8 +2,8 @@
 
 These run the helper exactly as the remote host runs it — one JSON request on
 stdin, one JSON response on stdout — so the shapes asserted here are the shapes
-`rhost fs read/grep/glob/write/patch` return. They are driven from Go
-(remote_helper_test.go) as part of `make test`. Python 3 and ripgrep are explicit
+`rhost fs read/write/patch` return. They are driven from Go
+(remote_helper_test.go) as part of `make test`. Python 3 is an explicit
 test dependencies; a missing dependency fails the suite rather than silently
 reducing it.
 """
@@ -196,115 +196,6 @@ class RemoteFilesTest(unittest.TestCase):
                                      {'start': 1, 'end': 2, 'text': 'joined\n'}])
         self.assertEqual(path.read_text(), 'joined\nc\nd2\n')
         self.assertEqual(result['sha256'], hashlib.sha256(path.read_bytes()).hexdigest())
-
-    # --- search ----------------------------------------------------------
-
-    def test_grep_rows_are_normalized(self):
-        tree = self.root / 'tree'
-        (tree / 'sub').mkdir(parents=True)
-        # rg applies .gitignore rules only inside a git repository, so the fixture
-        # needs a .git directory as well as the ignore file itself.
-        (tree / '.git').mkdir()
-        (tree / '.gitignore').write_text('ignored.go\n')
-        (tree / 'a.go').write_text('alpha\nTODO one\n')
-        (tree / 'sub' / 'b.go').write_text('TODO two\n')
-        (tree / 'ignored.go').write_text('TODO three\n')
-        result = self.request(op='grep', path=str(tree), pattern='TODO', max_bytes=4096,
-                              limit=10, context=1)
-        self.assertEqual([(r['path'], r['line']) for r in result['results']
-                          if not r['context']],
-                         [('a.go', 2), (os.path.join('sub', 'b.go'), 1)])
-        self.assertTrue(any(r['context'] for r in result['results']))
-        self.assertFalse(result['truncated'])
-        # Context lines are records too, and pagination counts them.
-        self.assertEqual(result['next'], len(result['results']))
-        self.assertTrue(all(r['path'].startswith(('a.go', 'sub', 'ignored'))
-                            for r in result['results']))
-
-        for mode, key in (('files', 'path'), ('count', 'count')):
-            rows = self.request(op='grep', path=str(tree), pattern='TODO', mode=mode)['results']
-            # The gitignored file is skipped by default, so two files match.
-            self.assertEqual(len(rows), 2, mode)
-            self.assertIn(key, rows[0], mode)
-
-        forced = self.request(op='grep', path=str(tree), pattern='TODO',
-                                      mode='files', no_ignore=True)['results']
-        self.assertEqual(len(forced), 3)
-        self.assertIn({'path': 'ignored.go'}, forced)
-
-    def test_search_pagination_and_budget(self):
-        tree = self.root / 'tree'
-        tree.mkdir()
-        (tree / 'a.txt').write_text(''.join('hit %d\n' % n for n in range(50)))
-        first = self.request(op='grep', path=str(tree), pattern='hit', limit=3)
-        self.assertEqual([r['line'] for r in first['results']], [1, 2, 3])
-        self.assertTrue(first['truncated'])
-        second = self.request(op='grep', path=str(tree), pattern='hit', limit=3,
-                              offset=first['next'])
-        self.assertEqual([r['line'] for r in second['results']], [4, 5, 6])
-        last = self.request(op='grep', path=str(tree), pattern='hit', limit=60, offset=0)
-        self.assertEqual(len(last['results']), 50)
-        self.assertFalse(last['truncated'])
-
-        tight = self.request(op='grep', path=str(tree), pattern='hit', max_bytes=200, limit=60)
-        self.assertTrue(tight['truncated'])
-        self.assertGreater(len(tight['results']), 0)
-        self.assertLessEqual(sum(len(json.dumps(r)) for r in tight['results']), 200)
-
-        # A row larger than the page budget is consumed and advances the cursor.
-        # Returning the same offset would make every retry repeat forever.
-        tiny = self.request(op='grep', path=str(tree), pattern='hit', max_bytes=1, limit=60)
-        self.assertTrue(tiny['truncated'])
-        self.assertEqual(tiny['results'], [])
-        self.assertGreater(tiny['next'], 0)
-
-    def test_long_match_line_is_clipped_not_dropped(self):
-        tree = self.root / 'tree'
-        tree.mkdir()
-        (tree / 'one-line.txt').write_text('TODO ' + ('x' * 100000) + '\n')
-        result = self.request(op='grep', path=str(tree), pattern='TODO', max_bytes=2048)
-        rows = [r for r in result['results'] if not r['context']]
-        self.assertEqual(len(rows), 1)
-        self.assertTrue(rows[0]['text_truncated'])
-        self.assertTrue(rows[0]['text'].startswith('TODO '))
-        self.assertLessEqual(len(json.dumps(result['results']).encode()), 2048)
-
-    def test_no_match_is_an_empty_success(self):
-        tree = self.root / 'tree'
-        tree.mkdir()
-        (tree / 'a.txt').write_text('alpha\n')
-        result = self.request(op='grep', path=str(tree), pattern='nothing-matches-this')
-        self.assertNotIn('error', result)
-        self.assertEqual(result['results'], [])
-        self.assertFalse(result['truncated'])
-        self.assertEqual(result['next'], 0)
-
-    def test_glob_and_hidden_files(self):
-        tree = self.root / 'tree'
-        (tree / 'nested').mkdir(parents=True)
-        (tree / 'a.go').write_text('')
-        (tree / 'nested' / 'b.go').write_text('')
-        (tree / '.hidden.go').write_text('')
-        rows = self.request(op='glob', path=str(tree), pattern='*.go')['results']
-        # Sorted by path, relative to the search root. rg's `*` also matches a
-        # leading dot, so naming the extension is enough to reach a hidden file.
-        self.assertEqual([r['path'] for r in rows],
-                         ['.hidden.go', 'a.go', os.path.join('nested', 'b.go')])
-        # --hidden is not a confidentiality control: an include glob that names a
-        # file whitelists it whether or not it is hidden, so asserting the count is
-        # the honest check here, not the absence of the dot-file.
-        listed = self.request(op='glob', path=str(tree), pattern='*', hidden=True)['results']
-        self.assertEqual(len(listed), 3)
-
-    def test_search_without_rg_is_reported(self):
-        # The CLI probes for rg before running the helper; a bad mode is still the
-        # caller's own mistake and must not be reported as a missing dependency.
-        self.assertEqual(self.code(op='grep', path=str(self.root), pattern='x', mode='bogus'),
-                         'CONFIG_INVALID')
-
-    def test_search_missing_root_is_a_path_error(self):
-        self.assertEqual(self.code(op='grep', path=str(self.root / 'missing'), pattern='x'),
-                         'FILE_NOT_FOUND')
 
     # --- destructive-sync destination check ------------------------------
 

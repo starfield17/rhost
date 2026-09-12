@@ -16,7 +16,7 @@ Do not:
 - turn off host-key checking to make tests easier;
 - auto-install tmux/rsync remotely;
 - parse human-formatted output when structured data can exist;
-- let `watch` become the owner of jobs/sessions;
+- add wrappers for remote commands that an agent can already compose;
 - invent a broad plugin framework before a second backend exists;
 - introduce interfaces only to make the code "clean";
 - create a `utils` dumping ground;
@@ -24,4 +24,3 @@ Do not:
 - hide unknown job/session states as success.
 
 ---
-

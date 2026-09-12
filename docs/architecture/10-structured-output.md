@@ -13,7 +13,7 @@ Common envelope:
 ```json
 {
   "schema_version": 1,
-  "operation": "status",
+  "operation": "exec",
   "ok": true,
   "host": "gpu",
   "data": {},
@@ -61,6 +61,8 @@ SSH_AUTH_FAILED
 HOST_KEY_FAILED
 REMOTE_DEPENDENCY_MISSING
 REMOTE_COMMAND_TIMEOUT
+REMOTE_COMMAND_CANCELLED
+OUTPUT_WRITE_FAILED
 SESSION_BUSY
 SESSION_NOT_FOUND
 SESSION_UNHEALTHY
@@ -74,7 +76,6 @@ FILE_CONFLICT
 INVALID_PATCH
 INVALID_TARGET
 INVALID_TEXT
-SEARCH_FAILED
 TUNNEL_FAILED
 TUNNEL_NOT_FOUND
 UNSUPPORTED_REMOTE_OS
@@ -86,7 +87,7 @@ all. It is deliberately not `SESSION_UNHEALTHY` — there is nothing wrong with 
 session — and the caller's next move is `session send`/`session read`, or
 `session recover`, not a retry of the same paste.
 
-The `FILE_*`, `INVALID_*` and `SEARCH_FAILED` codes come from the remote helper
+The `FILE_*` and `INVALID_*` codes come from the remote helper
 (`internal/fileops/remote.py`) and travel back inside the envelope as JSON rather
 than as text the caller has to scrape. They are *failures of the operation on the
 remote*, not of SSH, which is why they are separate from `TRANSFER_FAILED`: an agent

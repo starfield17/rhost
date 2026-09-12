@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,95 +8,7 @@ import (
 
 	"github.com/starfield17/rhost/internal/app"
 	"github.com/starfield17/rhost/internal/errs"
-	"github.com/starfield17/rhost/internal/output"
 )
-
-// These tests cover the decisions the new commands make *locally*: what counts as
-// an aggregate failure, what a manifest must contain, how a search row reads to a
-// human. None of them needs a remote host, and each one is a rule an agent is told
-// to rely on, so the rule is written down twice on purpose — once in the code,
-// once as a case here.
-
-func okRow(host string, exit int) execManyResult {
-	return execManyResult{Host: host, OK: true, execView: execView{ExitCode: exit}}
-}
-
-func failingRow(host string) execManyResult {
-	return execManyResult{Host: host, OK: false,
-		Error:    output.ErrorOf(errs.New(errs.SSHUnreachable, "gone", true)),
-		execView: execView{ExitCode: -1}}
-}
-
-func skippedRow(host string) execManyResult {
-	return execManyResult{Host: host, Skipped: true, execView: execView{ExitCode: -1}}
-}
-
-func reportOf(rows ...execManyResult) execManyReport {
-	r := execManyReport{Results: rows}
-	for _, row := range rows {
-		switch {
-		case row.Skipped:
-			r.Skipped++
-		case row.OK && row.ExitCode == 0:
-			r.Succeeded++
-		default:
-			r.Failed++
-		}
-	}
-	return r
-}
-
-func TestExecManyAggregateExitCode(t *testing.T) {
-	cases := []struct {
-		name string
-		rows []execManyResult
-		want int
-	}{
-		{"all green", []execManyResult{okRow("a", 0), okRow("b", 0)}, 0},
-		{"remote failure is 1", []execManyResult{okRow("a", 0), okRow("b", 3)}, 1},
-		{"skipped is 1", []execManyResult{okRow("a", 1), skippedRow("b")}, 1},
-		{"adapter failure is 255", []execManyResult{okRow("a", 0), failingRow("b")}, 255},
-		// 255 outranks 1: "a host was unreachable" must not be readable as
-		// "the command ran everywhere and failed somewhere".
-		{"adapter beats remote", []execManyResult{okRow("a", 7), failingRow("b")}, 255},
-	}
-	for _, tc := range cases {
-		report := reportOf(tc.rows...)
-		if got := aggregateExitCode(report); got != tc.want {
-			t.Errorf("%s: aggregateExitCode = %d, want %d", tc.name, got, tc.want)
-		}
-	}
-}
-
-func TestExecManyCountsEveryRow(t *testing.T) {
-	report := reportOf(okRow("a", 0), okRow("b", 2), failingRow("c"), skippedRow("d"))
-	if report.Succeeded != 1 || report.Failed != 2 || report.Skipped != 1 {
-		t.Fatalf("counts = %+v, want 1/2/1", report)
-	}
-	// Every target keeps its row, so the report length is the flag count; a
-	// skipped target is never silently dropped from the document.
-	if len(report.Results) != 4 {
-		t.Fatalf("results lost a target: %d", len(report.Results))
-	}
-}
-
-func TestExecManyJSONKeepsPerTargetStatus(t *testing.T) {
-	report := reportOf(okRow("a", 0), skippedRow("b"))
-	raw, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var back execManyReport
-	if err := json.Unmarshal(raw, &back); err != nil {
-		t.Fatal(err)
-	}
-	if back.Results[1].Skipped != true || back.Results[0].ExitCode != 0 {
-		t.Fatalf("round trip lost row state: %s", raw)
-	}
-	if !strings.Contains(string(raw), `"skipped":true`) {
-		t.Fatalf("skipped must be machine-visible: %s", raw)
-	}
-}
 
 func TestRunBatchManifestValidation(t *testing.T) {
 	write := func(t *testing.T, body string) string {
@@ -131,46 +42,25 @@ func TestRunBatchManifestValidation(t *testing.T) {
 	}
 }
 
-func TestSearchLineRendering(t *testing.T) {
-	cases := []struct {
-		row  map[string]interface{}
-		want string
-	}{
-		{map[string]interface{}{"path": "a.go", "line": 3.0, "text": "x := 1"}, "a.go:3:x := 1"},
-		{map[string]interface{}{"path": "a.go", "line": 4.0, "text": "ctx", "context": true}, "a.go-ctx"},
-		{map[string]interface{}{"path": "a.go", "count": 2.0}, "a.go:2"},
-		{map[string]interface{}{"path": "a.go"}, "a.go"},
-	}
-	for _, tc := range cases {
-		if got := searchLine(tc.row); got != tc.want {
-			t.Errorf("searchLine(%v) = %q, want %q", tc.row, got, tc.want)
-		}
-	}
-}
-
 func TestHelperUsageErrorBounds(t *testing.T) {
 	for _, tc := range []struct {
 		op                     string
 		maxBytes, start, lines int
-		limit, offset, context int
 	}{
 		{op: "read", maxBytes: 0},
 		{op: "read", maxBytes: 10, start: 0},
 		{op: "read", maxBytes: 10, lines: 0},
-		{op: "grep", maxBytes: 10, limit: 0},
-		{op: "grep", maxBytes: 10, offset: -1},
-		{op: "grep", maxBytes: 10, limit: 1, context: -1},
-		{op: "grep", maxBytes: maxRemoteHelperBytes + 1, limit: 1},
+		{op: "read", maxBytes: maxRemoteHelperBytes + 1, start: 1, lines: 1},
 	} {
-		if e := helperUsageError(tc.op, tc.maxBytes, tc.start, tc.lines, tc.limit, tc.offset, tc.context); e == nil {
+		if e := helperUsageError(tc.op, tc.maxBytes, tc.start, tc.lines); e == nil {
 			t.Errorf("%+v accepted a bound the remote helper would refuse", tc)
 		}
 	}
-	if e := helperUsageError("read", 100, 1, 200, 0, 0, 0); e != nil {
+	if e := helperUsageError("read", 100, 1, 200); e != nil {
 		t.Errorf("valid read rejected: %v", e)
 	}
 	// write and patch carry no paging bounds at all.
-	if e := helperUsageError("write", 100, 0, 0, 0, 0, 0); e != nil {
+	if e := helperUsageError("write", 100, 0, 0); e != nil {
 		t.Errorf("valid write rejected: %v", e)
 	}
 }
@@ -197,10 +87,10 @@ func TestDoctorHumanCapabilitiesIncludeRemoteHelpers(t *testing.T) {
 	t.Cleanup(saveGlobals())
 	jsonFlag = false
 	res := app.DoctorResult{Host: "example-host", Capabilities: map[string]bool{
-		"python3": true, "rg": true, "realpath": true,
+		"python3": true, "realpath": true,
 	}}
 	out := captureStdout(t, func() { renderDoctor(res) })
-	for _, name := range []string{"python3", "rg", "realpath"} {
+	for _, name := range []string{"python3", "realpath"} {
 		if !strings.Contains(out, name) {
 			t.Errorf("doctor human output omitted %s:\n%s", name, out)
 		}

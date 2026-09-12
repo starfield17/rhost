@@ -54,63 +54,30 @@ var remoteFileOps = map[string]struct {
 			"taken; overlapping or out-of-range edits are refused with INVALID_PATCH.",
 		timeout: 60 * time.Second,
 	},
-	"grep": {
-		args: cobra.RangeArgs(2, 3), use: "grep <host> <pattern> [path]",
-		short: "Search remote file contents",
-		long: "Search a remote tree with ripgrep. Results are normalised records, " +
-			"paginated by offset/limit, and bounded before they leave the host. " +
-			"Ignore rules are respected unless --no-ignore is given; no match is an " +
-			"empty success, not an error.",
-		timeout: 60 * time.Second,
-	},
-	"glob": {
-		args: cobra.RangeArgs(2, 3), use: "glob <host> <pattern> [path]",
-		short: "List remote paths matching a glob",
-		long: "List files under a remote path whose name matches a glob, sorted by " +
-			"path and paginated. Ignore rules are respected unless --no-ignore.",
-		timeout: 60 * time.Second,
-	},
 }
 
 // newRemoteFileCmd builds one helper-backed subcommand.
 func newRemoteFileCmd(op string) *cobra.Command {
 	spec := remoteFileOps[op]
 	var (
-		from, hash, patchFile, glob, mode string
-		fileMode                          string
-		start, lines, limit, offset       int
-		maxBytes, contextLines            int
-		hidden, noIgnore, ignoreCase      bool
-		timeout                           time.Duration
+		from, hash, patchFile string
+		fileMode              string
+		start, lines          int
+		maxBytes              int
+		timeout               time.Duration
 	)
 	c := &cobra.Command{
 		Use: spec.use, Short: spec.short, Long: spec.long, Args: spec.args,
 		RunE: func(c *cobra.Command, args []string) error {
 			// Argument validation happens before any SSH connection: an agent
 			// that mistypes a flag gets USAGE_ERROR/CONFIG_INVALID at zero cost.
-			if e := helperUsageError(op, maxBytes, start, lines, limit, offset, contextLines); e != nil {
+			if e := helperUsageError(op, maxBytes, start, lines); e != nil {
 				emitFailure("fs."+op, args[0], e)
 				return nil
 			}
 			request := map[string]interface{}{"op": op, "max_bytes": maxBytes}
-			if op == "grep" || op == "glob" {
-				// The search root defaults to the remote account's home, which is
-				// where the helper starts; `.` is resolved there, not here.
-				request["pattern"] = args[1]
-				request["path"] = "."
-				if len(args) == 3 {
-					request["path"] = args[2]
-				}
-				request["limit"], request["offset"] = limit, offset
-				request["hidden"], request["no_ignore"] = hidden, noIgnore
-				if op == "grep" {
-					request["mode"], request["ignore_case"] = mode, ignoreCase
-					request["glob"], request["context"] = glob, contextLines
-				}
-			} else {
-				request["path"] = args[1]
-				request["if_hash"] = hash
-			}
+			request["path"] = args[1]
+			request["if_hash"] = hash
 			if op == "read" {
 				request["start"], request["lines"] = start, lines
 			}
@@ -132,7 +99,7 @@ func newRemoteFileCmd(op string) *cobra.Command {
 			}
 
 			// Writes are the only remote actions in this family, so they are the
-			// only ones the audit trail records: reads and searches are polling,
+			// only ones the audit trail records: reads are polling,
 			// and §36 keeps the trail to actions (docs/ARCHITECTURE.md §36).
 			var audit *auditTimer
 			if op == "write" || op == "patch" {
@@ -158,23 +125,10 @@ func newRemoteFileCmd(op string) *cobra.Command {
 	case "write":
 		c.Flags().StringVar(&from, "from", "-", "local file, or - for stdin")
 		c.Flags().StringVar(&hash, "if-hash", "", "SHA-256 from fs read, required to replace a file")
-		// `--mode` means permissions here and search shape for grep, because these
-		// are different commands; the value is checked remotely, as an octal.
 		c.Flags().StringVar(&fileMode, "mode", "", "octal permissions, e.g. 0755 (new files default to 0600)")
 	case "patch":
 		c.Flags().StringVar(&patchFile, "patch", "-", "patch JSON file, or - for stdin")
 		c.Flags().StringVar(&hash, "if-hash", "", "SHA-256 from fs read (the patch file usually carries it)")
-	case "grep", "glob":
-		c.Flags().IntVar(&limit, "limit", 100, "maximum result records")
-		c.Flags().IntVar(&offset, "offset", 0, "records to skip (pass the previous next)")
-		c.Flags().BoolVar(&hidden, "hidden", false, "include hidden files")
-		c.Flags().BoolVar(&noIgnore, "no-ignore", false, "ignore no ignore rules")
-		if op == "grep" {
-			c.Flags().StringVar(&mode, "mode", "content", "content, files or count")
-			c.Flags().BoolVar(&ignoreCase, "ignore-case", false, "case-insensitive match")
-			c.Flags().StringVar(&glob, "glob", "", "restrict to paths matching this glob")
-			c.Flags().IntVar(&contextLines, "context", 0, "context lines around each match")
-		}
 	}
 	return c
 }
@@ -182,20 +136,12 @@ func newRemoteFileCmd(op string) *cobra.Command {
 // helperUsageError rejects impossible flag values locally. These are the same
 // bounds the helper enforces remotely; checking them here costs nothing and
 // saves an SSH round trip on a mistake the caller can see immediately.
-func helperUsageError(op string, maxBytes, start, lines, limit, offset, context int) *errs.Error {
+func helperUsageError(op string, maxBytes, start, lines int) *errs.Error {
 	if maxBytes <= 0 || maxBytes > maxRemoteHelperBytes {
 		return errs.New(errs.ConfigInvalid, "--max-bytes must be between 1 and 8388608", false)
 	}
 	if op == "read" && (start < 1 || lines < 1) {
 		return errs.New(errs.ConfigInvalid, "--start and --lines must be positive", false)
-	}
-	if op == "grep" || op == "glob" {
-		if limit < 1 || offset < 0 {
-			return errs.New(errs.ConfigInvalid, "--limit must be positive and --offset non-negative", false)
-		}
-		if op == "grep" && context < 0 {
-			return errs.New(errs.ConfigInvalid, "--context must be non-negative", false)
-		}
 	}
 	return nil
 }
@@ -273,17 +219,6 @@ func emitHelper(op, host string, res map[string]interface{}) {
 		if truncated, _ := res["truncated"].(bool); truncated {
 			fmt.Fprintln(os.Stderr, "output was truncated: raise --lines or --max-bytes")
 		}
-	case "grep", "glob":
-		rows, _ := res["results"].([]interface{})
-		for _, row := range rows {
-			fmt.Println(searchLine(row))
-		}
-		if len(rows) == 0 {
-			fmt.Fprintln(os.Stderr, "no results")
-		}
-		if truncated, _ := res["truncated"].(bool); truncated {
-			fmt.Fprintf(os.Stderr, "truncated: pass --offset %v for the next page\n", res["next"])
-		}
 	case "write", "patch":
 		fmt.Fprintf(os.Stderr, "wrote %s (%v bytes, sha256 %s)\n", res["path"], res["bytes"],
 			shortHash(res))
@@ -309,25 +244,4 @@ func shortHash(res map[string]interface{}) interface{} {
 		return "none"
 	}
 	return h
-}
-
-// searchLine renders one normalised search record the way ripgrep would:
-// `path:line:text` for a match, `path-count` for a count, a bare path otherwise.
-func searchLine(row interface{}) string {
-	m, ok := row.(map[string]interface{})
-	if !ok {
-		return fmt.Sprint(row)
-	}
-	path, _ := m["path"].(string)
-	text, hasText := m["text"].(string)
-	switch {
-	case hasText && m["context"] == true:
-		return fmt.Sprintf("%s-%s", path, text)
-	case hasText:
-		return fmt.Sprintf("%s:%v:%s", path, m["line"], text)
-	case m["count"] != nil:
-		return fmt.Sprintf("%s:%v", path, m["count"])
-	default:
-		return path
-	}
 }

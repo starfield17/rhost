@@ -70,6 +70,18 @@ func beginToken(nonce string) string { return outBeginPrefix + nonce + "__" }
 // real status is carried in the completion marker on stdout. That keeps the
 // ssh-level exit status free to signal *transport* failure unambiguously.
 func BuildScript(spec ExecSpec) string {
+	return buildScript(spec, `\n`)
+}
+
+// BuildStreamScript uses a NUL boundary so a streaming parser never has to hold
+// back a command's final newline while deciding whether a completion marker is
+// about to follow. The nonce still makes the complete marker unforgeable by
+// ordinary output.
+func BuildStreamScript(spec ExecSpec) string {
+	return buildScript(spec, `\000`)
+}
+
+func buildScript(spec ExecSpec, separator string) string {
 	var b strings.Builder
 	state := spec.stateExpr()
 
@@ -98,7 +110,7 @@ func BuildScript(spec ExecSpec) string {
 	// runs under `bash -lc`, which sources the login profile first; any stdout a
 	// noisy profile produces would otherwise be prepended to the command's own
 	// output. ParseMarker drops everything up to and including this marker.
-	b.WriteString("printf '\\n" + beginToken(spec.Nonce) + "\\n'\n")
+	b.WriteString("printf '" + separator + beginToken(spec.Nonce) + "\\n'\n")
 
 	// Run the user command in a subshell so a bare `exit` inside it cannot skip
 	// the completion marker.
@@ -109,7 +121,7 @@ func BuildScript(spec ExecSpec) string {
 	}
 	b.WriteString(")\n")
 	b.WriteString("RHOST_EC=$?\n")
-	b.WriteString("printf '\\n" + markerToken(spec.Nonce) + ":%d\\n' \"$RHOST_EC\"\n")
+	b.WriteString("printf '" + separator + markerToken(spec.Nonce) + ":%d\\n' \"$RHOST_EC\"\n")
 	b.WriteString("exit 0\n")
 	return b.String()
 }

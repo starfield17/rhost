@@ -181,7 +181,7 @@ func (a *App) SessionList(ctx context.Context, host string, timeout time.Duratio
 }
 
 // sessionsFromList is the shared parser for `session list` and the sessions
-// section of a status snapshot.
+// session list response.
 func sessionsFromList(stdout string) ([]SessionInfo, *errs.Error) {
 	if strings.Contains(stdout, "RHOST_ERR=") {
 		return nil, mapHelperErr(extractField(stdout, "RHOST_ERR="))

@@ -57,9 +57,8 @@ func renderDoctor(r app.DoctorResult) {
 	output.Field(w, "State dir", r.StateDir+"  writable="+output.Yes(r.StateDirWritable))
 	output.Field(w, "WSL", output.Yes(r.WSL))
 	output.Field(w, "Process identity", output.Yes(r.Capabilities["pid_identity"]))
-	output.Field(w, "systemd --user", output.Yes(r.SystemdUser))
 	fmt.Fprintln(w)
-	for _, c := range []string{"bash", "tmux", "nohup", "setsid", "ps", "rsync", "sha256sum", "base64", "stty", "systemctl", "git", "nvidia-smi", "flock", "python3", "rg", "realpath"} {
+	for _, c := range []string{"bash", "tmux", "nohup", "setsid", "ps", "rsync", "sha256sum", "base64", "stty", "flock", "python3", "realpath"} {
 		output.Field(w, c, output.OK(r.Capabilities[c]))
 	}
 }

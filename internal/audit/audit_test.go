@@ -15,7 +15,7 @@ func TestRecordAppendsJSONLines(t *testing.T) {
 	code := 3
 	for i, e := range []Entry{
 		{Time: "2026-01-01T00:00:00Z", Host: "gpu", Operation: "exec", Command: "pytest -q", ExitCode: &code, DurationMS: 831, OK: false, ErrorCode: "TRANSFER_FAILED"},
-		{Time: "2026-01-01T00:01:00Z", Host: "gpu", Operation: "status", OK: true},
+		{Time: "2026-01-01T00:01:00Z", Host: "gpu", Operation: "doctor", OK: true},
 	} {
 		if err := r.Record(e); err != nil {
 			t.Fatalf("record %d: %v", i, err)

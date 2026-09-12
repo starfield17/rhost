@@ -2,17 +2,12 @@
 
 ## 0. Implementation directive
 
-Build a general remote-host adapter, not a YOLO tool and not an SSH wrapper collection.
+Extend an agent's existing command-line behavior to an SSH-reachable host.
 
-The core model is:
+The core flow is:
 
 ```text
-RemoteHost
-├── Exec       stateless foreground command
-├── Session    persistent interactive terminal
-├── Job        durable background process
-├── FS         file transfer / synchronization
-└── Status     generic host telemetry and managed-state discovery
+command + remote context → OpenSSH → stdin/stdout/stderr/exit status
 ```
 
 The most important invariant is:
@@ -21,6 +16,7 @@ The most important invariant is:
 
 The CLI may exit after every command.
 
-Do not solve persistence by keeping a hidden `rhost` server alive in v0.1.
+Do not add a dedicated operation for behavior an ordinary remote command can
+compose. Do not solve persistence by keeping a hidden `rhost` server alive.
 
 ---

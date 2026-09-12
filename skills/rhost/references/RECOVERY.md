@@ -23,7 +23,7 @@ The remote is missing something:
 - `REMOTE_DEPENDENCY_MISSING` — `rhost doctor <host>` names what is missing and
   what still works without it. For jobs this includes `bash`, `setsid`, `nohup`
   and a readable `/proc`; for sessions `tmux` and `flock`; for `fs sync` `rsync`;
-  for `fs read/write/patch/grep/glob` `python3` (and `rg` for the searches).
+  for `fs read/write/patch` `python3`.
   rhost never installs anything for you.
 - `UNSUPPORTED_REMOTE_OS` — the probe could not establish a supported platform.
 
@@ -35,6 +35,10 @@ Time:
   session, check `data.session_preserved`: false means something still holds the
   pane (`session read` to see what, `session recover` to interrupt it). Work that
   should outlive a timeout belongs in a `job`.
+- `REMOTE_COMMAND_CANCELLED` — the local rhost received SIGINT or SIGTERM. Check
+  `data.cancel_signal` and `data.cleanup_confirmed` before retrying a side effect.
+- `OUTPUT_WRITE_FAILED` — the local stdout/stderr consumer closed or failed.
+  Remote cleanup was attempted; inspect `data.cleanup_confirmed`.
 
 Sessions:
 
@@ -63,8 +67,8 @@ Jobs:
 
 Files:
 
-- `FILE_NOT_FOUND` — the remote path does not exist. The local shell cannot stat
-  a remote path, so resolve it with `fs glob` instead of guessing.
+- `FILE_NOT_FOUND` — the remote path does not exist. Inspect it with a direct
+  remote command such as `test`, `ls`, or `find` instead of guessing.
 - `FILE_CONFLICT` — the hash you supplied no longer describes the file, or the
   file changed during the operation. Read it again and merge; never replay an old
   hash.
@@ -75,8 +79,6 @@ Files:
 - `INVALID_TEXT` / `FILE_TOO_LARGE` — the bytes are not UTF-8, or exceed the 8 MiB
   editing limit. Use `fs put`, `fs get` or `fs sync` for binary and large
   content.
-- `SEARCH_FAILED` — the remote `rg` refused the pattern or could not read the
-  tree. This is a failed command, not a connection problem.
 - `TRANSFER_FAILED` — the transfer tool said no; its own first complaint is in
   `message`. `SYNC_REJECTED` is the subset that rhost refused before running
   anything: a destination that is a glob, a whole home, or a top-level directory
