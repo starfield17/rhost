@@ -171,6 +171,14 @@ The repository includes a concise skill that teaches an agent to prefer normal
 commands and select jobs, sessions, file operations, or tunnels only when their
 extra guarantees are needed:
 
+```bash
+npx skills add starfield17/rhost --skill rhost
+```
+
+The canonical skill is also listed on
+[skills.sh](https://skills.sh/starfield17/rhost/rhost). Codex users can install
+the same directory with the built-in skill installer:
+
 ```text
 $skill-installer install the rhost skill from
 https://github.com/starfield17/rhost/tree/main/skills/rhost
