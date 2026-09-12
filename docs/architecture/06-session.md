@@ -294,7 +294,7 @@ Concurrency policy for simultaneous human and agent input should initially be si
 
 - multiple readers are fine;
 - concurrent writers are unsafe;
-- `session exec` must hold a logical session lock;
+- `session exec` must hold a logical session lock and fail immediately (retryable `SESSION_UNHEALTHY`) if another writer already holds it;
 - human attach should warn that automated writes can race;
 - sophisticated ownership/takeover modes may be added later.
 

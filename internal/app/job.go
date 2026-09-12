@@ -123,6 +123,15 @@ func (a *App) runJobHelper(ctx context.Context, host, script string, timeout tim
 // ref reaches a generated script; internal/job/detached quotes it as well.
 var jobRefRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]{0,63}$`)
 
+// generatedJobIDRe is the only shape newJobID emits: "j_" plus 12 lowercase
+// hex digits. A handle that matches is an id, never a --name, so an unknown
+// id is JOB_NOT_FOUND without scanning every job directory.
+var generatedJobIDRe = regexp.MustCompile(`^j_[0-9a-f]{12}$`)
+
+func isGeneratedJobID(ref string) bool {
+	return generatedJobIDRe.MatchString(ref)
+}
+
 // errInvalidJobRef is the taxonomy answer to a handle that is not a handle. It
 // is validation of user input, not a usage/flag parse failure, so it is
 // CONFIG_INVALID rather than USAGE_ERROR (docs/ARCHITECTURE.md §33).
@@ -132,31 +141,30 @@ func errInvalidJobRef(ref string) *errs.Error {
 		false)
 }
 
-// resolveJobRef runs a per-job script against a handle, resolving it as a job id
-// first and only as a `--name` when no job has that id. Names are a convenience
-// for humans typing the command back in; the id remains the only unambiguous
-// handle, and a name that matches more than one job is refused rather than
-// guessed at.
-//
-// The id path costs one round trip: an unknown id is reported by the same script
-// that would have read the job, so the retry only happens on that answer.
+// resolveJobRef runs a per-job script against a handle. Generated ids
+// (`j_` plus 12 hex digits) are looked up in one trip and never fall back to
+// a name scan: an unknown id is JOB_NOT_FOUND. Any other valid ref is a
+// `--name`, resolved through ListScript, then the verb runs against the id.
+// Names that match more than one job are refused rather than guessed at.
 func (a *App) resolveJobRef(ctx context.Context, host, ref string, build func(string) string, timeout time.Duration) (string, openssh.Result, *errs.Error) {
 	if !jobRefRe.MatchString(ref) {
 		return "", openssh.Result{}, errInvalidJobRef(ref)
 	}
-	res, aerr := a.runJobHelper(ctx, host, build(ref), jobScriptTimeout(timeout))
-	if aerr != nil {
-		return "", res, aerr
-	}
-	if detached.ErrOf(string(res.Stdout)) != detached.NotFound {
+	if isGeneratedJobID(ref) {
+		res, aerr := a.runJobHelper(ctx, host, build(ref), jobScriptTimeout(timeout))
+		if aerr != nil {
+			return "", res, aerr
+		}
+		if detached.ErrOf(string(res.Stdout)) == detached.NotFound {
+			return "", res, mapJobHelperErr(detached.NotFound)
+		}
 		return ref, res, nil
 	}
-
 	id, aerr := a.jobIDByName(ctx, host, ref, timeout)
 	if aerr != nil {
-		return "", res, aerr
+		return "", openssh.Result{}, aerr
 	}
-	res, aerr = a.runJobHelper(ctx, host, build(id), jobScriptTimeout(timeout))
+	res, aerr := a.runJobHelper(ctx, host, build(id), jobScriptTimeout(timeout))
 	if aerr != nil {
 		return "", res, aerr
 	}
@@ -221,8 +229,10 @@ func (a *App) JobStart(ctx context.Context, opts JobStartOptions) (JobStartResul
 	name := opts.Name
 	if name == "" {
 		name = id
-	}
-	if !jobRefRe.MatchString(name) {
+	} else if isGeneratedJobID(name) {
+		return JobStartResult{}, errs.New(errs.ConfigInvalid,
+			"job --name must not look like a generated id (j_ plus 12 hex digits)", false)
+	} else if !jobRefRe.MatchString(name) {
 		return JobStartResult{}, errs.New(errs.ConfigInvalid, "invalid job name (start with a letter, then letters, digits, _ . -)", false)
 	}
 
@@ -268,13 +278,19 @@ func (a *App) JobList(ctx context.Context, host string, timeout time.Duration) (
 	if aerr != nil {
 		return nil, aerr
 	}
-	factsList := detached.ParseList(string(res.Stdout))
+	return jobsFromList(string(res.Stdout)), nil
+}
+
+// jobsFromList is the shared parser for `job list` and the jobs section of a
+// status snapshot, so both views derive state the same way.
+func jobsFromList(stdout string) []JobInfo {
+	factsList := detached.ParseList(stdout)
 	sort.Slice(factsList, func(i, j int) bool { return factsList[i].ID < factsList[j].ID })
 	out := make([]JobInfo, 0, len(factsList))
 	for _, f := range factsList {
 		out = append(out, toJobInfo(f))
 	}
-	return out, nil
+	return out
 }
 
 // JobLogs reads a job log stream incrementally. Data is base64-encoded in the

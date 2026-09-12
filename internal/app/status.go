@@ -3,16 +3,24 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/starfield17/rhost/internal/errs"
+	"github.com/starfield17/rhost/internal/job/detached"
+	"github.com/starfield17/rhost/internal/session/tmux"
 	"github.com/starfield17/rhost/internal/status"
 )
 
 // statusTimeout bounds one status refresh: the probe plus the session and job
-// listings. It is longer than exec's default because the probe deliberately
-// samples the CPU over ~0.3s and then reads three remote helpers.
+// listings, all in one SSH. It is longer than exec's default because the probe
+// deliberately samples the CPU over ~0.3s and then lists managed state.
 const statusTimeout = 30 * time.Second
+
+const (
+	snapshotSessions = "RHOST_SECTION=sessions"
+	snapshotJobs     = "RHOST_SECTION=jobs"
+)
 
 // StatusOptions describes one status/watch refresh.
 type StatusOptions struct {
@@ -31,7 +39,7 @@ type StatusResult struct {
 	OfflineCode    string `json:"offline_code,omitempty"`
 	OfflineMessage string `json:"offline_message,omitempty"`
 	ProbedAt       string `json:"probed_at"`
-	// ProbeMS is how long the snapshot's single remote probe took, wall-clock. It
+	// ProbeMS is how long the snapshot's single remote SSH took, wall-clock. It
 	// is deliberately not called RTT: one bounded probe (§30) cannot separate
 	// network round-trip time from remote execution time (the CPU sample alone
 	// costs a fixed ~0.3s), and reporting that sum as an RTT would be a made-up
@@ -42,6 +50,41 @@ type StatusResult struct {
 	Sessions     []SessionInfo        `json:"sessions"`
 	Jobs         []JobInfo            `json:"jobs"`
 	Unavailable  []string             `json:"unavailable"`
+}
+
+// snapshotScript is the one remote command behind status/watch: the system
+// probe, then the same list scripts `session list` and `job list` run, each in
+// a subshell so their `exit 0` on missing tmux or a missing state dir cannot
+// skip the rest.
+func snapshotScript() string {
+	var b strings.Builder
+	b.WriteString(status.ProbeScript)
+	b.WriteString("\nprintf '%s\\n' '" + snapshotSessions + "'\n(\n")
+	b.WriteString(tmux.ListScript())
+	b.WriteString("\n)\nprintf '%s\\n' '" + snapshotJobs + "'\n(\n")
+	b.WriteString(detached.ListScript())
+	b.WriteString("\n)\n")
+	return b.String()
+}
+
+// splitSnapshot cuts one snapshot SSH's stdout into the probe and the two list
+// sections. Missing markers leave the later sections empty.
+func splitSnapshot(out string) (probe, sessions, jobs string) {
+	probe = out
+	sessIdx := strings.Index(out, snapshotSessions)
+	if sessIdx < 0 {
+		return probe, "", ""
+	}
+	probe = out[:sessIdx]
+	rest := out[sessIdx+len(snapshotSessions):]
+	rest = strings.TrimPrefix(rest, "\n")
+	jobsIdx := strings.Index(rest, snapshotJobs)
+	if jobsIdx < 0 {
+		return probe, rest, ""
+	}
+	sessions = rest[:jobsIdx]
+	jobs = strings.TrimPrefix(rest[jobsIdx+len(snapshotJobs):], "\n")
+	return probe, sessions, jobs
 }
 
 // Status returns one snapshot. An unreachable host is an adapter error here —
@@ -55,7 +98,7 @@ func (a *App) Status(ctx context.Context, opts StatusOptions) (StatusResult, *er
 
 	res, aerr := a.Execute(ctx, ExecOptions{
 		Host:    opts.Host,
-		Command: status.ProbeScript,
+		Command: snapshotScript(),
 		Timeout: timeout,
 	})
 	if aerr != nil {
@@ -65,18 +108,15 @@ func (a *App) Status(ctx context.Context, opts StatusOptions) (StatusResult, *er
 		return StatusResult{}, errs.New(errs.Internal,
 			fmt.Sprintf("status probe exited %d", res.ExitCode), false)
 	}
-	snap, err := status.ParseProbe(res.Stdout)
+	probeOut, sessOut, jobsOut := splitSnapshot(res.Stdout)
+	snap, err := status.ParseProbe(probeOut)
 	if err != nil {
 		return StatusResult{}, errs.Wrap(errs.Internal,
 			"unreadable status probe output: "+err.Error(), false, err)
 	}
 
-	// Sessions and jobs are rhost's own managed state; reuse the exact listing
-	// code the session/job commands use rather than re-deriving it here.
-	sessions, serr := a.SessionList(ctx, opts.Host, timeout)
-	jobs, jerr := a.JobList(ctx, opts.Host, timeout)
-
-	return combine(snap, res.Duration, time.Now(), sessions, serr, jobs, jerr), nil
+	sessions, serr := sessionsFromList(sessOut)
+	return combine(snap, res.Duration, time.Now(), sessions, serr, jobsFromList(jobsOut), nil), nil
 }
 
 // combine folds the optional session and job listings into the result. A listing

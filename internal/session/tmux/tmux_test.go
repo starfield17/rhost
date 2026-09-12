@@ -278,7 +278,7 @@ func TestExecScriptRefusesWhenPaneIsBusy(t *testing.T) {
 	}
 	// The lock is taken before the check, so two writers cannot both inspect the
 	// pane and then both paste.
-	lock := indexOf(s, "flock -w 30 9")
+	lock := indexOf(s, "flock -n 9")
 	if lock < 0 || lock > gate {
 		t.Errorf("ExecScript must hold the writer lock before checking the pane: %d %d", lock, gate)
 	}

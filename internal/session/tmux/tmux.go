@@ -232,10 +232,11 @@ const markerScanFunc = `rh_window() {
 // ExecScript runs a command in an existing session and prints `RHOST_EXIT=<code>`
 // followed by the base64 of the command's output.
 //
-// It serialises writers with flock, waits for the pane to be idle, records a log
-// offset, pastes the command, then waits for the next OSC 133 D marker. On its
-// own timeout it sends Ctrl-C (keeping the session usable) and prints
-// RHOST_ERR=timeout.
+// It serialises writers with a non-blocking flock: another writer holding the
+// lock is SESSION_UNHEALTHY immediately (retryable), not a 30s queue. Then it
+// waits for the pane to be idle, records a log offset, pastes the command, and
+// waits for the next OSC 133 D marker. On its own timeout it sends Ctrl-C
+// (keeping the session usable) and prints RHOST_ERR=timeout.
 //
 // Before any of that it refuses to run at all unless the pane's foreground
 // process is the managed shell: a command is pasted into the terminal, and a
@@ -261,7 +262,7 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	b.WriteString("DIR=\"$RHOST_DIR\"; LOG=\"$DIR/pty.log\"; LOCK=\"$DIR/lock\"; TMUX=\"$RHOST_TMUX\"\n")
 	b.WriteString("LOG=$(printf '%s' \"$LOG\" | sed 's#/$##')\n") // trim trailing slash
 	b.WriteString("exec 9>\"$LOCK\" || { echo RHOST_ERR=nosession; exit 0; }\n")
-	b.WriteString("flock -w 30 9 || { echo RHOST_ERR=locked; exit 0; }\n")
+	b.WriteString("flock -n 9 || { echo RHOST_ERR=locked; exit 0; }\n")
 	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
 
 	// Everything below types into the pane's terminal. That is only safe while

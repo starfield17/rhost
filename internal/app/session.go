@@ -72,17 +72,17 @@ func newSessionID() (string, error) {
 
 // sessionHelperTimeout is the transport-level budget for one session helper.
 //
-// The helper's own worst case is bounded by: flock -w 30 (waiting on another
-// writer), up to 5s waiting for the pane to go idle, then the user command's
-// timeout. If the transport kills the helper before it can finish its own
-// timeout handling (send C-c, release the lock), the pane and lock are left in an
-// inconsistent state, so give the helper room for all three phases.
+// The helper's own worst case is bounded by: a non-blocking flock, up to 5s
+// waiting for the pane to go idle, then the user command's timeout. If the
+// transport kills the helper before it can finish its own timeout handling
+// (send C-c, release the lock), the pane and lock are left in an inconsistent
+// state, so give the helper room for those phases.
 func sessionHelperTimeout(user time.Duration) time.Duration {
 	if user <= 0 {
 		user = 60 * time.Second
 	}
 	const (
-		lockWait = 30 * time.Second
+		lockWait = 2 * time.Second
 		idleWait = 5 * time.Second
 		slack    = 10 * time.Second
 	)
@@ -177,7 +177,12 @@ func (a *App) SessionList(ctx context.Context, host string, timeout time.Duratio
 	if aerr != nil {
 		return nil, aerr
 	}
-	stdout := string(res.Stdout)
+	return sessionsFromList(string(res.Stdout))
+}
+
+// sessionsFromList is the shared parser for `session list` and the sessions
+// section of a status snapshot.
+func sessionsFromList(stdout string) ([]SessionInfo, *errs.Error) {
 	if strings.Contains(stdout, "RHOST_ERR=") {
 		return nil, mapHelperErr(extractField(stdout, "RHOST_ERR="))
 	}

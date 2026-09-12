@@ -36,10 +36,13 @@ The command continues after:
 
 It does not promise survival of a remote OS shutdown or WSL shutdown.
 
-The ID is generated before launch. If the launch channel times out or fails
-after the detached process may have started, the failure envelope still carries
-`data.id` with `data.state: "unknown"`. Query that ID before retrying; a blind
-retry may start the work twice.
+The ID is generated before launch and has a fixed shape: `j_` followed by 12
+lowercase hex digits. A handle of that shape is always an id — never a `--name`
+— so an unknown id is `JOB_NOT_FOUND` without scanning every job. `--name`
+values that match the id shape are refused at start. If the launch channel
+times out or fails after the detached process may have started, the failure
+envelope still carries `data.id` with `data.state: "unknown"`. Query that ID
+before retrying; a blind retry may start the work twice.
 
 ---
 

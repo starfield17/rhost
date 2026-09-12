@@ -37,7 +37,7 @@ func TestMapHelperErr(t *testing.T) {
 // idle pane, or the user command's own timeout.
 func TestSessionHelperTimeoutCoversHelperPhases(t *testing.T) {
 	user := 30 * time.Second
-	const phases = 30*time.Second + 5*time.Second // lock wait + idle wait
+	const phases = 2*time.Second + 5*time.Second // non-blocking lock + idle wait
 	if got, want := sessionHelperTimeout(user), user+phases+10*time.Second; got != want {
 		t.Errorf("sessionHelperTimeout(%s) = %s, want %s", user, got, want)
 	}

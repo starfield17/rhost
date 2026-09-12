@@ -57,7 +57,37 @@ func remoteStdout(t *testing.T, c liveCLI, host, command string) string {
 
 func remoteHas(t *testing.T, c liveCLI, host, path string) bool {
 	t.Helper()
-	return strings.Contains(remoteStdout(t, c, host, "test -e "+path+" && echo yes || echo no"), "yes")
+	return remoteHasAll(t, c, host, path)[path]
+}
+
+// remoteHasAll checks many remote paths in one exec, so a sync test does not
+// pay a round trip per file.
+func remoteHasAll(t *testing.T, c liveCLI, host string, paths ...string) map[string]bool {
+	t.Helper()
+	got := map[string]bool{}
+	if len(paths) == 0 {
+		return got
+	}
+	var b strings.Builder
+	for i, path := range paths {
+		if i > 0 {
+			b.WriteByte(';')
+		}
+		b.WriteString("if test -e " + path + "; then printf 'yes\\t" + path + "\\n'; else printf 'no\\t" + path + "\\n'; fi")
+	}
+	for _, line := range strings.Split(remoteStdout(t, c, host, b.String()), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "yes\t"):
+			got[strings.TrimPrefix(line, "yes\t")] = true
+		case strings.HasPrefix(line, "no\t"):
+			path := strings.TrimPrefix(line, "no\t")
+			if _, ok := got[path]; !ok {
+				got[path] = false
+			}
+		}
+	}
+	return got
 }
 
 // localTree writes a predictable tree: two files, a nested pair, and one file no
@@ -216,12 +246,14 @@ func TestLiveFsSyncPlanAndApply(t *testing.T) {
 	if done.bool(t, "dry_run") {
 		t.Error("the applying sync reported dry_run=true")
 	}
+	present := remoteHasAll(t, c, host,
+		dst+"/a.txt", dst+"/second.txt", dst+"/sub/b.txt", dst+"/sub/deep/c", dst+"/skip.me")
 	for _, name := range []string{"a.txt", "second.txt", "sub/b.txt", "sub/deep/c"} {
-		if !remoteHas(t, c, host, dst+"/"+name) {
+		if !present[dst+"/"+name] {
 			t.Errorf("after sync the remote is missing %s", name)
 		}
 	}
-	if remoteHas(t, c, host, dst+"/skip.me") {
+	if present[dst+"/skip.me"] {
 		t.Error("--exclude did not keep the file out of the sync")
 	}
 

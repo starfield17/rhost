@@ -20,11 +20,11 @@ import (
 
 func TestLiveJob(t *testing.T) {
 	host := liveHost(t)
-	c := cli(t)
+	c := cliIsolated(t)
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
-		"--name", "livejob", "--cwd", "/var/log", "--env", "RHOST_LIVE_JOB=42",
-		"--", "echo starting; pwd; echo $RHOST_LIVE_JOB; sleep 6; echo finished; exit 0")
+		"--name", liveName("job"), "--cwd", "/var/log", "--env", "RHOST_LIVE_JOB=42",
+		"--", "echo starting; pwd; echo $RHOST_LIVE_JOB; sleep 5; echo finished; exit 0")
 	id := env.str(t, "id")
 	defer cleanupJob(t, c, host, id)
 	if id == "" {
@@ -71,7 +71,7 @@ func TestLiveJob(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("job never reached exited: %s", s.str(t, "state"))
 		}
-		time.Sleep(time.Second)
+		time.Sleep(livePoll)
 	}
 
 	full := decodeLog(t, c.mustJSON(t, "--json", "job", "logs", host, id, "--since", "0"))
@@ -107,7 +107,7 @@ func TestLiveJobLogsCursor(t *testing.T) {
 	// rather than "whatever printf happened to send".
 	const payload = "0123456789"
 	env := c.mustJSON(t, "--json", "job", "start", host,
-		"--", "printf '"+payload+"'; sleep 2; printf 'tail'")
+		"--", "printf '"+payload+"'; sleep 1; printf 'tail'")
 	id := env.str(t, "id")
 	defer cleanupJob(t, c, host, id)
 
@@ -162,7 +162,7 @@ func TestLiveJobStopHarvestsProcessGroup(t *testing.T) {
 	marker := 300 + time.Now().Nanosecond()%200
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
-		"--name", "groupkill", "--", "echo started; sleep "+strconv.Itoa(marker)+" & sleep "+strconv.Itoa(marker)+"; wait")
+		"--name", liveName("groupkill"), "--", "echo started; sleep "+strconv.Itoa(marker)+" & sleep "+strconv.Itoa(marker)+"; wait")
 	id := env.str(t, "id")
 	defer cleanupJob(t, c, host, id)
 	pgid := env.num(t, "pid")
@@ -255,7 +255,7 @@ func TestLiveJobPIDReuseIsRefused(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
 
-	env := c.mustJSON(t, "--json", "job", "start", host, "--name", "pidreuse",
+	env := c.mustJSON(t, "--json", "job", "start", host, "--name", liveName("pidreuse"),
 		"--", "i=0; while [ $i -lt 600 ]; do echo tick; sleep 1; i=$((i+1)); done")
 	id := env.str(t, "id")
 	defer cleanupJob(t, c, host, id)
@@ -291,7 +291,7 @@ func TestLiveJobPIDReuseIsRefused(t *testing.T) {
 		return n
 	}
 	before := size()
-	time.Sleep(3 * time.Second)
+	time.Sleep(2 * time.Second)
 	if after := size(); after <= before {
 		t.Errorf("job stopped producing output after a refused stop (size %d -> %d): it was signalled anyway", before, after)
 	}
@@ -333,7 +333,7 @@ func TestLiveJobFailureIsRecorded(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("job never reached failed: %v", s.Data)
 		}
-		time.Sleep(time.Second)
+		time.Sleep(livePoll)
 	}
 
 	// stderr goes to its own stream, and never into stdout's cursor.
@@ -389,16 +389,16 @@ func TestLiveJobUnknownIDIsAnError(t *testing.T) {
 	c := cli(t)
 
 	for _, args := range [][]string{
-		{"--json", "job", "status", host, "j_nosuchjob"},
-		{"--json", "job", "logs", host, "j_nosuchjob", "--since", "0"},
-		{"--json", "job", "stop", host, "j_nosuchjob"},
-		{"--json", "job", "kill", host, "j_nosuchjob"},
+		{"--json", "job", "status", host, "j_000000000000"},
+		{"--json", "job", "logs", host, "j_000000000000", "--since", "0"},
+		{"--json", "job", "stop", host, "j_000000000000"},
+		{"--json", "job", "kill", host, "j_000000000000"},
 	} {
 		c.wantErrorCode(t, errs.JobNotFound, args...)
 	}
 
 	// A bad stream name is a usage-time validation failure, before any SSH runs.
-	c.wantErrorCode(t, errs.ConfigInvalid, "--json", "job", "logs", host, "j_nosuchjob", "--stream", "syslog")
+	c.wantErrorCode(t, errs.ConfigInvalid, "--json", "job", "logs", host, "j_000000000000", "--stream", "syslog")
 }
 
 // TestLiveJobNameLookup covers the convenience handle: `--name` is what a human
@@ -515,7 +515,7 @@ func waitCursor(t *testing.T, c liveCLI, host, id string, n int) envelope {
 		if time.Now().After(deadline) {
 			t.Fatalf("log stream never reached %d bytes (next=%d)", n, env.num(t, "next"))
 		}
-		time.Sleep(time.Second)
+		time.Sleep(livePoll)
 	}
 }
 
@@ -551,7 +551,7 @@ func waitJobState(t *testing.T, c liveCLI, host, id string, states ...string) {
 		if time.Now().After(deadline) {
 			t.Fatalf("job %s never reached %v (last seen %q)", id, states, got)
 		}
-		time.Sleep(time.Second)
+		time.Sleep(livePoll)
 	}
 }
 

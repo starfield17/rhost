@@ -21,7 +21,7 @@ import (
 func TestLiveSession(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
-	const name = "livestate"
+	name := liveName("sess")
 
 	env := c.mustJSON(t, "--json", "session", "create", host, "--name", name, "--cwd", "/tmp")
 	if id := env.str(t, "id"); id == "" {
@@ -116,7 +116,12 @@ func testReadCursor(t *testing.T, c liveCLI, host, name string) {
 // with SESSION_UNHEALTHY rather than interleaving into the pane.
 func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name string) {
 	t.Helper()
-	cmd, out := c.start(t, "--json", "session", "exec", host, name, "--", "sleep 60")
+	// SIGKILL of the local CLI must not take the remote helper with it
+	// (AGENTS.md §4): the helper is an SSH child, not a child of rhost, and it
+	// keeps the writer lock until the command ends. The next session exec then
+	// hits a non-blocking flock and is refused with SESSION_UNHEALTHY rather
+	// than interleaving into the pane.
+	cmd, out := c.start(t, "--json", "session", "exec", host, name, "--", "sleep 8")
 	time.Sleep(4 * time.Second)
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatalf("kill local rhost process: %v", err)
@@ -124,13 +129,12 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 	_ = cmd.Wait() // reaping only: a killed process has no meaningful status
 	t.Logf("killed local CLI mid-command; captured stdout=%q", out.String())
 
-	assertRediscoverable(t, c, host, name)
-
 	busy := c.wantErrorCode(t, errs.SessionUnhealthy,
 		"--json", "session", "exec", host, name, "--", "echo should-be-refused")
 	if !busy.Error.Retryable {
 		t.Errorf("SESSION_UNHEALTHY from a busy writer must be retryable: %+v", busy.Error)
 	}
+	assertRediscoverable(t, c, host, name)
 
 	// Once the remote command finishes on its own, the same session works again.
 	deadline := time.Now().Add(2 * time.Minute)
@@ -142,19 +146,14 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 		if time.Now().After(deadline) {
 			t.Fatal("session never became usable again after the local process died")
 		}
-		time.Sleep(5 * time.Second)
+		time.Sleep(livePoll)
 	}
 }
 
-// TestLiveSessionBoundaryIsReliable is the regression test for a marker race that
-// made `session exec -- "bash -c 'exit 4'"` time out on a real host even though
-// the shell had already reported 4. Commands that finish quietly are the risky
-// shape — there is no later output to drag the scan forward — so this repeats the
-// exact form many times, across the codes, and fails on any missed boundary.
 func TestLiveSessionBoundaryIsReliable(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
-	const name = "livebound"
+	name := liveName("bound")
 
 	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
 	defer c.run(t, "--json", "session", "close", host, name)
@@ -194,7 +193,7 @@ func TestLiveSessionBoundaryIsReliable(t *testing.T) {
 func TestLiveSessionSendRawInput(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
-	const name = "livesend"
+	name := liveName("send")
 
 	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
 	defer c.run(t, "--json", "session", "close", host, name)
@@ -209,7 +208,7 @@ func TestLiveSessionSendRawInput(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("injected input never produced output in the session log")
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(livePoll)
 	}
 }
 
@@ -220,7 +219,7 @@ func TestLiveSessionSendRawInput(t *testing.T) {
 func TestLiveSessionBusyRefusesExec(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
-	const name = "livebusy"
+	name := liveName("busy")
 
 	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
 	defer c.run(t, "--json", "session", "close", host, name)
@@ -250,7 +249,7 @@ func TestLiveSessionBusyRefusesExec(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("the pane never became busy with `cat`; last exec said %q", stdout)
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(livePoll)
 	}
 	if msg := busy.Error.Message; !strings.Contains(msg, "cat") {
 		t.Errorf("SESSION_BUSY must name what owns the pane, got %q", msg)
@@ -276,7 +275,7 @@ func TestLiveSessionBusyRefusesExec(t *testing.T) {
 func TestLiveSessionExitIsReported(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
-	const name = "liveexit"
+	name := liveName("exit")
 
 	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
 	defer c.run(t, "--json", "session", "close", host, name)

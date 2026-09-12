@@ -23,9 +23,10 @@ A job is the right tool when work will outlive a foreground timeout. For
 anything that finishes quickly, prefer `+"`rhost exec`"+`; for stateful
 interactive work, prefer a session.
 
-Address a job by the id that `+"`job start`"+` printed. A --name works as
-well for status, logs, stop and kill, but only while it matches exactly one job:
-names may collide, and a collision is an error rather than a guess.
+Address a job by the id that `+"`job start`"+` printed (`+"`j_`"+` plus 12
+hex digits). A --name works as well for status, logs, stop and kill, but only
+while it matches exactly one job: names may collide, and a collision is an
+error rather than a guess. A --name must not look like a generated id.
 
 A job is only ever reported as running, and only ever signalled, when its
 process identity is verified against the boot id and process start time recorded
@@ -95,7 +96,7 @@ func newJobStartCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "", "human-friendly label, addressable while unique")
+	cmd.Flags().StringVar(&name, "name", "", "human-friendly label, addressable while unique (must not look like a job id)")
 	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory on the remote host")
 	cmd.Flags().StringArrayVar(&envs, "env", nil, "environment variable KEY=VALUE (repeatable)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "launch timeout")

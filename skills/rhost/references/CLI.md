@@ -110,9 +110,10 @@ rhost job stop <host> <job-id> --json     # SIGTERM to the whole process group
 rhost job kill <host> <job-id> --json     # SIGKILL, for jobs that ignore TERM
 ```
 
-- `job start` answers `{id, state, pid}` immediately. **Keep the id**: a `--name`
-  works for the other commands only while it matches exactly one job, and a name
-  matching several is refused with `CONFIG_INVALID` rather than guessed.
+- `job start` answers `{id, state, pid}` immediately. **Keep the id** (`j_` plus
+  12 hex digits): a `--name` works for the other commands only while it matches
+  exactly one job, and a name matching several is refused with `CONFIG_INVALID`
+  rather than guessed. A `--name` must not look like a generated id.
 - A failed or timed-out launch can still carry `{id, state:"unknown", pid:0}` in
   the failure envelope. Query that id before retrying so a surviving detached
   launch is not duplicated.

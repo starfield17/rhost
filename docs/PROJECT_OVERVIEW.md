@@ -1,7 +1,7 @@
 # Remote Host Adapter — Project Overview
 
 > Working name: **rhost**  
-> Status: **v0.1.0-alpha.2** — implemented through Milestone 6: `hosts`,  
+> Status: **v0.1.0** — implemented through Milestone 6: `hosts`,  
 > `doctor`, `exec`, `exec-many`, `session`, `job`, `fs`, `tunnel`, `status`,  
 > `watch`, `audit`. Open: config migration, release signing (artifacts carry  
 > build-provenance attestations), daemon evaluation  

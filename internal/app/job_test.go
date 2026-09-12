@@ -43,7 +43,7 @@ func TestMapJobHelperErr(t *testing.T) {
 // `..` name real directories, and everything else here is shell syntax that must
 // never reach a path.
 func TestJobRefShape(t *testing.T) {
-	accept := []string{"j_01ab23cd45ef", "train-1", "My_job.v2", "a", "_x"}
+	accept := []string{"j_01ab23cd45ef", "train-1", "My_job.v2", "a", "_x", "j_nosuchjob"}
 	reject := []string{
 		"", ".", "..", "-flag",
 		`x"; touch /tmp/pwned; #`,
@@ -63,6 +63,21 @@ func TestJobRefShape(t *testing.T) {
 	for _, s := range reject {
 		if jobRefRe.MatchString(s) {
 			t.Errorf("jobRefRe must reject %q", s)
+		}
+	}
+}
+
+func TestIsGeneratedJobID(t *testing.T) {
+	yes := []string{"j_0123456789ab", "j_deadbeef0001", "j_000000000000"}
+	no := []string{"j_nosuchjob", "train-1", "j_01Jabcdef012", "j_0123456789abc", "j_0123456789", "J_0123456789ab", "s_0123456789ab"}
+	for _, s := range yes {
+		if !isGeneratedJobID(s) {
+			t.Errorf("isGeneratedJobID(%q) = false, want true", s)
+		}
+	}
+	for _, s := range no {
+		if isGeneratedJobID(s) {
+			t.Errorf("isGeneratedJobID(%q) = true, want false", s)
 		}
 	}
 }
@@ -97,7 +112,7 @@ func TestJobIDsByName(t *testing.T) {
 // anything touches the transport.
 func TestJobStartRejectsBadNameWithoutTouchingHost(t *testing.T) {
 	a := NewDefault()
-	for _, name := range []string{".", "..", "-x", "a b", `a"b`} {
+	for _, name := range []string{".", "..", "-x", "a b", `a"b`, "j_0123456789ab"} {
 		_, aerr := a.JobStart(context.Background(), JobStartOptions{Host: "unreachable-host-does-not-matter", Name: name, Command: "true"})
 		if aerr == nil || aerr.Code != errs.ConfigInvalid {
 			t.Errorf("JobStart(name=%q) = %+v, want CONFIG_INVALID", name, aerr)

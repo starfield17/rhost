@@ -50,6 +50,10 @@ Avoid one SSH process per metric.
 
 A single `status` snapshot should execute one bounded remote probe that gathers the necessary fields, preferably returning a simple machine-readable intermediate form.
 
+The same SSH also lists managed sessions and jobs, using the same remote list
+scripts as `session list` and `job list`, so a refresh is one round trip rather
+than one per section.
+
 The probe may call:
 
 ```text

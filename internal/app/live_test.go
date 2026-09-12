@@ -34,16 +34,35 @@ import (
 // liveBinDir holds the throwaway binary built once per live run.
 var liveBinDir string
 
+// liveCacheDir is the ControlMaster namespace shared by tests that do not
+// themselves prove isolation. Tests that close the master or inspect the
+// socket root keep a private dir via cliIsolated / withCacheDir.
+var liveCacheDir string
+
+// livePoll is the wait between live-test observations. Persistence is proven
+// by a later CLI process, not by sleeping a full second between polls.
+const livePoll = 200 * time.Millisecond
+
 func TestMain(m *testing.M) {
 	code := m.Run()
 	if liveBinDir != "" {
 		_ = os.RemoveAll(liveBinDir)
 	}
+	if liveCacheDir != "" {
+		_ = os.RemoveAll(liveCacheDir)
+	}
 	os.Exit(code)
 }
 
-// liveCLI is one rhost invocation environment: a binary plus a private
-// RHOST_CACHE_DIR, so each test gets its own ControlMaster namespace.
+// liveName returns a unique session/job name for this test so leftovers from
+// an earlier run cannot collide. It stays inside both the session and job
+// name character classes.
+func liveName(prefix string) string {
+	return fmt.Sprintf("rlive-%s-%d", prefix, time.Now().UnixNano())
+}
+
+// liveCLI is one rhost invocation environment: a binary plus an RHOST_CACHE_DIR
+// that selects the ControlMaster namespace.
 type liveCLI struct {
 	bin   string
 	cache string
@@ -92,11 +111,18 @@ func liveHost(t *testing.T) string {
 	return host
 }
 
-// cli builds rhost once for the run and gives the test a private cache dir.
-//
-// The dir stays short on purpose so this suite exercises rhost's primary
-// ControlPath; TestLiveControlPathDeepCacheDir covers the long-path fallback.
+// cli builds rhost once for the run and points it at the shared cache dir so
+// tests reuse one ControlMaster. The dir stays short on purpose so this suite
+// exercises rhost's primary ControlPath; TestLiveControlPathDeepCacheDir
+// covers the long-path fallback.
 func cli(t *testing.T) liveCLI {
+	t.Helper()
+	return withCacheDir(t, liveCLI{bin: buildBinary(t)}, sharedCacheDir(t))
+}
+
+// cliIsolated is cli with a private ControlMaster namespace. Use it when the
+// test closes the master or counts sockets in the cache dir.
+func cliIsolated(t *testing.T) liveCLI {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "rhost-live-*")
 	if err != nil {
@@ -104,6 +130,18 @@ func cli(t *testing.T) liveCLI {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	return withCacheDir(t, liveCLI{bin: buildBinary(t)}, dir)
+}
+
+func sharedCacheDir(t *testing.T) string {
+	t.Helper()
+	if liveCacheDir == "" {
+		dir, err := os.MkdirTemp("", "rhost-live-cache-*")
+		if err != nil {
+			t.Fatalf("shared cache dir: %v", err)
+		}
+		liveCacheDir = dir
+	}
+	return liveCacheDir
 }
 
 // withCacheDir re-points a CLI at another cache root and resolves the socket
@@ -293,7 +331,7 @@ func TestLiveExecTimeout(t *testing.T) {
 		t.Errorf("data.timed_out = false, want true")
 	}
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(500 * time.Millisecond)
 
 	// Match the survivor locally, from a remote command line that contains no
 	// pattern of its own. `pgrep -f <marker>` looks equivalent but always matches:
@@ -341,7 +379,7 @@ func TestLiveDoctor(t *testing.T) {
 // outlive the process that created it.
 func TestLiveTransportReuse(t *testing.T) {
 	host := liveHost(t)
-	c := cli(t)
+	c := cliIsolated(t)
 
 	c.mustJSON(t, "--json", "exec", host, "--", "true") // process 1, cold connect
 

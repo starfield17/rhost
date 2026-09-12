@@ -151,9 +151,10 @@ Status: implemented and verified against a real remote Linux host over SSH
   `accelerators`;
 - `platform` records Linux vs WSL; the accelerator list is generic (today one
   row per `nvidia-smi` GPU);
-- managed sessions and jobs are aggregated by reusing `session list` and
-  `job list`, not by re-deriving remote state; a section that cannot be read is
-  reported in `data.unavailable` while the rest of the snapshot stands;
+- managed sessions and jobs are aggregated by running the same list scripts
+  `session list` and `job list` use, inside the one snapshot SSH, and parsing
+  them with the same functions; a section that cannot be read is reported in
+  `data.unavailable` while the rest of the snapshot stands;
 - `watch` owns no state — it re-runs the same snapshot each interval and
   rediscovers sessions and jobs remotely, so an unreachable host is an
   `online: false` refresh with an `offline_code`, and the next success

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -61,5 +62,54 @@ func TestCombineNeverEmitsNilSlices(t *testing.T) {
 	got := combine(status.Snapshot{}, 0, time.Unix(0, 0), nil, nil, nil, nil)
 	if got.Sessions == nil || got.Jobs == nil || got.Accelerators == nil {
 		t.Errorf("nil slices must be normalised to empty: %+v", got)
+	}
+}
+
+func TestSplitSnapshot(t *testing.T) {
+	out := "rhost_probe_version=1\nhostname=box\nos=Linux\n" +
+		snapshotSessions + "\nRHOST_ERR=notmux\n" +
+		snapshotJobs + "\nRHOST_META\tj_1\t9\tyes\tverified\t-1\tno\t\t\n"
+	probe, sessions, jobs := splitSnapshot(out)
+	if !strings.Contains(probe, "hostname=box") || strings.Contains(probe, "RHOST_ERR") {
+		t.Errorf("probe section = %q", probe)
+	}
+	sessionsOut, serr := sessionsFromList(sessions)
+	if serr == nil || serr.Code != errs.RemoteDependencyMissing {
+		t.Errorf("sessions error = %+v, want REMOTE_DEPENDENCY_MISSING", serr)
+	}
+	if len(sessionsOut) != 0 {
+		t.Errorf("failed sessions section must be empty, got %+v", sessionsOut)
+	}
+	gotJobs := jobsFromList(jobs)
+	if len(gotJobs) != 1 || gotJobs[0].ID != "j_1" {
+		t.Errorf("jobs = %+v, want one row for j_1", gotJobs)
+	}
+}
+
+func TestSplitSnapshotMissingMarkers(t *testing.T) {
+	probe, sessions, jobs := splitSnapshot("rhost_probe_version=1\nhostname=box\n")
+	if !strings.Contains(probe, "hostname=box") {
+		t.Errorf("probe = %q", probe)
+	}
+	if sessions != "" || jobs != "" {
+		t.Errorf("missing markers should leave sections empty: %q %q", sessions, jobs)
+	}
+}
+
+func TestSnapshotScriptContainsSections(t *testing.T) {
+	s := snapshotScript()
+	if !strings.Contains(s, snapshotSessions) || !strings.Contains(s, snapshotJobs) {
+		t.Fatal("snapshot script missing section markers")
+	}
+	if !strings.Contains(s, "rhost_probe_version=") {
+		t.Fatal("snapshot script missing the system probe")
+	}
+	sess := strings.Index(s, snapshotSessions)
+	jobs := strings.Index(s, snapshotJobs)
+	if sess < 0 || jobs <= sess {
+		t.Fatalf("section order: sessions at %d, jobs at %d", sess, jobs)
+	}
+	if !strings.Contains(s[sess:jobs], "(") {
+		t.Fatal("session list must run in a subshell so its exit cannot skip jobs")
 	}
 }
