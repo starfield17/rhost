@@ -68,8 +68,8 @@ Temporary Items
 # iCloud generated files
 *.icloud
 
-# reffer
-reffer/
+# reference
+reference/
 
 # rhost build outputs
 /bin/
