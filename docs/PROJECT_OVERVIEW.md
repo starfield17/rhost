@@ -1,43 +1,37 @@
 # rhost project overview
 
-## Intent
+## Product boundary
 
-A coding agent already knows how to inspect and change a local machine with shell
-commands. rhost carries that model across SSH:
+A coding agent already knows how to run shell commands. rhost carries that
+model across SSH while preserving the process contract the caller already
+understands:
 
 ```bash
-rhost --host gpu -- 'uname -a'
-rhost --host gpu --cwd '~/project' -- 'git status --short'
-rhost --host gpu -- 'find . -maxdepth 2 -type f' | sort
+rhost --host gpu --cwd '~/work/project' -- 'git status --short'
 ```
 
-The quoted command belongs to the remote shell. The pipeline after rhost belongs
-to the local shell. This boundary is the center of the product.
+The quoted command belongs to the remote shell. Flags before `--` configure
+rhost, and a pipeline after the invocation belongs to the local shell. That
+boundary is the center of the product.
 
-## Capabilities
-
-- `doctor` returns platform facts and a capability matrix in one round trip.
-- `session` keeps shell state in remote tmux across independent CLI processes.
-- `job` starts and rediscovers detached remote processes.
-- `fs` moves files and provides bounded, hash-guarded text editing.
-- `tunnel` manages OpenSSH forwards.
-- `audit` records bounded local operation metadata.
-- `--json` emits one versioned envelope with stable error codes.
+rhost is not a replacement SSH client, a remote development environment, or a
+resident agent server. It is a command-line adapter between a coding agent and
+an SSH-reachable machine.
 
 ## Ownership
 
-The rhost process owns no durable remote work. OpenSSH ControlMaster owns
-connection reuse; remote tmux owns sessions; remote process groups and state
-files own jobs; dedicated OpenSSH masters own tunnels. Authentication and host
-key decisions always remain with OpenSSH.
+The rhost process owns no durable remote work. OpenSSH owns target resolution,
+authentication, host keys, ProxyJump, and connection reuse. Remote tmux owns
+sessions. Remote process groups and state files own jobs. The filesystem owns
+file state.
 
-## Agent workflow
+Direct execution is therefore the default. Jobs, sessions, file operations, and
+tunnels exist only where a foreground command cannot provide the required
+guarantee cheaply.
 
-Start with `doctor`, then choose the smallest primitive that matches the work.
-Combine related read-only observations into one remote command to avoid repeated
-SSH round trips. Keep unrelated mutations separate so each exit status and retry
-decision remains clear.
+Every agent-visible behavior also has a versioned JSON path. Callers classify
+adapter failures with `error.code`, completed commands with `data.exit_code`,
+and uncertain timeouts with `data.cleanup_confirmed`.
 
-Use `data.exit_code` for a completed command and `error.code` for adapter
-failures. After a timeout, inspect `data.cleanup_confirmed`; do not repeat a
-side effect when cleanup was not confirmed.
+The detailed contracts and their rationale live in
+[ARCHITECTURE.md](ARCHITECTURE.md).

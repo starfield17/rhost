@@ -1,125 +1,203 @@
 # rhost
 
-Run an ordinary shell command on an SSH-reachable host with the same input,
-output, and exit-code shape as a local command.
+**Remote execution for coding agents, built on OpenSSH.**
+
+*The agent stays local. The work doesn't have to.*
+
+A coding agent already knows how to use a shell. rhost carries that command
+model to any SSH-reachable Linux machine without installing an agent, running a
+daemon, or introducing another authentication system.
 
 ```bash
-rhost --host gpu -- 'ls -a'
 rhost --host gpu --cwd '~/work/project' -- 'pytest -q'
-printf 'hello\n' | rhost --host gpu -- 'cat'
-rhost --host gpu --json -- 'git status --porcelain'
 ```
 
-The command after `--` is one complete shell string. It runs in a fresh remote
-login-bash context, so pipelines, redirects, variables, and compound shell syntax
-work on the remote host. `--cwd` names a remote directory and `--env KEY=VALUE`
-may be repeated.
+Foreground commands behave like commands: stdin goes in, stdout and stderr come
+back, and rhost exits with the remote command's status.
 
-Human mode forwards stdin and streams stdout/stderr as they arrive. It has no
-default execution deadline or output cap. `--timeout 30s` adds a deadline.
-`--json` returns one versioned result envelope and captures at most 1 MiB per
-stream by default; use `--max-output-bytes 0` for unlimited capture.
+```text
+local coding agent
+  |-- rhost edge --> edge Linux host
+  `-- rhost gpu  --> GPU workstation
+```
 
-Hosts are named exactly as for `ssh`: an OpenSSH config alias, `user@host`, or a
-bare hostname. OpenSSH remains responsible for configuration, authentication,
-host keys, ProxyJump, and connection reuse.
+Rhost Hands Off Shell Tasks: OpenSSH owns the connection, and the remote system
+owns the work.
 
-## When the command needs more than foreground execution
+## Install
 
-The direct form is the default. The remaining subcommands exist where a plain
-foreground command cannot cheaply provide the required guarantee:
-
-- `job`: start a detached command that survives this CLI and the SSH connection;
-- `session`: keep an interactive shell or REPL in remote tmux;
-- `fs`: transfer files, synchronize directories, and perform hash-protected text edits;
-- `tunnel`: create a persistent OpenSSH forward;
-- `doctor`: diagnose remote dependencies and connection problems;
-- `hosts`: list discoverable OpenSSH aliases;
-- `audit`: inspect the local operation trail;
-- `version`: report build identity.
-
-The older `rhost exec <host> -- <command...>` form remains available for
-compatibility. It keeps its 60-second and 1 MiB defaults. New integrations should
-use the direct form because its single command string has explicit shell
-semantics and its ordinary output behaves like a command-line process.
-
-## Structured results and exit codes
-
-Every agent-visible result has a `--json` path. JSON mode writes exactly one
-document to stdout and never mixes command output into it. Its `data` includes
-the remote exit code, stdout/stderr, byte counts, truncation flags, duration,
-timeout/cancellation state, and whether remote cleanup was confirmed.
-
-| process status | meaning |
-|---|---|
-| 0–254 | the remote command's status |
-| 124 | rhost execution deadline |
-| 130 / 143 | rhost handled SIGINT / SIGTERM |
-| 255 | adapter, transport, usage, or local output failure |
-
-A remote program can return the same numeric values. In ambiguous cases inspect
-`ok`, `data.exit_code`, and `error.code` in JSON rather than guessing from the
-process status.
-
-## Files, jobs, and sessions
+The release installer supports macOS and Linux on amd64 and arm64. It verifies
+the downloaded binary against the published SHA-256 file before replacing an
+existing installation.
 
 ```bash
-rhost fs put gpu ./file '~/work/file'
-rhost fs put gpu ./file '~/new/project/file' --parents
-rhost fs get gpu '~/work/result.json' ./result.json
-rhost fs sync gpu ./project '~/work/project' --dry-run
-rhost fs read gpu '~/work/project/main.go' --json
-rhost fs write gpu '~/new/project/main.go' --from ./main.go --parents
-rhost fs write gpu '~/work/project/main.go' --from ./main.go --if-hash <sha256>
+curl -fsSL https://raw.githubusercontent.com/starfield17/rhost/main/scripts/install.sh | bash
+```
 
-rhost job start gpu --json --cwd '~/work/project' -- 'make long-task'
-rhost job status gpu <job-id> --json
-rhost job logs gpu <job-id> --json --since 0
+By default the binary is installed to `~/.local/bin`. Set `RHOST_INSTALL_DIR`
+to choose another directory, or `RHOST_VERSION` to pin a release.
+
+To build from source:
+
+```bash
+git clone https://github.com/starfield17/rhost.git
+cd rhost
+make build
+install -m 755 bin/rhost ~/.local/bin/rhost
+```
+
+Package-manager distribution through a Homebrew tap and the Arch User
+Repository is planned, but is not published yet.
+
+## Start with an ordinary command
+
+Use a target that already works with `ssh`: an OpenSSH config alias,
+`user@example-host`, or a bare hostname.
+
+```bash
+# Inspect an edge host.
+rhost --host edge -- 'uname -a && systemctl --failed'
+
+# Check a GPU worker.
+rhost --host gpu -- 'nvidia-smi'
+
+# Run the same command an agent would run locally.
+rhost --host gpu --cwd '~/work/project' -- 'pytest -q'
+
+# Forward stdin and preserve normal pipeline behavior.
+printf 'hello\n' | rhost --host edge -- 'cat'
+rhost --host gpu -- 'cat results.txt' | sort
+```
+
+The string after `--` is one complete remote shell command. Pipelines,
+redirects, variables, and compound syntax inside that string run in a fresh
+remote login-bash context. Shell syntax outside the string remains local.
+
+Human mode streams output and has no default deadline or output cap. Add
+`--timeout 30s` when a command has a meaningful bound. Use `--json` when the
+caller needs a versioned result envelope rather than terminal output.
+
+## Why not just SSH?
+
+For a human, `ssh gpu ...` is often enough. For an agent, the edges determine
+whether it can retry safely and classify a result correctly:
+
+- stdin, stdout, stderr, and the remote exit status retain ordinary process
+  behavior;
+- remote command failure is distinguishable from usage and transport failure;
+- a timeout reports whether remote cleanup was confirmed instead of pretending
+  an uncertain mutation failed;
+- durable jobs and sessions survive the rhost process and SSH connection;
+- OpenSSH configuration, authentication, host keys, ProxyJump, and connection
+  reuse remain authoritative;
+- replacing remote text can require the hash returned by the preceding read.
+
+rhost stays below the agent protocol layer. It is not an SSH client or a
+resident MCP control plane; it is a remote process boundary that coding agents
+can invoke like any other command-line program.
+
+## When foreground execution is not enough
+
+The direct form is the default. Reach for a specialized operation only when the
+work needs an additional guarantee.
+
+| Requirement | Operation |
+|---|---|
+| Work must outlive this CLI or SSH connection | `rhost job` |
+| A shell, REPL, or debugger must keep state | `rhost session` |
+| Bytes must cross local and remote filesystems | `rhost fs` |
+| A remote text edit needs an atomic hash precondition | `rhost fs read/write/patch` |
+| A port forward must survive its creating invocation | `rhost tunnel` |
+| SSH or remote dependency diagnosis | `rhost doctor` |
+
+For example, start a training command that must keep running after the agent's
+invocation ends, then inspect it later:
+
+```bash
+rhost job start gpu --name training --cwd '~/work/project' -- \
+  'python train.py --config configs/train.yaml'
+rhost job status gpu training --json
+rhost job logs gpu training --json --since 0
+```
+
+File operations and interactive sessions remain explicit:
+
+```bash
+rhost fs read gpu '~/work/project/main.go' --json
+rhost fs write gpu '~/work/project/main.go' --from ./main.go --if-hash <sha256>
 
 rhost session create gpu --name debug --cwd '~/work/project'
 rhost session exec gpu debug --json -- 'python -m pdb app.py'
-rhost session send gpu debug --data 'next()' --enter
-rhost session read gpu debug --json --since 0
 ```
 
 Creating a file needs no hash; replacing or patching one requires the SHA-256
-from the last `fs read`. Writes use atomic same-directory replacement and
-reject symlink targets. Transfers and writes create missing directories only
-with `--parents`. Sync and mirror
-delete only with explicit `--delete`; preview destructive syncs with `--dry-run`.
-Remote search is intentionally an ordinary command, for example:
+from the last `fs read`. Sync and mirror delete only with explicit `--delete`.
+Remote search stays an ordinary command:
 
 ```bash
 rhost --host gpu --cwd '~/work/project' -- 'rg TODO src'
 ```
 
-## Architecture
+## What rhost does not own
 
-The CLI process owns no durable remote work. OpenSSH ControlMaster owns transport
-reuse, remote tmux owns sessions, and detached remote processes plus remote files
-own jobs. Killing and restarting `rhost` therefore does not erase state it
-promised to preserve.
+rhost does not manage SSH keys, maintain a host database, install a remote
+agent, run a daemon, or define a deployment language.
+
+OpenSSH owns connections and authentication. Remote tmux owns persistent
+terminals. Remote processes own jobs. The filesystem owns files. rhost owns the
+contract between those components and the caller.
+
+## Structured results
+
+Every agent-visible behavior has a `--json` path. JSON mode writes exactly one
+versioned document to stdout, never mixes progress or command output into it,
+and provides stable `error.code` values. Its execution data includes the remote
+exit code, stdout and stderr, byte counts, truncation flags, duration,
+timeout/cancellation state, and whether cleanup was confirmed.
+
+| Process status | Meaning |
+|---|---|
+| 0–254 | Remote command status |
+| 124 | rhost execution deadline |
+| 130 / 143 | rhost handled SIGINT / SIGTERM |
+| 255 | Adapter, transport, usage, or local output failure |
+
+A remote program can return the same numeric values. In ambiguous cases inspect
+`ok`, `data.exit_code`, and `error.code` instead of branching on English text.
+
+## Use as an agent skill
+
+The repository includes a concise skill that teaches an agent to prefer normal
+commands and select jobs, sessions, file operations, or tunnels only when their
+extra guarantees are needed:
+
+```text
+$skill-installer install the rhost skill from
+https://github.com/starfield17/rhost/tree/main/skills/rhost
+```
+
+The repository also carries a portable Agent Plugin manifest. The plugin
+packages the same skill and requires the `rhost` CLI to be installed separately.
+
+## Design and verification
+
+The CLI process owns no durable remote work. Killing and restarting it does not
+erase state it promised to preserve.
 
 - [Project overview](docs/PROJECT_OVERVIEW.md)
-- [Architecture map](docs/ARCHITECTURE.md)
+- [Architecture and ownership](docs/ARCHITECTURE.md)
 - [Agent skill](skills/rhost/SKILL.md)
 - [JSON envelope schema](schemas/result-v1.schema.json)
 - [Contributor rules](AGENTS.md)
 
-## Build and verification
-
 ```bash
-make build
 make check
 
-RHOST_TEST_HOST=<user>@<host> make test-live-smoke
 RHOST_TEST_HOST=<user>@<host> make test-live
 RHOST_TEST_HOST=<user>@<host> make test-live-session
 RHOST_TEST_HOST=<user>@<host> make test-live-all
 ```
 
 Live suites always take their target from `RHOST_TEST_HOST`; the repository has
-no machine-specific default. The remote side is an SSH-reachable Linux host and
-the local side is macOS or Linux. Use `test-live-smoke` for frequent checks of
-the main exec, file, session and job workflows; `test-live-all` remains the full
-failure, persistence and transport gate.
+no machine-specific default. See the architecture documents for the exact
+runtime, persistence, file, and recovery contracts.

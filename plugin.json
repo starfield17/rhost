@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "rhost",
+  "version": "1.0.0",
+  "description": "Use an installed rhost CLI to run local-like commands on SSH-reachable machines.",
+  "author": {
+    "name": "starfield17",
+    "url": "https://github.com/starfield17"
+  },
+  "homepage": "https://github.com/starfield17/rhost",
+  "repository": "https://github.com/starfield17/rhost",
+  "license": "MIT",
+  "keywords": [
+    "remote-execution",
+    "ssh",
+    "coding-agents",
+    "codex"
+  ]
+}
