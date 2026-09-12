@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TestValidateRemotePathRejectsOnlyPairedOuterQuotes(t *testing.T) {
+	for _, path := range []string{"'~/work/file'", `"/srv/work/file"`} {
+		if err := ValidateRemotePath(path); err == nil {
+			t.Errorf("ValidateRemotePath(%q) accepted outer quotes", path)
+		}
+	}
+	for _, path := range []string{"author's-note", `report"draft`, "'leading", `trailing"`} {
+		if err := ValidateRemotePath(path); err != nil {
+			t.Errorf("ValidateRemotePath(%q) = %v", path, err)
+		}
+	}
+}
+
 // The rule under test is which remote paths need help getting through *two*
 // parsers — rsync's own split of `host:path`, then the remote login shell — and
 // which route is used for each rsync implementation. Both branches are decided by

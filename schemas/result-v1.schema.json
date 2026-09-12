@@ -51,6 +51,7 @@
               "enum": [
                 "CONFIG_INVALID",
                 "FILE_CONFLICT",
+                "HASH_REQUIRED",
                 "FILE_NOT_FOUND",
                 "FILE_TOO_LARGE",
                 "HOST_KEY_FAILED",
@@ -143,7 +144,10 @@
           "type": "string"
         },
         "exit_code": {
-          "type": "integer"
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "timed_out": {
           "type": "boolean"
@@ -185,6 +189,46 @@
         "more": {
           "type": "boolean"
         }
+      }
+    },
+    "session_recover": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "session_preserved"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "session_preserved": {
+          "type": "boolean"
+        },
+        "foreground": {
+          "type": "string"
+        }
+      }
+    },
+    "tunnel": {
+      "type": "object",
+      "required": [
+        "tunnel_id",
+        "id",
+        "host",
+        "kind",
+        "listen",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tunnel_id": { "type": "string" },
+        "id": { "type": "string" },
+        "host": { "type": "string" },
+        "kind": { "type": "string" },
+        "listen": { "type": "string" },
+        "destination": { "type": "string" },
+        "status": { "type": "string" }
       }
     },
     "job_start": {
@@ -530,6 +574,76 @@
               },
               {
                 "$ref": "#/definitions/session_read"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.recover"
+          }
+        },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              { "type": "null" },
+              { "$ref": "#/definitions/session_recover" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "tunnel.open"
+          }
+        },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              { "type": "null" },
+              { "$ref": "#/definitions/tunnel" }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "tunnel.list"
+          }
+        },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "required": ["tunnels"],
+                "additionalProperties": false,
+                "properties": {
+                  "tunnels": {
+                    "type": "array",
+                    "items": { "$ref": "#/definitions/tunnel" }
+                  }
+                }
               }
             ]
           }

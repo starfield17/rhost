@@ -42,7 +42,9 @@ var remoteFileOps = map[string]struct {
 			"needs no precondition; replacing one requires --if-hash with the " +
 			"SHA-256 from `fs read`, so a file that changed since it was read is " +
 			"never overwritten. The replacement is atomic within the directory and " +
-			"keeps the existing file's permissions.",
+			"keeps the existing file's permissions. Missing required hashes return " +
+			"HASH_REQUIRED; stale hashes return FILE_CONFLICT. Outer quote characters " +
+			"in the path value return CONFIG_INVALID, even with --parents.",
 		timeout: 60 * time.Second,
 	},
 	"patch": {
@@ -51,7 +53,9 @@ var remoteFileOps = map[string]struct {
 		long: "Apply edits described in a JSON document: {\"sha256\": \"<from fs read>\", " +
 			"\"edits\": [{\"start\": 2, \"end\": 3, \"text\": \"replacement\\n\"}]}. Ranges are " +
 			"1-based, inclusive, and refer to the file as it was when the hash was " +
-			"taken; overlapping or out-of-range edits are refused with INVALID_PATCH.",
+			"taken; overlapping or out-of-range edits are refused with INVALID_PATCH. " +
+			"A missing hash for an existing file returns HASH_REQUIRED; a stale hash " +
+			"returns FILE_CONFLICT.",
 		timeout: 60 * time.Second,
 	},
 }

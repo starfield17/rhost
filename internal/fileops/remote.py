@@ -51,6 +51,9 @@ def request_path(q):
     value = q.get('path') or '.'
     if type(value) is not str:
         raise Failure('CONFIG_INVALID', 'path must be a string')
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        raise Failure('CONFIG_INVALID',
+                      'path includes outer shell quotes; quote the argument without making quotes part of the path')
     return os.path.abspath(os.path.expanduser(value))
 
 
@@ -266,6 +269,8 @@ def write_or_patch(q, path):
         expected = q.get('if_hash', '')
         if type(expected) is not str:
             raise Failure('CONFIG_INVALID', 'if_hash must be a string')
+        if exists and not expected:
+            raise Failure('HASH_REQUIRED', 'an existing file requires if_hash from fs read')
         if (exists and expected != digest(old)) or (not exists and (expected or op == 'patch')):
             raise Failure('FILE_CONFLICT', 'file changed or expected target is missing')
 

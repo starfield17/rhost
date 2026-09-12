@@ -95,6 +95,19 @@ func TestTunnelRecordIsNamedAfterItself(t *testing.T) {
 	if _, err := readTunnel(id); err == nil || !strings.Contains(err.Error(), "describes") {
 		t.Errorf("a mismatched record = %v, want it named", err)
 	}
+	for _, record := range []string{
+		`{"id":"` + id + `"}`,
+		`{"tunnel_id":"` + id + `"}`,
+		`{"id":"` + id + `","tunnel_id":"` + id + `"}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, id+".json"), []byte(record), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := readTunnel(id)
+		if err != nil || restored.ID != id || restored.TunnelID != id {
+			t.Fatalf("record normalization: %+v, %v", restored, err)
+		}
+	}
 	// Anything else in the directory is somebody else's name: it is not a tunnel,
 	// and never becomes one because a file happened to be there.
 	if err := os.WriteFile(filepath.Join(dir, "notes.json"), []byte(`{}`), 0o600); err != nil {

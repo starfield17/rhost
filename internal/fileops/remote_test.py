@@ -61,6 +61,19 @@ class RemoteFilesTest(unittest.TestCase):
         home = self.request(op='read', path='~/.rhost-does-not-exist-here')
         self.assertEqual(home.get('error'), 'FILE_NOT_FOUND')
 
+    def test_outer_path_quotes_are_rejected_but_inner_quotes_are_literal(self):
+        quoted_parent = self.root / 'must-not-exist'
+        quoted = "'%s'" % (quoted_parent / 'file')
+        self.assertEqual(self.code(op='write', path=quoted, parents=True,
+                                   content=base64.b64encode(b'x').decode()),
+                         'CONFIG_INVALID')
+        self.assertFalse(quoted_parent.exists())
+
+        inner = self.root / "author's-note"
+        self.request(op='write', path=str(inner),
+                     content=base64.b64encode(b'ok').decode())
+        self.assertEqual(inner.read_bytes(), b'ok')
+
     def test_read_refuses_non_files(self):
         self.assertEqual(self.code(op='read', path=str(self.root)), 'INVALID_TARGET')
         self.assertEqual(self.code(op='read', path=str(self.root / 'missing')), 'FILE_NOT_FOUND')
@@ -161,8 +174,15 @@ class RemoteFilesTest(unittest.TestCase):
         path = self.root / 'text'
         path.write_text('one\ntwo\n')
         self.assertEqual(self.code(op='write', path=str(path),
-                                   content=base64.b64encode(b'x').decode()), 'FILE_CONFLICT')
+                                   content=base64.b64encode(b'x').decode()), 'HASH_REQUIRED')
         self.assertEqual(path.read_text(), 'one\ntwo\n')
+        stale = '0' * 64
+        self.assertEqual(self.code(op='write', path=str(path), if_hash=stale,
+                                   content=base64.b64encode(b'x').decode()), 'FILE_CONFLICT')
+        current = hashlib.sha256(path.read_bytes()).hexdigest()
+        self.request(op='write', path=str(path), if_hash=current,
+                     content=base64.b64encode(b'x').decode())
+        self.assertEqual(path.read_bytes(), b'x')
 
     def test_patch_conflict_ranges_and_symlink(self):
         path = self.root / 'text'

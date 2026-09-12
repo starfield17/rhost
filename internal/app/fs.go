@@ -173,6 +173,9 @@ func clip(s string, max int) string {
 
 // FsPut copies one local file to a remote path.
 func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *errs.Error) {
+	if err := fileops.ValidateRemotePath(opts.Remote); err != nil {
+		return FsTransferResult{}, transferValidation(err)
+	}
 	local, err := fileops.LocalArg(opts.LocalPath)
 	if err != nil {
 		return FsTransferResult{}, transferValidation(err)
@@ -247,6 +250,9 @@ func remoteParentCommand(remote string) string {
 
 // FsGet copies one remote file to a local path.
 func (a *App) FsGet(ctx context.Context, opts FsGetOptions) (FsTransferResult, *errs.Error) {
+	if err := fileops.ValidateRemotePath(opts.Remote); err != nil {
+		return FsTransferResult{}, transferValidation(err)
+	}
 	if opts.Resume || opts.Checksum {
 		return a.verifiedTransfer(ctx, opts.Host, opts.LocalPath, opts.Remote, true, opts.Resume, opts.Checksum, opts.timeout())
 	}
@@ -294,6 +300,9 @@ func (a *App) FsGet(ctx context.Context, opts FsGetOptions) (FsTransferResult, *
 // unless --delete was asked for, and --dry-run reports the plan without running
 // any of it (docs/architecture/files-and-json.md).
 func (a *App) FsSync(ctx context.Context, opts FsSyncOptions) (FsSyncResult, *errs.Error) {
+	if err := fileops.ValidateRemotePath(opts.Remote); err != nil {
+		return FsSyncResult{}, transferValidation(err)
+	}
 	local, err := fileops.LocalArg(opts.LocalPath)
 	if err != nil {
 		return FsSyncResult{}, transferValidation(err)
@@ -451,6 +460,9 @@ func (a *App) runTool(ctx context.Context, bin string, args []string, timeout ti
 // are a dropped connection or a full disk elsewhere, and rhost does not sort
 // those by matching the tool's English text (§33).
 func transferValidation(err error) *errs.Error {
+	if invalid, ok := err.(fileops.ErrInvalidPath); ok {
+		return errs.New(errs.ConfigInvalid, invalid.Error(), false)
+	}
 	if rejected, ok := err.(fileops.ErrRejected); ok {
 		return errs.New(errs.SyncRejected, rejected.Error(), false)
 	}

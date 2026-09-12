@@ -32,11 +32,21 @@ type SessionInfo struct {
 type SessionExecResult struct {
 	SessionID string
 	Output    string
-	ExitCode  int
-	TimedOut  bool
+	// ExitCode is nil unless this invocation produced token-bound completion
+	// evidence. A protocol failure must never acquire a default successful code.
+	ExitCode *int
+	TimedOut bool
 	// SessionPreserved is the answer to the only question that matters after a
 	// timeout: is this session still usable, or is something still running in it?
 	// True means the pane was observed returning to a prompt.
+	SessionPreserved bool
+}
+
+// SessionRecoverResult reports whether recover observed the managed shell at a
+// fresh prompt. Foreground is present when another program still owns the pane.
+type SessionRecoverResult struct {
+	SessionID        string
+	Foreground       string
 	SessionPreserved bool
 }
 
@@ -68,6 +78,14 @@ func newSessionID() (string, error) {
 		return "", err
 	}
 	return "s_" + hex.EncodeToString(b), nil
+}
+
+func newSessionToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // sessionHelperTimeout is the transport-level budget for one session helper.
@@ -116,6 +134,8 @@ func mapHelperErr(code string) *errs.Error {
 		return errs.New(errs.ConfigInvalid, "session name is already in use", false)
 	case "newfailed":
 		return errs.New(errs.SessionUnhealthy, "could not create the tmux session", true)
+	case "protocol":
+		return errs.New(errs.SessionUnhealthy, "session helper returned incomplete or invalid completion evidence", true)
 	default:
 		return errs.New(errs.SessionUnhealthy, "session helper error: "+code, true)
 	}
@@ -206,12 +226,17 @@ func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, t
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
-	script := tmux.ExecScript(nameOrID, command, timeout)
+	token, err := newSessionToken()
+	if err != nil {
+		return SessionExecResult{SessionID: nameOrID},
+			errs.Wrap(errs.Internal, "could not generate session command token", false, err)
+	}
+	script := tmux.ExecScript(nameOrID, command, timeout, token)
 	res, aerr := a.runHelper(ctx, host, script, sessionHelperTimeout(timeout))
 	if aerr != nil {
 		return SessionExecResult{}, aerr
 	}
-	oc := tmux.ParseExec(string(res.Stdout))
+	oc := tmux.ParseExec(string(res.Stdout), token)
 	if oc.Err != "" {
 		// The session survived the helper's own interrupt only if the pane came back
 		// to a prompt, so `session_preserved` is the helper's answer, not a guess
@@ -222,12 +247,39 @@ func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, t
 			SessionPreserved: oc.Recovered,
 		}, mapSessionExecErr(oc)
 	}
+	code := oc.ExitCode
 	return SessionExecResult{
 		SessionID:        nameOrID,
 		SessionPreserved: true,
 		Output:           shell.StripANSI(oc.Output),
-		ExitCode:         oc.ExitCode,
+		ExitCode:         &code,
 	}, nil
+}
+
+// SessionRecover interrupts a session under the same remote writer lock as
+// exec/send. It never types an exit command into a surviving REPL.
+func (a *App) SessionRecover(ctx context.Context, host, nameOrID string, timeout time.Duration) (SessionRecoverResult, *errs.Error) {
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	result := SessionRecoverResult{SessionID: nameOrID}
+	res, aerr := a.runHelper(ctx, host, tmux.RecoverScript(nameOrID, timeout), sessionHelperTimeout(timeout))
+	if aerr != nil {
+		return result, aerr
+	}
+	stdout := string(res.Stdout)
+	if code := extractField(stdout, "RHOST_ERR="); code != "" {
+		result.Foreground = extractField(stdout, "RHOST_FG=")
+		if code == "busy" {
+			return result, mapSessionExecErr(tmux.ExecOutcome{Err: code, Foreground: result.Foreground})
+		}
+		return result, mapHelperErr(code)
+	}
+	if !strings.Contains(stdout, "RHOST_OK=recovered") {
+		return result, mapHelperErr("protocol")
+	}
+	result.SessionPreserved = true
+	return result, nil
 }
 
 // mapSessionExecErr turns an exec helper failure into the taxonomy. `busy` is the

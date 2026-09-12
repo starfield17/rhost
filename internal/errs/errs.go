@@ -41,6 +41,7 @@ const (
 	UnsupportedRemoteOS Code = "UNSUPPORTED_REMOTE_OS"
 	Internal            Code = "INTERNAL"
 	FileConflict        Code = "FILE_CONFLICT"
+	HashRequired        Code = "HASH_REQUIRED"
 	FileTooLarge        Code = "FILE_TOO_LARGE"
 	InvalidText         Code = "INVALID_TEXT"
 	TunnelFailed        Code = "TUNNEL_FAILED"
@@ -63,7 +64,7 @@ var allCodes = []Code{
 	HostKeyFailed, RemoteDependencyMissing, RemoteCommandTimeout, RemoteCommandCancelled,
 	OutputWriteFailed, SessionBusy,
 	SessionNotFound, SessionUnhealthy, JobNotFound, JobStateUnknown, TransferFailed, SyncRejected,
-	UnsupportedRemoteOS, Internal, FileConflict, FileTooLarge, InvalidText,
+	UnsupportedRemoteOS, Internal, FileConflict, HashRequired, FileTooLarge, InvalidText,
 	TunnelFailed, FileNotFound, InvalidTarget, InvalidPatch,
 	TunnelNotFound,
 }

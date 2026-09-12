@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -159,8 +160,8 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 
 	tmux := shell.Quote(meta.TmuxSession)
 	pane := shell.Quote(meta.TmuxSession + ":0.0")
-	b.WriteString("created=notyet\n")
-	b.WriteString("cleanup() { if [ \"$created\" = yes ]; then tmux kill-session -t " + tmux + " 2>/dev/null; rm -rf \"$DIR\"; fi; }\n")
+	b.WriteString("created=notyet; INTBUF=rhost_int_$$\n")
+	b.WriteString("cleanup() { tmux delete-buffer -b \"$INTBUF\" 2>/dev/null; if [ \"$created\" = yes ]; then tmux kill-session -t " + tmux + " 2>/dev/null; rm -rf \"$DIR\"; fi; }\n")
 	b.WriteString("trap cleanup EXIT\n")
 	b.WriteString("trap 'exit 1' HUP INT TERM\n")
 	p("tmux kill-session -t %s 2>/dev/null\n", tmux)
@@ -180,9 +181,9 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	p("i=0; while [ \"$i\" -lt 200 ]; do c=$(tmux display-message -p -t %s '#{pane_current_command}' 2>/dev/null); [ \"$c\" = bash ] && break; sleep 0.1; i=$((i+1)); done\n", pane)
 
 	// Inject the integration script, then wait for the readiness file.
-	p("printf '%%s' '%s' | base64 -d | tmux load-buffer -b rhost_int -\n", b64(integrationScript(meta.ID)))
-	p("tmux paste-buffer -b rhost_int -t %s 2>/dev/null\n", pane)
-	b.WriteString("tmux delete-buffer -b rhost_int 2>/dev/null\n")
+	p("printf '%%s' '%s' | base64 -d | tmux load-buffer -b \"$INTBUF\" -\n", b64(integrationScript(meta.ID)))
+	p("tmux paste-buffer -b \"$INTBUF\" -t %s 2>/dev/null\n", pane)
+	b.WriteString("tmux delete-buffer -b \"$INTBUF\" 2>/dev/null\n")
 	p("tmux send-keys -t %s Enter\n", pane)
 	b.WriteString("i=0; while [ \"$i\" -lt 100 ]; do [ -f \"$DIR/ready\" ] && break; sleep 0.1; i=$((i+1)); done\n")
 	b.WriteString("if [ ! -f \"$DIR/ready\" ]; then tmux kill-session -t " + tmux + " 2>/dev/null; rm -rf \"$DIR\"; echo RHOST_ERR=notready; exit 0; fi\n")
@@ -229,8 +230,9 @@ const markerScanFunc = `rh_window() {
 }
 `
 
-// ExecScript runs a command in an existing session and prints `RHOST_EXIT=<code>`
-// followed by the base64 of the command's output.
+// ExecScript runs a command in an existing session. Its result is accepted only
+// when the pane emits a completion marker carrying token and a valid shell exit
+// status; the generic OSC 133 D marker is used only to prove prompt readiness.
 //
 // It serialises writers with a non-blocking flock: another writer holding the
 // lock is SESSION_UNHEALTHY immediately (retryable), not a 30s queue. Then it
@@ -244,8 +246,9 @@ const markerScanFunc = `rh_window() {
 // The refusal is its own code (busy, with the foreground command in RHOST_FG)
 // because it is not a failure of the session — it is the caller asking the wrong
 // tool for the job.
-func ExecScript(nameOrID, command string, timeout time.Duration) string {
-	cmdB64 := b64(command)
+func ExecScript(nameOrID, command string, timeout time.Duration, token string) string {
+	payload := "{\n" + command + "\ncommand printf '\\033]133;R;" + token + ";%d\\007' \"$?\"\n}"
+	cmdB64 := b64(payload)
 	timeoutSec := int(timeout / time.Second)
 	if timeoutSec < 1 {
 		timeoutSec = 1
@@ -264,6 +267,9 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	b.WriteString("exec 9>\"$LOCK\" || { echo RHOST_ERR=nosession; exit 0; }\n")
 	b.WriteString("flock -n 9 || { echo RHOST_ERR=locked; exit 0; }\n")
 	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
+	b.WriteString("BUF=rhost_cmd_$$\n")
+	b.WriteString("cleanup() { tmux delete-buffer -b \"$BUF\" 2>/dev/null; }\n")
+	b.WriteString("trap cleanup EXIT; trap 'exit 1' HUP INT TERM\n")
 
 	// Everything below types into the pane's terminal. That is only safe while
 	// the managed shell owns the foreground: after `session send --data 'python\n'`
@@ -285,18 +291,25 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	// while a marker can never straddle two polls unnoticed.
 	b.WriteString(markerScanFunc)
 	b.WriteString("pre=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n")
-	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" 'stty -echo 2>/dev/null' Enter\n")
+	b.WriteString("TTY=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_tty}' 2>/dev/null)\n")
+	b.WriteString("[ -n \"$TTY\" ] || { echo RHOST_ERR=notty; exit 0; }\n")
+	b.WriteString("stty -echo < \"$TTY\" 2>/dev/null || { echo RHOST_ERR=notty; exit 0; }\n")
 	b.WriteString("dpat=$(printf '\\033]133;D;'); dlen=${#dpat}\n")
+	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" Enter\n")
 	b.WriteString("floor=$((pre + 1)); scan=$floor; i=0; while [ \"$i\" -lt 50 ]; do rh_window && break; sleep 0.1; i=$((i+1)); done\n")
+	b.WriteString("[ \"$i\" -lt 50 ] || { echo RHOST_ERR=notready; exit 0; }\n")
+	b.WriteString("fg=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_current_command}' 2>/dev/null)\n")
+	b.WriteString("if [ -z \"$fg\" ]; then echo RHOST_ERR=unknownfg; exit 0; fi\n")
+	b.WriteString("if [ \"$fg\" != \"$want\" ]; then echo \"RHOST_FG=$fg\"; echo RHOST_ERR=busy; exit 0; fi\n")
 	b.WriteString("start=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n")
 
 	// Paste the command as one compound command so it produces a single D.
 	b.WriteString("cmd=$(printf '%s' '" + cmdB64 + "' | base64 -d)\n")
-	b.WriteString("payload=\"{ $cmd\n}\"\n")
-	b.WriteString("printf '%s' \"$payload\" | tmux load-buffer -b rhost_cmd -\n")
-	b.WriteString("tmux paste-buffer -b rhost_cmd -t \"$TMUX:0.0\" 2>/dev/null\n")
-	b.WriteString("tmux delete-buffer -b rhost_cmd 2>/dev/null\n")
+	b.WriteString("printf '%s' \"$cmd\" | tmux load-buffer -b \"$BUF\" -\n")
+	b.WriteString("tmux paste-buffer -b \"$BUF\" -t \"$TMUX:0.0\" 2>/dev/null\n")
+	b.WriteString("tmux delete-buffer -b \"$BUF\" 2>/dev/null\n")
 	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" Enter\n")
+	b.WriteString("rpat=$(printf '\\033]133;R;" + token + ";'); dpat=$rpat; dlen=${#dpat}\n")
 
 	// Wait for the next D marker after start, incrementally and with backoff, but
 	// bail out early if the pane's shell dies (for example the command was `exit`).
@@ -310,28 +323,36 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	// sending a command into it.
 	b.WriteString("if [ \"$found\" != 1 ]; then\n")
 	b.WriteString("  tmux send-keys -t \"$TMUX:0.0\" C-c 2>/dev/null\n")
-	b.WriteString("  recovered=0; i=0\n")
+	b.WriteString("  recovered=0; dpat=$(printf '\\033]133;D;'); dlen=${#dpat}; floor=$((scan + 1)); scan=$floor; i=0\n")
 	b.WriteString("  while [ \"$i\" -lt 50 ]; do rh_window && { recovered=1; break; }; sleep 0.1; i=$((i+1)); done\n")
+	b.WriteString("  fg=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_current_command}' 2>/dev/null)\n")
+	b.WriteString("  [ \"$fg\" = \"$want\" ] || recovered=0\n")
 	b.WriteString("  echo \"RHOST_RECOVERED=$recovered\"\n")
 	b.WriteString("  echo RHOST_ERR=timeout\n")
 	b.WriteString("  exit 0\n")
 	b.WriteString("fi\n")
 
-	// Locate the first D at/after start, emit exit code then the region before it.
-	p("dline=$(tail -c +$((start+1)) \"$LOG\" | grep -aboF %s | head -1)\n", `"$dpat"`)
+	// Locate this invocation's token marker, validate its code and then emit the
+	// exact three-field helper result. ParseExec independently validates it again.
+	p("dline=$(tail -c +$((start+1)) \"$LOG\" | grep -aboF %s | head -1)\n", `"$rpat"`)
 	b.WriteString("doff=${dline%%:*}\n")
 	b.WriteString("abs=$((start + doff))\n")
-	b.WriteString("seg=$(tail -c +$((abs+1)) \"$LOG\" | head -c 24)\n")
+	b.WriteString("seg=$(tail -c +$((abs+1)) \"$LOG\" | head -c $((dlen + 8)))\n")
 	// Take the digits that follow the marker *we located*: strip that exact prefix,
 	// then keep the leading run of digits. A greedy sed over the whole 24-byte
 	// window would read the *last* `;D;` in it, so a command whose marker sat next
 	// to another one (an interrupt landing right after it) reported the wrong code.
-	b.WriteString("tmp=${seg#\"$dpat\"}\n")
+	b.WriteString("tmp=${seg#\"$rpat\"}\n")
 	b.WriteString("code=${tmp%%[!0-9]*}\n")
-	b.WriteString("[ -n \"$code\" ] || code=-1\n")
+	b.WriteString("bel=$(printf '\\007'); after=${tmp#\"$code\"}\n")
+	b.WriteString("case \"$code\" in ''|*[!0-9]*) echo RHOST_ERR=protocol; exit 0;; esac\n")
+	b.WriteString("[ \"$code\" -le 255 ] 2>/dev/null || { echo RHOST_ERR=protocol; exit 0; }\n")
+	b.WriteString("[ \"${after#\"$bel\"}\" != \"$after\" ] || { echo RHOST_ERR=protocol; exit 0; }\n")
+	b.WriteString("echo \"RHOST_TOKEN=" + token + "\"\n")
 	b.WriteString("echo \"RHOST_EXIT=$code\"\n")
+	b.WriteString("printf 'RHOST_OUTPUT='\n")
 	b.WriteString("tail -c +$((start+1)) \"$LOG\" | head -c $((abs - start)) | base64 -w0\n")
-	b.WriteString("echo\n")
+	b.WriteString("printf '\\n'\n")
 	return b.String()
 }
 
@@ -346,19 +367,70 @@ func SendScript(nameOrID, kind, payload string) string {
 	b.WriteString(resolveFunc)
 	p("RHOST_RESOLVE %s || { echo RHOST_ERR=nosession; exit 0; }\n", shell.Quote(nameOrID))
 	b.WriteString(tmuxPreflight)
-	b.WriteString("TMUX=\"$RHOST_TMUX\"\n")
+	b.WriteString(flockPreflight)
+	b.WriteString("DIR=\"$RHOST_DIR\"; TMUX=\"$RHOST_TMUX\"; LOCK=\"$DIR/lock\"\n")
+	b.WriteString("exec 9>\"$LOCK\" || { echo RHOST_ERR=nosession; exit 0; }\n")
+	b.WriteString("flock -n 9 || { echo RHOST_ERR=locked; exit 0; }\n")
 	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
+	b.WriteString("BUF=rhost_send_$$\n")
+	b.WriteString("cleanup() { tmux delete-buffer -b \"$BUF\" 2>/dev/null; }\n")
+	b.WriteString("trap cleanup EXIT; trap 'exit 1' HUP INT TERM\n")
+	b.WriteString("TTY=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_tty}' 2>/dev/null)\n")
+	b.WriteString("[ -n \"$TTY\" ] || { echo RHOST_ERR=notty; exit 0; }\n")
+	b.WriteString("stty -echo < \"$TTY\" 2>/dev/null || { echo RHOST_ERR=notty; exit 0; }\n")
 	if kind == "key" {
 		p("tmux send-keys -t \"$TMUX:0.0\" %s\n", shell.Quote(payload))
 	} else {
-		p("printf '%%s' '%s' | base64 -d | tmux load-buffer -b rhost_send -\n", b64(payload))
-		b.WriteString("tmux paste-buffer -b rhost_send -t \"$TMUX:0.0\" 2>/dev/null\n")
-		b.WriteString("tmux delete-buffer -b rhost_send 2>/dev/null\n")
+		p("printf '%%s' '%s' | base64 -d | tmux load-buffer -b \"$BUF\" -\n", b64(payload))
+		b.WriteString("tmux paste-buffer -b \"$BUF\" -t \"$TMUX:0.0\" 2>/dev/null\n")
+		b.WriteString("tmux delete-buffer -b \"$BUF\" 2>/dev/null\n")
 		if kind == "data-enter" {
 			b.WriteString("tmux send-keys -t \"$TMUX:0.0\" Enter\n")
 		}
 	}
 	b.WriteString("echo RHOST_OK=sent\n")
+	return b.String()
+}
+
+// RecoverScript interrupts the pane under the same writer lock as exec/send,
+// then proves both that the managed shell owns the foreground and that its
+// prompt emitted a fresh readiness marker. A REPL that catches Ctrl-C remains
+// busy and is reported without sending it an exit command.
+func RecoverScript(nameOrID string, timeout time.Duration) string {
+	timeoutSec := int(timeout / time.Second)
+	if timeoutSec < 1 {
+		timeoutSec = 1
+	}
+	var b strings.Builder
+	p := func(format string, a ...interface{}) { fmt.Fprintf(&b, format, a...) }
+	b.WriteString(basePreamble)
+	b.WriteString(resolveFunc)
+	p("RHOST_RESOLVE %s || { echo RHOST_ERR=nosession; exit 0; }\n", shell.Quote(nameOrID))
+	b.WriteString(tmuxPreflight)
+	b.WriteString(flockPreflight)
+	b.WriteString("DIR=\"$RHOST_DIR\"; LOG=\"${RHOST_DIR%/}/pty.log\"; LOCK=\"$DIR/lock\"; TMUX=\"$RHOST_TMUX\"\n")
+	b.WriteString("exec 9>\"$LOCK\" || { echo RHOST_ERR=nosession; exit 0; }\n")
+	b.WriteString("flock -n 9 || { echo RHOST_ERR=locked; exit 0; }\n")
+	b.WriteString("tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=nosession; exit 0; }\n")
+	b.WriteString(shellOfFunc)
+	b.WriteString("want=$(RHOST_SHELL_OF \"$DIR/meta.json\" 2>/dev/null); [ -n \"$want\" ] || want=" + shell.Quote(DefaultShell) + "\n")
+	b.WriteString("TTY=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_tty}' 2>/dev/null)\n")
+	b.WriteString("[ -n \"$TTY\" ] || { echo RHOST_ERR=notty; exit 0; }\n")
+	b.WriteString("stty -echo < \"$TTY\" 2>/dev/null || { echo RHOST_ERR=notty; exit 0; }\n")
+	b.WriteString(markerScanFunc)
+	b.WriteString("start=$(wc -c < \"$LOG\" 2>/dev/null || echo 0); dpat=$(printf '\\033]133;D;'); dlen=${#dpat}\n")
+	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" C-c 2>/dev/null\n")
+	p("SECONDS=0; ready=0; floor=$((start + 1)); scan=$floor; while [ \"$SECONDS\" -lt %d ]; do\n", timeoutSec)
+	b.WriteString("  tmux has-session -t \"$TMUX\" 2>/dev/null || { echo RHOST_ERR=sessiondied; exit 0; }\n")
+	b.WriteString("  fg=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_current_command}' 2>/dev/null)\n")
+	b.WriteString("  if [ \"$fg\" = \"$want\" ] && rh_window; then ready=1; break; fi\n")
+	b.WriteString("  sleep 0.1\n")
+	b.WriteString("done\n")
+	b.WriteString("fg=$(tmux display-message -p -t \"$TMUX:0.0\" '#{pane_current_command}' 2>/dev/null)\n")
+	b.WriteString("if [ -z \"$fg\" ]; then echo RHOST_ERR=unknownfg; exit 0; fi\n")
+	b.WriteString("if [ \"$fg\" != \"$want\" ]; then echo \"RHOST_FG=$fg\"; echo RHOST_ERR=busy; exit 0; fi\n")
+	b.WriteString("[ \"$ready\" = 1 ] || { echo RHOST_ERR=notready; exit 0; }\n")
+	b.WriteString("echo RHOST_OK=recovered\n")
 	return b.String()
 }
 
@@ -469,7 +541,7 @@ type ExecOutcome struct {
 }
 
 // ParseExec parses ExecScript output.
-func ParseExec(stdout string) ExecOutcome {
+func ParseExec(stdout, expectedToken string) ExecOutcome {
 	out := ExecOutcome{ExitCode: -1}
 	if err := fieldLine(stdout, "RHOST_ERR="); err != "" {
 		out.Err = err
@@ -477,21 +549,37 @@ func ParseExec(stdout string) ExecOutcome {
 		out.Recovered = fieldLine(stdout, "RHOST_RECOVERED=") == "1"
 		return out
 	}
-	lines := strings.Split(stdout, "\n")
-	var b64buf strings.Builder
-	for _, line := range lines {
-		if strings.HasPrefix(line, "RHOST_EXIT=") {
-			fmt.Sscanf(strings.TrimPrefix(line, "RHOST_EXIT="), "%d", &out.ExitCode)
-			continue
+	var tokens, exits, outputs []string
+	for _, line := range strings.Split(stdout, "\n") {
+		switch {
+		case strings.HasPrefix(line, "RHOST_TOKEN="):
+			tokens = append(tokens, strings.TrimPrefix(line, "RHOST_TOKEN="))
+		case strings.HasPrefix(line, "RHOST_EXIT="):
+			exits = append(exits, strings.TrimPrefix(line, "RHOST_EXIT="))
+		case strings.HasPrefix(line, "RHOST_OUTPUT="):
+			outputs = append(outputs, strings.TrimPrefix(line, "RHOST_OUTPUT="))
+		case line == "":
+		default:
+			out.Err = "protocol"
+			return out
 		}
-		if line == "" || strings.HasPrefix(line, "RHOST_") {
-			continue
-		}
-		b64buf.WriteString(strings.TrimSpace(line))
 	}
-	if raw, err := base64.StdEncoding.DecodeString(b64buf.String()); err == nil {
-		out.Output = string(raw)
+	if expectedToken == "" || len(tokens) != 1 || tokens[0] != expectedToken || len(exits) != 1 || len(outputs) != 1 {
+		out.Err = "protocol"
+		return out
 	}
+	code, err := strconv.Atoi(exits[0])
+	if err != nil || code < 0 || code > 255 || strconv.Itoa(code) != exits[0] {
+		out.Err = "protocol"
+		return out
+	}
+	raw, err := base64.StdEncoding.DecodeString(outputs[0])
+	if err != nil {
+		out.Err = "protocol"
+		return out
+	}
+	out.ExitCode = code
+	out.Output = string(raw)
 	return out
 }
 

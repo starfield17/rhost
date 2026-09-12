@@ -145,7 +145,7 @@ func newSessionExecCmd() *cobra.Command {
 				}
 				return nil
 			}
-			code := res.ExitCode
+			code := *res.ExitCode
 			audit.succeed("", command, &code)
 			if jsonFlag {
 				_ = output.Success("session.exec", host, sessionExecData(res)).Write(os.Stdout)
@@ -155,7 +155,7 @@ func newSessionExecCmd() *cobra.Command {
 					fmt.Fprintln(os.Stdout)
 				}
 			}
-			exitCode = res.ExitCode
+			exitCode = *res.ExitCode
 			return nil
 		},
 	}
@@ -169,7 +169,7 @@ func newSessionExecCmd() *cobra.Command {
 type sessionExecView struct {
 	SessionID        string `json:"session_id"`
 	Stdout           string `json:"stdout"`
-	ExitCode         int    `json:"exit_code"`
+	ExitCode         *int   `json:"exit_code"`
 	TimedOut         bool   `json:"timed_out"`
 	SessionPreserved bool   `json:"session_preserved"`
 }

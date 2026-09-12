@@ -43,6 +43,23 @@ func reject(format string, a ...interface{}) error {
 	return ErrRejected{Msg: fmt.Sprintf(format, a...)}
 }
 
+// ErrInvalidPath is a caller-side path syntax mistake. In particular, shell
+// quotes belong around an argv value; when both quote characters arrive here
+// they would become part of the remote filename.
+type ErrInvalidPath struct{ Msg string }
+
+func (e ErrInvalidPath) Error() string { return e.Msg }
+
+// ValidateRemotePath rejects a pair of outer shell quote characters while
+// preserving quote characters anywhere inside the filename.
+func ValidateRemotePath(path string) error {
+	if len(path) >= 2 && ((path[0] == '\'' && path[len(path)-1] == '\'') ||
+		(path[0] == '"' && path[len(path)-1] == '"')) {
+		return ErrInvalidPath{Msg: fmt.Sprintf("remote path %q includes outer shell quotes; quote the argument without making quotes part of the path", path)}
+	}
+	return nil
+}
+
 // RemoteSpec renders the `host:path` form scp and rsync understand. The host is
 // whatever the user named — an alias, user@host, or a bare hostname — and is
 // never rewritten.
@@ -92,8 +109,18 @@ func ValidateTransferPaths(source, destination string) error {
 	if strings.ContainsAny(source, "\n\x00") {
 		return reject("source path %q contains a newline or NUL", source)
 	}
-	if _, remote, ok := SplitRemoteSpec(source); ok && strings.ContainsAny(remote, "*?[") {
-		return reject("source path %q contains a glob; fs get copies exactly one file", remote)
+	if _, remote, ok := SplitRemoteSpec(source); ok {
+		if err := ValidateRemotePath(remote); err != nil {
+			return err
+		}
+		if strings.ContainsAny(remote, "*?[") {
+			return reject("source path %q contains a glob; fs get copies exactly one file", remote)
+		}
+	}
+	if _, remote, ok := SplitRemoteSpec(destination); ok {
+		if err := ValidateRemotePath(remote); err != nil {
+			return err
+		}
 	}
 	return checkDestination(destination)
 }

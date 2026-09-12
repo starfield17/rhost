@@ -25,6 +25,11 @@ import (
 // derivation leaves room for the JSON envelope around the payload, which is why
 // it is generous rather than exact.
 func (a *App) RemoteFile(ctx context.Context, host string, request map[string]interface{}, timeout time.Duration) (map[string]interface{}, *errs.Error) {
+	if path, ok := request["path"].(string); ok {
+		if err := fileops.ValidateRemotePath(path); err != nil {
+			return nil, errs.New(errs.ConfigInvalid, err.Error(), false)
+		}
+	}
 	if cap, ok := request["max_bytes"]; ok {
 		n, valid := cap.(int)
 		if !valid || n <= 0 || n > 8*1024*1024 {

@@ -30,7 +30,8 @@ import (
 // must be able to stop one forward without dropping the multiplexed connection
 // that exec, session and job traffic are using.
 type Tunnel struct {
-	ID          string `json:"id"`
+	TunnelID    string `json:"tunnel_id"`
+	ID          string `json:"id"` // compatibility alias for pre-v1.2 callers
 	Host        string `json:"host"`
 	Kind        string `json:"kind"`
 	Listen      string `json:"listen"`
@@ -125,6 +126,7 @@ func (c *Client) OpenTunnel(ctx context.Context, host, kind, listen, destination
 		return t, err
 	}
 	t.ID = "t_" + nonce
+	t.TunnelID = t.ID
 	t.Status = TunnelAlive
 
 	if err := config.EnsureControlDir(); err != nil {
@@ -251,7 +253,13 @@ func readTunnel(id string) (Tunnel, error) {
 	if err := json.Unmarshal(data, &t); err != nil {
 		return Tunnel{}, fmt.Errorf("tunnel record %s is unreadable: %w", id, err)
 	}
-	if t.ID != id {
+	if t.TunnelID == "" {
+		t.TunnelID = t.ID
+	}
+	if t.ID == "" {
+		t.ID = t.TunnelID
+	}
+	if t.ID != id || t.TunnelID != id {
 		return Tunnel{}, fmt.Errorf("tunnel record %s describes %s", id, t.ID)
 	}
 	return t, nil

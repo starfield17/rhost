@@ -30,6 +30,9 @@ const ChangeMarker = "RHOSTSYNC|"
 //  4. `.` and `..` are refused always: what they name depends on the remote
 //     tool's working directory, which rhost does not control.
 func RejectSyncTarget(destination string, delete bool) error {
+	if err := ValidateRemotePath(destination); err != nil {
+		return err
+	}
 	destination = path.Clean(destination)
 	if err := checkDestination(destination); err != nil {
 		return err

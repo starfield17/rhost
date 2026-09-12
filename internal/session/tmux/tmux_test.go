@@ -8,9 +8,10 @@ import (
 )
 
 func TestParseExec(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
 	payload := base64.StdEncoding.EncodeToString([]byte("hello\nworld\n"))
 
-	out := ParseExec("RHOST_EXIT=3\n" + payload + "\n")
+	out := ParseExec("RHOST_TOKEN="+token+"\nRHOST_EXIT=3\nRHOST_OUTPUT="+payload+"\n", token)
 	if out.Err != "" {
 		t.Fatalf("unexpected err %q", out.Err)
 	}
@@ -21,14 +22,14 @@ func TestParseExec(t *testing.T) {
 		t.Errorf("output = %q", out.Output)
 	}
 
-	tout := ParseExec("RHOST_ERR=timeout\n")
+	tout := ParseExec("RHOST_ERR=timeout\n", token)
 	if tout.Err != "timeout" {
 		t.Errorf("err = %q, want timeout", tout.Err)
 	}
 
 	// The refusal of a pane owned by another program names that program, because
 	// the caller's next move depends on what it is.
-	busy := ParseExec("RHOST_FG=python3\nRHOST_ERR=busy\n")
+	busy := ParseExec("RHOST_FG=python3\nRHOST_ERR=busy\n", token)
 	if busy.Err != "busy" || busy.Foreground != "python3" {
 		t.Errorf("busy refusal = %+v, want err=busy foreground=python3", busy)
 	}
@@ -37,16 +38,51 @@ func TestParseExec(t *testing.T) {
 	// with whether the pane actually came back. "timed out" and "timed out but the
 	// session is usable" are different instructions to a caller, so the two states
 	// must survive parsing.
-	if out := ParseExec("RHOST_RECOVERED=1\nRHOST_ERR=timeout\n"); out.Err != "timeout" || !out.Recovered {
+	if out := ParseExec("RHOST_RECOVERED=1\nRHOST_ERR=timeout\n", token); out.Err != "timeout" || !out.Recovered {
 		t.Errorf("recovered timeout parsed as %+v", out)
 	}
-	if out := ParseExec("RHOST_RECOVERED=0\nRHOST_ERR=timeout\n"); out.Err != "timeout" || out.Recovered {
+	if out := ParseExec("RHOST_RECOVERED=0\nRHOST_ERR=timeout\n", token); out.Err != "timeout" || out.Recovered {
 		t.Errorf("unrecovered timeout parsed as %+v", out)
 	}
 	// The marker is only ever printed next to a timeout; a clean command must not
 	// pick up a recovered flag out of nowhere.
-	if out := ParseExec("RHOST_EXIT=0\n" + payload + "\n"); out.Recovered {
+	if out := ParseExec("RHOST_TOKEN="+token+"\nRHOST_EXIT=0\nRHOST_OUTPUT="+payload+"\n", token); out.Recovered {
 		t.Errorf("successful command reports Recovered")
+	}
+}
+
+func TestParseExecRejectsIncompleteOrForeignResults(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	validEmpty := "RHOST_TOKEN=" + token + "\nRHOST_EXIT=0\nRHOST_OUTPUT=\n"
+	if out := ParseExec(validEmpty, token); out.Err != "" || out.ExitCode != 0 || out.Output != "" {
+		t.Fatalf("valid empty stdout parsed as %+v", out)
+	}
+
+	cases := map[string]string{
+		"empty response":     "",
+		"missing token":      "RHOST_EXIT=0\nRHOST_OUTPUT=\n",
+		"old marker":         "RHOST_EXIT=0\n\n",
+		"wrong token":        "RHOST_TOKEN=ffffffffffffffffffffffffffffffff\nRHOST_EXIT=0\nRHOST_OUTPUT=\n",
+		"missing exit":       "RHOST_TOKEN=" + token + "\nRHOST_OUTPUT=\n",
+		"negative exit":      "RHOST_TOKEN=" + token + "\nRHOST_EXIT=-1\nRHOST_OUTPUT=\n",
+		"large exit":         "RHOST_TOKEN=" + token + "\nRHOST_EXIT=256\nRHOST_OUTPUT=\n",
+		"non-numeric exit":   "RHOST_TOKEN=" + token + "\nRHOST_EXIT=nope\nRHOST_OUTPUT=\n",
+		"damaged base64":     "RHOST_TOKEN=" + token + "\nRHOST_EXIT=0\nRHOST_OUTPUT=%%%\n",
+		"missing output":     "RHOST_TOKEN=" + token + "\nRHOST_EXIT=0\n",
+		"duplicate evidence": validEmpty + "RHOST_EXIT=0\n",
+	}
+	for name, response := range cases {
+		t.Run(name, func(t *testing.T) {
+			if out := ParseExec(response, token); out.Err != "protocol" || out.ExitCode != -1 {
+				t.Errorf("ParseExec(%q) = %+v, want protocol failure with unknown exit", response, out)
+			}
+		})
+	}
+
+	nonzero := "RHOST_TOKEN=" + token + "\nRHOST_EXIT=7\nRHOST_OUTPUT=" +
+		base64.StdEncoding.EncodeToString([]byte("failed\n")) + "\n"
+	if out := ParseExec(nonzero, token); out.Err != "" || out.ExitCode != 7 || out.Output != "failed\n" {
+		t.Errorf("valid non-zero command parsed as %+v", out)
 	}
 }
 
@@ -153,14 +189,17 @@ func TestIntegrationScriptReadyPath(t *testing.T) {
 }
 
 func TestExecScriptProtocol(t *testing.T) {
-	s := ExecScript("dev", "echo hi", 5*time.Second)
+	s := ExecScript("dev", "echo hi", 5*time.Second, "0123456789abcdef0123456789abcdef")
 	for _, want := range []string{
 		"flock",
 		"RHOST_ERR=noflock",
 		"RHOST_RESOLVE",
 		"133;D;",
+		"133;R;0123456789abcdef0123456789abcdef;",
 		"sessiondied",
+		"RHOST_TOKEN=",
 		"RHOST_EXIT=",
+		"RHOST_OUTPUT=",
 		"stty -echo",
 		"tmux paste-buffer",
 		"grep -aqF",
@@ -203,7 +242,7 @@ func TestExecScriptProtocol(t *testing.T) {
 //     window never reaches before `floor`, so an old command's marker cannot be
 //     mistaken for this one's.
 func TestExecScriptScansEveryByte(t *testing.T) {
-	s := ExecScript("dev", "echo hi", 5*time.Second)
+	s := ExecScript("dev", "echo hi", 5*time.Second, "0123456789abcdef0123456789abcdef")
 	for _, want := range []string{
 		"rh_window() {",
 		"from=$((scan - dlen + 1))",
@@ -223,7 +262,7 @@ func TestExecScriptScansEveryByte(t *testing.T) {
 	}
 	// Exit-code extraction must take the digits after the marker it located, not
 	// the last `;D;` in a 24-byte window that may hold two markers.
-	for _, want := range []string{"tmp=${seg#\"$dpat\"}", "code=${tmp%%[!0-9]*}"} {
+	for _, want := range []string{"tmp=${seg#\"$rpat\"}", "code=${tmp%%[!0-9]*}"} {
 		if !contains(s, want) {
 			t.Errorf("ExecScript exit-code extraction missing %q", want)
 		}
@@ -253,7 +292,7 @@ func TestListAndSendPreflight(t *testing.T) {
 // to come *before* the first byte is sent — the stty probe is itself input — and
 // it has to fail with its own code rather than degrade into a timeout.
 func TestExecScriptRefusesWhenPaneIsBusy(t *testing.T) {
-	s := ExecScript("dev", "echo hi", 5*time.Second)
+	s := ExecScript("dev", "echo hi", 5*time.Second, "0123456789abcdef0123456789abcdef")
 	for _, want := range []string{
 		`want=$(RHOST_SHELL_OF "$DIR/meta.json"`,
 		`#{pane_current_command}`,
@@ -268,8 +307,8 @@ func TestExecScriptRefusesWhenPaneIsBusy(t *testing.T) {
 		}
 	}
 	gate := indexOf(s, "RHOST_ERR=busy")
-	probe := indexOf(s, `send-keys -t "$TMUX:0.0" 'stty -echo`)
-	paste := indexOf(s, "tmux paste-buffer -b rhost_cmd")
+	probe := indexOf(s, `stty -echo < "$TTY"`)
+	paste := indexOf(s, `tmux paste-buffer -b "$BUF"`)
 	if gate < 0 || probe < 0 || paste < 0 {
 		t.Fatalf("ExecScript has no foreground-check/probe/paste sequence: %d %d %d", gate, probe, paste)
 	}
@@ -326,6 +365,37 @@ func TestSendScriptCanPasteThenPressEnter(t *testing.T) {
 	enter := indexOf(s, "tmux send-keys -t \"$TMUX:0.0\" Enter")
 	if paste < 0 || enter < paste {
 		t.Fatalf("data-enter must paste before Enter: paste=%d enter=%d", paste, enter)
+	}
+}
+
+func TestSessionWritersUseLockAndInvocationLocalBuffers(t *testing.T) {
+	for name, s := range map[string]string{
+		"exec":    ExecScript("debug", "true", time.Second, "0123456789abcdef0123456789abcdef"),
+		"send":    SendScript("debug", "data-enter", "print(1)"),
+		"recover": RecoverScript("debug", time.Second),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !contains(s, `flock -n 9`) {
+				t.Errorf("writer does not hold the session lock:\n%s", s)
+			}
+			if contains(s, "-b rhost_cmd ") || contains(s, "-b rhost_send ") || contains(s, "-b rhost_int ") {
+				t.Errorf("writer uses a shared tmux buffer name:\n%s", s)
+			}
+		})
+	}
+}
+
+func TestRecoverScriptChecksForegroundAfterInterrupt(t *testing.T) {
+	s := RecoverScript("debug", time.Second)
+	interrupt := indexOf(s, `send-keys -t "$TMUX:0.0" C-c`)
+	foreground := strings.LastIndex(s, `#{pane_current_command}`)
+	busy := strings.LastIndex(s, `RHOST_ERR=busy`)
+	if interrupt < 0 || foreground < interrupt || busy < foreground {
+		t.Fatalf("recover does not interrupt then re-check foreground: interrupt=%d foreground=%d busy=%d\n%s",
+			interrupt, foreground, busy, s)
+	}
+	if !contains(s, `echo "RHOST_FG=$fg"`) {
+		t.Errorf("recover does not report the remaining foreground process")
 	}
 }
 
