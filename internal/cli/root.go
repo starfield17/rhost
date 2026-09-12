@@ -1,6 +1,6 @@
 // Package cli parses command-line arguments and renders output. It wires the
 // application layer to the terminal; it contains no remote-control logic
-// (docs/ARCHITECTURE.md §3).
+// (docs/ARCHITECTURE.md).
 package cli
 
 import (

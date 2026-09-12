@@ -9,8 +9,7 @@ import (
 	"github.com/starfield17/rhost/internal/shell"
 )
 
-// TestStateMachine pins the documented state derivation (docs/ARCHITECTURE.md
-// §23): an exit-code file is authoritative, a live pid is running *only* when
+// TestStateMachine pins the documented state derivation (docs/architecture/persistent-work.md): an exit-code file is authoritative, a live pid is running *only* when
 // its process identity is verified, and everything else is stale (never
 // success) or stopped once the process is actually gone.
 
@@ -164,7 +163,7 @@ func TestLogsScriptCursorArithmetic(t *testing.T) {
 }
 
 // Every helper that can create a file must do so under a private umask
-// (docs/ARCHITECTURE.md §21). The `stopped` marker once landed 0664 because only
+// (docs/architecture/persistent-work.md). The `stopped` marker once landed 0664 because only
 // the start path set a umask; this check covers every script, including any
 // future one that starts from basePreamble.
 func TestScriptsKeepRemoteStatePrivate(t *testing.T) {

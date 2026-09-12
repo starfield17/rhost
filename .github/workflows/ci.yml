@@ -19,7 +19,8 @@ jobs:
     # first local side is macOS. OpenSSH, unix sockets, rsync (GNU vs openrsync)
     # and PATH all differ between them, and those are what this tool is made of.
     # The labels are pinned rather than `-latest`, and they are the same two the
-    # release workflow re-verifies a tag on (docs/architecture/14 §38).
+    # release workflow re-verifies a tag as described in
+    # docs/architecture/engineering.md.
     strategy:
       fail-fast: false
       matrix:

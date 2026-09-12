@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"strconv"
 	"sync"
@@ -66,9 +65,9 @@ func (a *App) ExecuteStream(ctx context.Context, opts StreamExecOptions) (ExecRe
 			return out, errs.New(errs.RemoteCommandCancelled, "command cancelled", false)
 		}
 		if out.CleanupConfirmed {
-			return out, errs.New(errs.RemoteCommandTimeout, fmt.Sprintf("command exceeded timeout %s", opts.Timeout), true)
+			return out, executionTimeout(opts.Timeout, true)
 		}
-		return out, errs.New(errs.SSHUnreachable, "execution deadline exceeded; remote cleanup could not be confirmed, so the command may still be running", true)
+		return out, executionTimeout(opts.Timeout, false)
 	}
 	if runErr != nil {
 		if errors.Is(runErr, config.ErrUnsafeLocalState) {

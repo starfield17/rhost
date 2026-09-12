@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/starfield17/rhost/internal/config"
 	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/fileops"
+	"github.com/starfield17/rhost/internal/shell"
 )
 
 // FsPutOptions is one local → remote file copy.
@@ -30,6 +32,7 @@ type FsPutOptions struct {
 	// rsync at both ends, and the checksum needs a remote `sha256sum`.
 	Resume   bool
 	Checksum bool
+	Parents  bool
 }
 
 // FsGetOptions is one remote → local file copy.
@@ -170,9 +173,6 @@ func clip(s string, max int) string {
 
 // FsPut copies one local file to a remote path.
 func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *errs.Error) {
-	if opts.Resume || opts.Checksum {
-		return a.verifiedTransfer(ctx, opts.Host, opts.LocalPath, opts.Remote, false, opts.Resume, opts.Checksum, opts.timeout())
-	}
 	local, err := fileops.LocalArg(opts.LocalPath)
 	if err != nil {
 		return FsTransferResult{}, transferValidation(err)
@@ -184,6 +184,14 @@ func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *
 	info, aerr := a.statLocalFile(local, "put")
 	if aerr != nil {
 		return FsTransferResult{}, aerr
+	}
+	if opts.Parents {
+		if e := a.ensureRemoteParent(ctx, opts.Host, opts.Remote, opts.timeout()); e != nil {
+			return FsTransferResult{}, e
+		}
+	}
+	if opts.Resume || opts.Checksum {
+		return a.verifiedTransfer(ctx, opts.Host, opts.LocalPath, opts.Remote, false, opts.Resume, opts.Checksum, opts.timeout())
 	}
 	effectiveRemote, aerr := a.remoteFileOf(ctx, opts.Host, opts.Remote, filepath.Base(local), opts.timeout())
 	if aerr != nil {
@@ -208,6 +216,33 @@ func (a *App) FsPut(ctx context.Context, opts FsPutOptions) (FsTransferResult, *
 		Source: local, Destination: effectiveDst, Backend: fileops.BackendScp,
 		Size: info.Size(), Multiplexed: mux, DurationMS: res.Duration.Milliseconds(),
 	}, nil
+}
+
+func (a *App) ensureRemoteParent(ctx context.Context, host, remote string, timeout time.Duration) *errs.Error {
+	command := remoteParentCommand(remote)
+	if command == "" {
+		return nil
+	}
+	res, e := a.Execute(ctx, ExecOptions{Host: host, Command: command, Timeout: timeout})
+	if e != nil {
+		return e
+	}
+	if res.ExitCode != 0 {
+		return errs.New(errs.TransferFailed, "could not create remote parent directory: "+firstLine(res.Stderr), false)
+	}
+	return nil
+}
+
+func remoteParentCommand(remote string) string {
+	trimmed := strings.TrimRight(remote, "/")
+	parent := path.Dir(trimmed)
+	if strings.HasSuffix(remote, "/") {
+		parent = trimmed
+	}
+	if parent == "." || parent == "" {
+		return ""
+	}
+	return "mkdir -p -- " + shell.PathQuote(parent)
 }
 
 // FsGet copies one remote file to a local path.
@@ -257,7 +292,7 @@ func (a *App) FsGet(ctx context.Context, opts FsGetOptions) (FsTransferResult, *
 
 // FsSync brings a remote directory in line with a local one. Nothing is deleted
 // unless --delete was asked for, and --dry-run reports the plan without running
-// any of it (docs/ARCHITECTURE.md §28).
+// any of it (docs/architecture/files-and-json.md).
 func (a *App) FsSync(ctx context.Context, opts FsSyncOptions) (FsSyncResult, *errs.Error) {
 	local, err := fileops.LocalArg(opts.LocalPath)
 	if err != nil {
@@ -289,7 +324,7 @@ func (a *App) FsSync(ctx context.Context, opts FsSyncOptions) (FsSyncResult, *er
 	if opts.Delete {
 		// A local check cannot see that the remote `/srv/app` is a symlink to `/`,
 		// so a destructive sync also asks the remote what the destination actually
-		// names, and syncs to *that* (docs/ARCHITECTURE.md §28).
+		// names, and syncs to *that* (docs/architecture/files-and-json.md).
 		resolved, e := a.RemoteFile(ctx, opts.Host, map[string]interface{}{
 			"op": "resolve", "path": opts.Remote, "delete": true,
 		}, opts.timeout())

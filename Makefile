@@ -11,7 +11,7 @@ ARTIFACT_VERSION := $(VERSION:v%=%)
 # The four targets that ship, named once. `make dist` builds them, the release
 # workflow re-executes each one on a runner of that platform and architecture,
 # and scripts/check-release-contract.sh fails when the three readers drift
-# (docs/architecture/14-releases-and-installation.md §38).
+# (docs/architecture/engineering.md).
 RELEASE_TARGETS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
 DIST_DIR ?= dist
 
@@ -19,7 +19,7 @@ BASE_LDFLAGS  := -X $(PKG).Commit=$(COMMIT) -X $(PKG).BuildDate=$(DATE)
 LDFLAGS       := -X $(PKG).Version=$(VERSION) $(BASE_LDFLAGS)
 DIST_LDFLAGS  := -X $(PKG).Version=$(ARTIFACT_VERSION) $(BASE_LDFLAGS)
 
-.PHONY: build dist test test-live test-live-session test-live-jobs test-live-fs test-live-tools test-live-all vet fmt fmtcheck check portability contract install-test clean
+.PHONY: build dist test test-live-smoke test-live test-live-session test-live-jobs test-live-fs test-live-tools test-live-all vet fmt fmtcheck check portability contract install-test clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/rhost
@@ -61,33 +61,37 @@ test:
 # Live tests are opt-in and take their target from the environment, so nothing
 # about a specific machine is recorded in this repository (AGENTS.md §1). They
 # drive the built binary as a child process, so persistence is proven across real
-# process exits rather than assumed (docs/ARCHITECTURE.md §41).
+# process exits rather than assumed (docs/architecture/engineering.md).
+test-live-smoke:
+	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run '^TestSmokeLive$$' -v -count=1 -parallel 3 -timeout 5m
+
 test-live:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
-	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveExec|TestLiveDoctor|TestLiveTransportReuse|TestLiveControlPath' -v -timeout 10m
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveExec|TestLiveDoctor|TestLiveTransportReuse|TestLiveControlPath' -v -count=1 -parallel 3 -timeout 10m
 
 test-live-session:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
-	RHOST_TEST_LIVE=1 go test ./internal/app/ -run TestLiveSession -v -timeout 10m
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run TestLiveSession -v -count=1 -parallel 3 -timeout 10m
 
 test-live-jobs:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
-	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveJob' -v -timeout 20m
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveJob' -v -count=1 -parallel 3 -timeout 20m
 
 test-live-fs:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
-	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveFs' -v -timeout 20m
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveFs' -v -count=1 -parallel 3 -timeout 20m
 
 # The tools suite (fs read/write/patch, verified transfer, tunnels, session
 # recovery) is separate because it is the heaviest in remote
 # round trips, and because its tunnel tests open real listeners on both sides.
 test-live-tools:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
-	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveTools|TestLiveTunnel' -v -timeout 20m
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveTools|TestLiveTunnel' -v -count=1 -parallel 3 -timeout 20m
 
 test-live-all:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
-	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLive' -v -timeout 20m
+	RHOST_TEST_LIVE=1 go test ./internal/app/ -run '^TestLive' -v -count=1 -parallel 3 -timeout 20m
 
 vet:
 	go vet ./...

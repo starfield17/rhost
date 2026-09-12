@@ -17,7 +17,7 @@ import (
 	"github.com/starfield17/rhost/internal/output"
 )
 
-// auditTimer records one operation when it finishes (docs/ARCHITECTURE.md §36).
+// auditTimer records one operation when it finishes (docs/architecture/engineering.md).
 //
 // Auditing is fail-open: a write error is reported on stderr and the operation
 // is unaffected, because a full or read-only disk must not make remote work
@@ -81,7 +81,7 @@ func newAuditCmd() *cobra.Command {
 		Use:   "audit",
 		Short: "Read the local audit log of remote operations",
 		Long: `Read rhost's local audit log — a JSON Lines file of the operations this
-machine has run against remote hosts (docs/ARCHITECTURE.md §36).
+machine has run against remote hosts (docs/architecture/engineering.md).
 
 It records bounded operation metadata: no environment maps and no file contents.
 Command summaries are not secret filters, so do not put credentials on a command line.

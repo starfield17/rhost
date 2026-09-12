@@ -88,6 +88,13 @@ func ControlPath() string {
 	return filepath.Join(ControlDir(), "%C")
 }
 
+// ControlPathForCache returns the ControlPath template for an explicit cache
+// root. The live CLI harness uses it without mutating the test process'
+// environment, which lets independent remote scenarios run in parallel.
+func ControlPathForCache(root string) string {
+	return filepath.Join(controlDirIn(root), "%C")
+}
+
 // EnsureControlDir creates the socket directory with user-only permissions.
 func EnsureControlDir() error {
 	dir := ControlDir()
@@ -120,7 +127,7 @@ func ensurePrivateDir(dir string) error {
 }
 
 // StateDir is rhost's local state root; the audit log lives under it
-// (docs/ARCHITECTURE.md §36). It follows the XDG state convention —
+// (docs/architecture/engineering.md). It follows the XDG state convention —
 // $XDG_STATE_HOME, else ~/.local/state — and RHOST_STATE_DIR overrides it for
 // tests and for a user who wants the trail elsewhere. It is deliberately not the
 // config dir: state is data rhost accumulates, not configuration.

@@ -1,7 +1,7 @@
 // Package fileops moves files between this machine and an SSH-reachable host.
 //
 // Two mechanisms, both borrowed from tools a user already has
-// (docs/ARCHITECTURE.md §27):
+// (docs/architecture/files-and-json.md):
 //
 //   - scp   — a single file in either direction;
 //   - rsync — directory sync, with the incremental behaviour and explicit

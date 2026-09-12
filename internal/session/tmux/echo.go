@@ -9,7 +9,7 @@ import "github.com/starfield17/rhost/internal/shell"
 // The flag is a property of the pane's pty, so it is set on the pty: typing
 // `stty …` into the pane would send those keystrokes to whatever owns the
 // foreground — a REPL, a debugger, an editor — and change nothing about the
-// terminal it was meant to change (docs/ARCHITECTURE.md §16).
+// terminal it was meant to change (docs/architecture/persistent-work.md).
 func EchoScript(nameOrID string, on bool) string {
 	flag := "-echo"
 	if on {

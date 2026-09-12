@@ -24,20 +24,20 @@ authority. Wildcard and negated patterns are omitted. No host is contacted.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a := app.NewDefault()
-			infos, aerr := a.Hosts()
+			result, aerr := a.Hosts()
 			if aerr != nil {
 				emitFailure("hosts", "", aerr)
 				return nil
 			}
 			if jsonFlag {
-				_ = output.Success("hosts", "", map[string]interface{}{"hosts": infos}).Write(os.Stdout)
+				_ = output.Success("hosts", "", result).Write(os.Stdout)
 				return nil
 			}
-			if len(infos) == 0 {
+			if len(result.Hosts) == 0 {
 				fmt.Fprintln(os.Stderr, "no host aliases found in ~/.ssh/config")
 				return nil
 			}
-			for _, h := range infos {
+			for _, h := range result.Hosts {
 				fmt.Fprintln(os.Stdout, h.Alias)
 			}
 			return nil

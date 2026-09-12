@@ -6,12 +6,11 @@ import (
 )
 
 // TestLiveAudit proves the audit trail is real across processes: one rhost writes
-// an entry for a remote operation, and a *separate* rhost reads it back (§36).
+// an entry for a remote operation, and a *separate* rhost reads it back.
 func TestLiveAudit(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
-	c := cli(t)
-	t.Setenv("RHOST_STATE_DIR", t.TempDir())
-	t.Setenv("RHOST_AUDIT", "1")
+	c := cli(t).withEnv("RHOST_STATE_DIR="+t.TempDir(), "RHOST_AUDIT=1")
 
 	c.mustJSON(t, "--json", "exec", host, "--", "echo audited; exit 5")
 

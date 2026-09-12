@@ -1,5 +1,5 @@
 // Package host discovers usable SSH targets. OpenSSH configuration remains the
-// source of truth (docs/PROJECT_OVERVIEW.md §10); rhost only reads it to list
+// source of truth (docs/PROJECT_OVERVIEW.md); rhost only reads it to list
 // aliases for humans and agents.
 //
 // The listing is best-effort by design: it follows Include directives and skips
@@ -23,16 +23,29 @@ type Info struct {
 	Source string `json:"source,omitempty"`
 }
 
+type Discovery struct {
+	Hosts       []Info   `json:"hosts"`
+	ConfigFound bool     `json:"config_found"`
+	Complete    bool     `json:"complete"`
+	Warnings    []string `json:"warnings"`
+}
+
 // Aliases returns concrete Host aliases declared in the user's OpenSSH client
 // config, following Include directives. Wildcard/negated patterns are skipped
 // because they do not name a single host.
-func Aliases() ([]Info, error) {
+func Aliases() (Discovery, error) {
 	home, _ := os.UserHomeDir()
 	base := filepath.Join(home, ".ssh", "config")
 
 	seen := map[string]bool{}
 	out := []Info{} // never nil: `hosts --json` must render [], not null
 	visited := map[string]bool{}
+	result := Discovery{Hosts: out, Complete: true, Warnings: []string{}}
+	if _, err := os.Stat(base); err == nil {
+		result.ConfigFound = true
+	} else if !os.IsNotExist(err) {
+		return result, err
+	}
 
 	var walk func(path string)
 	walk = func(path string) {
@@ -42,7 +55,9 @@ func Aliases() ([]Info, error) {
 		visited[path] = true
 		f, err := os.Open(path)
 		if err != nil {
-			return // missing file is not an error
+			result.Complete = false
+			result.Warnings = append(result.Warnings, "could not read an included SSH config file")
+			return
 		}
 		defer f.Close()
 
@@ -72,11 +87,18 @@ func Aliases() ([]Info, error) {
 				}
 			}
 		}
+		if err := sc.Err(); err != nil {
+			result.Complete = false
+			result.Warnings = append(result.Warnings, "could not completely read an SSH config file")
+		}
 	}
-	walk(base)
+	if result.ConfigFound {
+		walk(base)
+	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Alias < out[j].Alias })
-	return out, nil
+	result.Hosts = out
+	return result, nil
 }
 
 // splitKeyword splits an ssh_config line into its keyword and the remainder,

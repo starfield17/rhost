@@ -2,12 +2,46 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"testing"
 
 	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/job/detached"
 )
+
+func TestJobJSONUsesStableIdentityAndNullableExitCode(t *testing.T) {
+	running := toJobInfo(detached.Facts{ID: "j_1", PID: 7, Alive: true, Identity: detached.IdentityVerified, ExitCode: -1})
+	raw, err := json.Marshal(running)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) == "" || !containsJSON(raw, `"job_id":"j_1"`) || !containsJSON(raw, `"exit_code":null`) || containsJSON(raw, `"id":`) {
+		t.Fatalf("running job JSON = %s", raw)
+	}
+
+	finished := toJobInfo(detached.Facts{ID: "j_2", ExitCode: 143})
+	raw, err = json.Marshal(finished)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsJSON(raw, `"exit_code":143`) {
+		t.Fatalf("finished job JSON = %s", raw)
+	}
+}
+
+func containsJSON(raw []byte, fragment string) bool {
+	return slices.ContainsFunc([]string{string(raw)}, func(s string) bool { return len(s) >= len(fragment) && containsString(s, fragment) })
+}
+
+func containsString(s, fragment string) bool {
+	for i := 0; i+len(fragment) <= len(s); i++ {
+		if s[i:i+len(fragment)] == fragment {
+			return true
+		}
+	}
+	return false
+}
 
 // TestMapJobHelperErr pins the job helper codes to the taxonomy. Agents branch
 // on error.code, so this mapping is a public contract (AGENTS.md §6).

@@ -25,6 +25,13 @@ func TestControlPathUsesC(t *testing.T) {
 	}
 }
 
+func TestControlPathForCacheDoesNotNeedEnvironmentMutation(t *testing.T) {
+	root := filepath.Join("/tmp", "rhost-explicit-cache")
+	if got := ControlPathForCache(root); got != filepath.Join(root, "ssh", "%C") {
+		t.Errorf("ControlPathForCache() = %q", got)
+	}
+}
+
 func TestEnsureControlDir(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("RHOST_CACHE_DIR", dir)

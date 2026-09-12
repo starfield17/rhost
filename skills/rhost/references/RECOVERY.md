@@ -29,9 +29,11 @@ The remote is missing something:
 
 Time:
 
-- `REMOTE_COMMAND_TIMEOUT` — the deadline passed and the remote process group was
-  killed. For `exec`, check `data.cleanup_confirmed`: if it is false the command
-  may still be running, so do not repeat a side effect before checking. For a
+- `REMOTE_COMMAND_TIMEOUT` — the deadline passed. For `exec`, check
+  `data.cleanup_confirmed`: when true the remote process group was observed and
+  killed and `error.retryable` may be true; when false the command may still be
+  running and `error.retryable` is false. Check state before another side
+  effect. For a
   session, check `data.session_preserved`: false means something still holds the
   pane (`session read` to see what, `session recover` to interrupt it). Work that
   should outlive a timeout belongs in a `job`.
@@ -108,7 +110,8 @@ means the pane came back to a prompt; false means something still holds it.
 it. Never follow a timeout with another blind command into the same pane.
 
 **A REPL or debugger is running in a session.** That is what `session send` is
-for (`--data 'next()\n'`, `--key C-c`); `session exec` will keep refusing with
+for (`--data 'next()' --enter`, `--key C-c`); `--data` is verbatim and
+does not interpret `\n`. `session exec` will keep refusing with
 `SESSION_BUSY` while it owns the pane, and that refusal is the guard rail, not a
 failure to work around.
 

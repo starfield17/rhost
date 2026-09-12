@@ -1,7 +1,7 @@
 // Package tmux implements rhost's persistent-session backend using remote tmux.
 //
 // A session is owned entirely by remote tmux and remote files, so it survives
-// the CLI process and SSH disconnects (docs/ARCHITECTURE.md §12). rhost never
+// the CLI process and SSH disconnects (docs/architecture/persistent-work.md). rhost never
 // holds a live PTY in local memory.
 //
 // On the remote host each session lives under
@@ -30,10 +30,10 @@ import (
 )
 
 // DefaultShell is the interactive shell launched inside a managed pane. The
-// integration script needs bash (or zsh); we standardise on bash for v0.1.
+// integration script needs bash (or zsh); we standardise on bash for the current backend.
 const DefaultShell = "bash"
 
-// Meta is the discovery metadata for a managed session (docs/ARCHITECTURE.md §13).
+// Meta is the discovery metadata for a managed session (docs/architecture/persistent-work.md).
 type Meta struct {
 	SchemaVersion int    `json:"schema_version"`
 	ID            string `json:"id"`
@@ -268,7 +268,7 @@ func ExecScript(nameOrID, command string, timeout time.Duration) string {
 	// Everything below types into the pane's terminal. That is only safe while
 	// the managed shell owns the foreground: after `session send --data 'python\n'`
 	// the pane is a REPL, and a pasted command (or the stty probe) would be read
-	// by *it*, not by a shell (docs/ARCHITECTURE.md §16). So exec fails closed and
+	// by *it*, not by a shell (docs/architecture/persistent-work.md). So exec fails closed and
 	// names what it found, leaving `session send`/`session read` as the honest way
 	// to drive a program, and `session recover` as the explicit repair path.
 	b.WriteString(shellOfFunc)
@@ -354,6 +354,9 @@ func SendScript(nameOrID, kind, payload string) string {
 		p("printf '%%s' '%s' | base64 -d | tmux load-buffer -b rhost_send -\n", b64(payload))
 		b.WriteString("tmux paste-buffer -b rhost_send -t \"$TMUX:0.0\" 2>/dev/null\n")
 		b.WriteString("tmux delete-buffer -b rhost_send 2>/dev/null\n")
+		if kind == "data-enter" {
+			b.WriteString("tmux send-keys -t \"$TMUX:0.0\" Enter\n")
+		}
 	}
 	b.WriteString("echo RHOST_OK=sent\n")
 	return b.String()

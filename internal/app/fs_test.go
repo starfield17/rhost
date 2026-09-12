@@ -114,6 +114,13 @@ func TestFsPutArgumentShape(t *testing.T) {
 	}
 }
 
+func TestFsPutParentsRunsRemoteMkdirBeforeCopy(t *testing.T) {
+	got := remoteParentCommand("~/new tree/artifact.bin")
+	if !strings.Contains(got, "mkdir -p --") || !strings.Contains(got, `"$HOME"/'new tree'`) {
+		t.Fatalf("unsafe or wrong parent command: %q", got)
+	}
+}
+
 // A relative local path whose name contains a colon is the shape that would
 // otherwise be read as `host:path`, so the `./` has to reach the tool.
 func TestFsPutPrefixesAmbiguousRelativeSource(t *testing.T) {

@@ -19,7 +19,7 @@ import (
 
 // SessionInfo is the CLI-facing view of a persistent session.
 type SessionInfo struct {
-	ID          string `json:"id"`
+	SessionID   string `json:"session_id"`
 	Name        string `json:"name"`
 	TmuxSession string `json:"tmux_session"`
 	CreatedAt   string `json:"created_at"`
@@ -140,7 +140,7 @@ func (a *App) SessionCreate(ctx context.Context, host, name, cwd, shellName stri
 		shellName = tmux.DefaultShell
 	}
 	if shellName != "bash" {
-		return SessionInfo{}, errs.New(errs.ConfigInvalid, "only --shell bash is supported in v0.1", false)
+		return SessionInfo{}, errs.New(errs.ConfigInvalid, "only --shell bash is supported", false)
 	}
 	id, err := newSessionID()
 	if err != nil {
@@ -247,9 +247,9 @@ func mapSessionExecErr(oc tmux.ExecOutcome) *errs.Error {
 }
 
 // SessionSend injects raw data or a single key into a session.
-func (a *App) SessionSend(ctx context.Context, host, nameOrID, data, key string, timeout time.Duration) *errs.Error {
-	if (data == "") == (key == "") {
-		return errs.New(errs.ConfigInvalid, "provide exactly one of --data or --key", false)
+func (a *App) SessionSend(ctx context.Context, host, nameOrID, data, key string, enter bool, timeout time.Duration) *errs.Error {
+	if (data == "") == (key == "") || (key != "" && enter) {
+		return errs.New(errs.ConfigInvalid, "provide --data [--enter] or exactly one --key", false)
 	}
 	var script string
 	if key != "" {
@@ -258,7 +258,11 @@ func (a *App) SessionSend(ctx context.Context, host, nameOrID, data, key string,
 		}
 		script = tmux.SendScript(nameOrID, "key", key)
 	} else {
-		script = tmux.SendScript(nameOrID, "data", data)
+		kind := "data"
+		if enter {
+			kind = "data-enter"
+		}
+		script = tmux.SendScript(nameOrID, kind, data)
 	}
 	res, aerr := a.runHelper(ctx, host, script, timeout)
 	if aerr != nil {
@@ -359,7 +363,7 @@ func (a *App) SessionAttach(ctx context.Context, host, nameOrID string) *errs.Er
 
 func toSessionInfo(m tmux.Meta, status string) SessionInfo {
 	return SessionInfo{
-		ID:          m.ID,
+		SessionID:   m.ID,
 		Name:        m.Name,
 		TmuxSession: m.TmuxSession,
 		CreatedAt:   m.CreatedAt,

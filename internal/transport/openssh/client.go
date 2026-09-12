@@ -99,7 +99,7 @@ type PipeOptions struct {
 
 // options returns the shared OpenSSH options. ControlMaster=auto +
 // ControlPersist + a %C ControlPath give us transport reuse that outlives any
-// single rhost process, without a daemon (docs/ARCHITECTURE.md §8).
+// single rhost process, without a daemon (docs/architecture/runtime.md).
 // SSHOptions returns the OpenSSH options this client passes to ssh, in argv form.
 //
 // scp takes them directly; rsync can only carry them inside a single -e string,

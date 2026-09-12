@@ -4,7 +4,22 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+	"time"
+
+	"github.com/starfield17/rhost/internal/errs"
 )
+
+func TestExecutionTimeoutRetryDependsOnConfirmedCleanup(t *testing.T) {
+	for _, confirmed := range []bool{false, true} {
+		e := executionTimeout(2*time.Second, confirmed)
+		if e.Code != errs.RemoteCommandTimeout {
+			t.Fatalf("cleanup=%v code=%s", confirmed, e.Code)
+		}
+		if e.Retryable != confirmed {
+			t.Fatalf("cleanup=%v retryable=%v", confirmed, e.Retryable)
+		}
+	}
+}
 
 func TestProtocolStreamForwardsIncrementallyAndHidesMarkers(t *testing.T) {
 	const nonce = "0123456789abcdef0123456789abcdef"

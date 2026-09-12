@@ -33,12 +33,12 @@ func TestAliasesParsesConfigAndIncludes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Aliases()
+	result, err := Aliases()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var names []string
-	for _, h := range got {
+	for _, h := range result.Hosts {
 		names = append(names, h.Alias)
 	}
 	want := map[string]bool{"gpu": true, "db": true, "extra": true}
@@ -50,21 +50,46 @@ func TestAliasesParsesConfigAndIncludes(t *testing.T) {
 			t.Errorf("unexpected alias %q", n)
 		}
 	}
+	if !result.ConfigFound || !result.Complete || len(result.Warnings) != 0 {
+		t.Fatalf("discovery metadata = %+v", result)
+	}
 }
 
 func TestAliasesMissingConfigIsNotError(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	got, err := Aliases()
+	result, err := Aliases()
 	if err != nil {
 		t.Fatalf("Aliases() error = %v, want nil", err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("got %v, want empty", got)
+	if len(result.Hosts) != 0 {
+		t.Fatalf("got %v, want empty", result.Hosts)
 	}
 	// `hosts --json` must render [] rather than null: agents iterate the field.
-	if got == nil {
+	if result.Hosts == nil {
 		t.Fatal("Aliases returned a nil slice, want an empty non-nil slice")
+	}
+	if result.ConfigFound || !result.Complete {
+		t.Fatalf("missing config metadata = %+v", result)
+	}
+}
+
+func TestAliasesReportsIncompleteInclude(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(filepath.Join(sshDir, "unreadable"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sshDir, "config"), []byte("Include unreadable\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Aliases()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Complete || len(result.Warnings) == 0 {
+		t.Fatalf("incomplete discovery was hidden: %+v", result)
 	}
 }
 

@@ -1,6 +1,6 @@
 // Package app owns rhost's use-case semantics. It depends on transport
 // capabilities and returns plain models plus *errs.Error; it performs no CLI
-// parsing and no terminal formatting (docs/ARCHITECTURE.md §3).
+// parsing and no terminal formatting (docs/ARCHITECTURE.md).
 package app
 
 import (

@@ -1,6 +1,6 @@
 // Package output defines rhost's agent-facing JSON envelope and small helpers
 // for human rendering. The JSON document is a public compatibility surface
-// (docs/ARCHITECTURE.md §32), so its shape is versioned.
+// (docs/architecture/files-and-json.md), so its shape is versioned.
 package output
 
 import (

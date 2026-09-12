@@ -1,6 +1,6 @@
-// Package detached implements rhost's v0.1 job backend: a long-running remote
+// Package detached implements rhost's detached job backend: a long-running remote
 // command launched with `setsid nohup bash` and owned entirely by remote files,
-// so it survives the CLI process and SSH disconnects (docs/ARCHITECTURE.md §22).
+// so it survives the CLI process and SSH disconnects (docs/architecture/persistent-work.md).
 //
 // On the remote host each job lives under
 //
@@ -21,7 +21,7 @@
 // session leader, so signalling the process group kills the whole tree. A pid
 // alone is not an identity — the kernel reuses pids — so every observer compares
 // the recorded boot id and process start time against /proc before it calls a
-// job running or lets a signal near it (docs/ARCHITECTURE.md §22).
+// job running or lets a signal near it (docs/architecture/persistent-work.md).
 package detached
 
 import (
@@ -41,13 +41,13 @@ import (
 const Backend = "detached"
 
 // basePreamble defines the remote state root used by every script and keeps
-// anything a helper creates user-private (docs/ARCHITECTURE.md §21): `job stop`
+// anything a helper creates user-private (docs/architecture/persistent-work.md): `job stop`
 // writes the stopped marker, and without this umask that file lands 0664 from
 // the login session's default. It mirrors the expression used by sessions so one
 // override (RHOST_REMOTE_STATE) moves both trees.
 const basePreamble = "BASE=\"${RHOST_REMOTE_STATE:-" + openssh.DefaultRemoteStateDir + "}\"\numask 077\n"
 
-// Meta is the discovery metadata for a managed job (docs/ARCHITECTURE.md §21).
+// Meta is the discovery metadata for a managed job (docs/architecture/persistent-work.md).
 type Meta struct {
 	SchemaVersion int    `json:"schema_version"`
 	ID            string `json:"id"`
@@ -71,7 +71,7 @@ func NewMeta(id, name, cwd, command string) Meta {
 	}
 }
 
-// State is the derived job lifecycle state (docs/ARCHITECTURE.md §23). The
+// State is the derived job lifecycle state (docs/architecture/persistent-work.md). The
 // machine is implemented in StateFromFacts and pinned by table tests.
 type State string
 
@@ -105,7 +105,7 @@ type Facts struct {
 // IdentityState is the answer to "is the process holding this pid still the one
 // the job started?" A pid is not an identity: the kernel reuses it, so a job
 // whose recorded pid now belongs to an unrelated process must never be reported
-// as running and must never be signalled (docs/ARCHITECTURE.md §22).
+// as running and must never be signalled (docs/architecture/persistent-work.md).
 type IdentityState string
 
 const (
@@ -131,7 +131,7 @@ const (
 // with no exit-code file did not end our way (SIGKILL, host reboot): that is
 // stale, never success. A job with neither pid nor exit code is still starting.
 // A stopped marker moves the outcome to "stopped" only once the process is
-// actually gone (docs/ARCHITECTURE.md §23, §25).
+// actually gone (docs/architecture/persistent-work.md).
 func StateFromFacts(f Facts) State {
 	switch {
 	case f.ExitCode >= 0:
@@ -159,7 +159,7 @@ func StateFromFacts(f Facts) State {
 // caller-supplied ref reaches a remote path. The ref is shell-quoted rather than
 // interpolated: a job handle is *data*, and unquoted data inside a double-quoted
 // assignment can close the string and run whatever follows it (AGENTS.md §5,
-// docs/ARCHITECTURE.md §35). The app layer also refuses shapes that are neither
+// docs/architecture/persistent-work.md). The app layer also refuses shapes that are neither
 // an id nor a name, so this is the second of two independent guards.
 func dirAssign(ref string) string {
 	return "DIR=\"$BASE/jobs/\"" + shell.Quote(ref) + "\n"
@@ -342,7 +342,7 @@ func StartScript(meta Meta, commandSH string) string {
 	b.WriteString("command -v nohup >/dev/null 2>&1 || { echo RHOST_ERR=nonohup; exit 0; }\n")
 	// Without /proc a job's pid can never be tied to the process that wrote it,
 	// so the backend refuses to create one rather than mint an unverifiable job
-	// (docs/ARCHITECTURE.md §22). doctor reports the same requirement.
+	// (docs/architecture/persistent-work.md). doctor reports the same requirement.
 	b.WriteString("[ -r /proc/self/stat ] && [ -r /proc/sys/kernel/random/boot_id ] || { echo RHOST_ERR=noproc; exit 0; }\n")
 	b.WriteString(dirAssign(meta.ID))
 	b.WriteString("mkdir -p \"$DIR\" && chmod 700 \"$DIR\" 2>/dev/null || { echo RHOST_ERR=mkdir; exit 0; }\n")
@@ -394,7 +394,7 @@ done
 
 // LogsScript returns the requested log stream from byte offset `since`,
 // base64-encoded, with explicit size/next cursors so agents can poll
-// incrementally (docs/ARCHITECTURE.md §24).
+// incrementally (docs/architecture/persistent-work.md).
 func LogsScript(id, stream string, since, maxBytes int) string {
 	if maxBytes <= 0 {
 		maxBytes = 256 * 1024
@@ -429,13 +429,13 @@ func LogsScript(id, stream string, since, maxBytes int) string {
 // A signal is sent only to a process group whose identity is *verified*. If the
 // recorded pid now belongs to another process — or cannot be tied to the job at
 // all — the script does not signal it and says so through RHOST_SIGNALLED=no and
-// a stale state (docs/ARCHITECTURE.md §22). Killing an unrelated process group
+// a stale state (docs/architecture/persistent-work.md). Killing an unrelated process group
 // because it happened to inherit a pid is the one mistake this backend must
 // never make.
 //
 // The stopped marker is written only while the process is still alive: a job
 // that already finished keeps its recorded exit code and state, because a stop
-// request must not relabel a real result (docs/ARCHITECTURE.md §25). Both
+// request must not relabel a real result (docs/architecture/persistent-work.md). Both
 // signals are idempotent — signalling a group that no longer exists is a no-op,
 // and an already-final job satisfies the requested condition.
 //

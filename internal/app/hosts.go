@@ -6,10 +6,10 @@ import (
 )
 
 // Hosts lists configured SSH host aliases. It does not require network access.
-func (a *App) Hosts() ([]host.Info, *errs.Error) {
-	infos, err := host.Aliases()
+func (a *App) Hosts() (host.Discovery, *errs.Error) {
+	result, err := host.Aliases()
 	if err != nil {
-		return nil, errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
+		return host.Discovery{}, errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
 	}
-	return infos, nil
+	return result, nil
 }

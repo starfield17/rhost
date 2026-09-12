@@ -4,7 +4,13 @@
   "title": "rhost result envelope v1",
   "description": "The single JSON document emitted by an agent-facing rhost command when --json is set.",
   "type": "object",
-  "required": ["schema_version", "operation", "ok", "data", "error"],
+  "required": [
+    "schema_version",
+    "operation",
+    "ok",
+    "data",
+    "error"
+  ],
   "additionalProperties": false,
   "properties": {
     "schema_version": {
@@ -28,10 +34,16 @@
     },
     "error": {
       "oneOf": [
-        { "type": "null" },
+        {
+          "type": "null"
+        },
         {
           "type": "object",
-          "required": ["code", "message", "retryable"],
+          "required": [
+            "code",
+            "message",
+            "retryable"
+          ],
           "additionalProperties": false,
           "properties": {
             "code": {
@@ -66,11 +78,605 @@
                 "USAGE_ERROR"
               ]
             },
-            "message": { "type": "string" },
-            "retryable": { "type": "boolean" }
+            "message": {
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            }
           }
         }
       ]
     }
-  }
+  },
+  "definitions": {
+    "session_info": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "name",
+        "tmux_session",
+        "created_at",
+        "shell",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "tmux_session": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "initial_cwd": {
+          "type": "string"
+        },
+        "shell": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "session_exec": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "stdout",
+        "exit_code",
+        "timed_out",
+        "session_preserved"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "session_preserved": {
+          "type": "boolean"
+        }
+      }
+    },
+    "session_read": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "content",
+        "encoding",
+        "from",
+        "next",
+        "more"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "encoding": {
+          "const": "utf-8"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "more": {
+          "type": "boolean"
+        }
+      }
+    },
+    "job_start": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "state",
+        "pid"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        }
+      }
+    },
+    "job_info": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "state",
+        "pid",
+        "exit_code",
+        "command",
+        "started_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "pid": {
+          "type": "integer"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        }
+      }
+    },
+    "job_logs": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "stream",
+        "content",
+        "encoding",
+        "from",
+        "next",
+        "more"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "stream": {
+          "enum": [
+            "stdout",
+            "stderr"
+          ]
+        },
+        "content": {
+          "type": "string"
+        },
+        "encoding": {
+          "const": "base64"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "next": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "more": {
+          "type": "boolean"
+        }
+      }
+    },
+    "hosts": {
+      "type": "object",
+      "required": [
+        "hosts",
+        "config_found",
+        "complete",
+        "warnings"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "alias"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "alias": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "config_found": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "exec": {
+      "type": "object",
+      "required": [
+        "exit_code",
+        "stdout",
+        "stderr",
+        "timed_out",
+        "cancelled",
+        "cleanup_confirmed",
+        "stdout_truncated",
+        "stderr_truncated",
+        "stdout_bytes",
+        "stderr_bytes",
+        "duration_ms"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "timed_out": {
+          "type": "boolean"
+        },
+        "cancelled": {
+          "type": "boolean"
+        },
+        "cancel_signal": {
+          "type": "string"
+        },
+        "cleanup_confirmed": {
+          "type": "boolean"
+        },
+        "stdout_truncated": {
+          "type": "boolean"
+        },
+        "stderr_truncated": {
+          "type": "boolean"
+        },
+        "stdout_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stderr_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "exec"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/exec"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.create"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/session_info"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.list"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "sessions"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "sessions": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/session_info"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.exec"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/session_exec"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.read"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/session_read"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "job.start"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/job_start"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "job.status"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/job_info"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "job.list"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "jobs"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "jobs": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/definitions/job_info"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "job.logs"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/job_logs"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "hosts"
+          }
+        },
+        "required": [
+          "operation"
+        ]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/definitions/hosts"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/starfield17/rhost/internal/errs"
 )
 
-// TestLiveFs is docs/ARCHITECTURE.md §46 M4 against a real host: a put/get
+// TestLiveFs is docs/architecture/engineering.md M4 against a real host: a put/get
 // round-trip, an rsync plan that parses, --delete that prunes only when it was
 // asked to, and the dangerous-destination refusal. As in the other live suites,
 // every step is a separate process, so what is proven is the CLI contract.
@@ -36,7 +36,8 @@ func changeMap(rows []changeRow) map[string]string {
 	return out
 }
 
-// remoteTemp makes a scratch directory on the remote host and removes it again.
+// remoteTemp makes a scratch directory on the remote host. TestMain removes all
+// registered directories in one remote call after the suite finishes.
 func remoteTemp(t *testing.T, c liveCLI, host string) string {
 	t.Helper()
 	env := c.mustJSON(t, "--json", "exec", host, "--", "mktemp -d")
@@ -44,9 +45,7 @@ func remoteTemp(t *testing.T, c liveCLI, host string) string {
 	if !strings.HasPrefix(dir, "/") {
 		t.Fatalf("mktemp -d returned %q", dir)
 	}
-	t.Cleanup(func() {
-		c.run(t, "--json", "exec", host, "--", "rm", "-rf", dir)
-	})
+	registerLiveRemoteDir(dir)
 	return dir
 }
 
@@ -115,6 +114,7 @@ func localTree(t *testing.T) string {
 }
 
 func TestLiveFsPutGet(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -161,6 +161,7 @@ func TestLiveFsPutGet(t *testing.T) {
 // A local filename that reads as an scp remote spec is what the `./` prefix exists
 // for, and only a real scp can prove it.
 func TestLiveFsColonFilename(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -168,14 +169,7 @@ func TestLiveFsColonFilename(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "a:b.txt"), []byte("colon\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
+	c = c.withDir(dir)
 	remoteDir := remoteTemp(t, c, host)
 
 	c.mustJSON(t, "--json", "fs", "put", host, "a:b.txt", remoteDir+"/a:b.txt")
@@ -185,6 +179,7 @@ func TestLiveFsColonFilename(t *testing.T) {
 }
 
 func TestLiveFsTransferFailures(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -213,6 +208,7 @@ func TestLiveFsTransferFailures(t *testing.T) {
 }
 
 func TestLiveFsSyncPlanAndApply(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -318,6 +314,7 @@ func TestLiveFsSyncWithSpaceInCacheRoot(t *testing.T) {
 // TestLiveFsSyncRejectsDangerousTarget exercises the §28 rule end to end: the
 // refusal happens before anything is copied, so the remote home stays untouched.
 func TestLiveFsSyncRejectsDangerousTarget(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	src := localTree(t)

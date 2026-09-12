@@ -11,7 +11,7 @@ import (
 	"github.com/starfield17/rhost/internal/errs"
 )
 
-// TestLiveJob is docs/ARCHITECTURE.md §41 Test C — the job half of "anything
+// TestLiveJob is docs/architecture/engineering.md — the job half of "anything
 // promised to survive a CLI invocation is owned outside the CLI process"
 // (AGENTS.md §4). Every step is its own rhost process, and between them the test
 // closes the SSH ControlMaster, so the job cannot be riding on anything the
@@ -19,13 +19,14 @@ import (
 // only state.
 
 func TestLiveJob(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cliIsolated(t)
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
 		"--name", liveName("job"), "--cwd", "/var/log", "--env", "RHOST_LIVE_JOB=42",
 		"--", "echo starting; pwd; echo $RHOST_LIVE_JOB; sleep 5; echo finished; exit 0")
-	id := env.str(t, "id")
+	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 	if id == "" {
 		t.Fatal("job start returned no id")
@@ -85,7 +86,7 @@ func TestLiveJob(t *testing.T) {
 	}
 
 	// Completed jobs remain inspectable and are listed by a later process
-	// (docs/ARCHITECTURE.md §46).
+	// (docs/architecture/engineering.md).
 	assertJobListed(t, c, host, id, "exited")
 
 	// A terminal job is not re-stoppable into a different story.
@@ -96,10 +97,11 @@ func TestLiveJob(t *testing.T) {
 }
 
 // TestLiveJobLogsCursor pins the incremental read contract of
-// docs/ARCHITECTURE.md §24: from/next/more describe byte offsets, an arbitrary
+// docs/architecture/engineering.md: from/next/more describe byte offsets, an arbitrary
 // byte sequence survives the round trip, and a stale offset is clamped instead
 // of failing.
 func TestLiveJobLogsCursor(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -108,7 +110,7 @@ func TestLiveJobLogsCursor(t *testing.T) {
 	const payload = "0123456789"
 	env := c.mustJSON(t, "--json", "job", "start", host,
 		"--", "printf '"+payload+"'; sleep 1; printf 'tail'")
-	id := env.str(t, "id")
+	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
 	// Read the first half while the job is still running.
@@ -149,11 +151,12 @@ func TestLiveJobLogsCursor(t *testing.T) {
 	}
 }
 
-// TestLiveJobStopHarvestsProcessGroup is docs/ARCHITECTURE.md §46's "remote
+// TestLiveJobStopHarvestsProcessGroup is docs/architecture/engineering.md's "remote
 // process group can be stopped": a job's *children* must go with it, because a
 // stop that only killed the wrapper would leave orphans holding the GPU
 // (§25's reason for signalling the group).
 func TestLiveJobStopHarvestsProcessGroup(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -163,7 +166,7 @@ func TestLiveJobStopHarvestsProcessGroup(t *testing.T) {
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
 		"--name", liveName("groupkill"), "--", "echo started; sleep "+strconv.Itoa(marker)+" & sleep "+strconv.Itoa(marker)+"; wait")
-	id := env.str(t, "id")
+	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 	pgid := env.num(t, "pid")
 
@@ -214,13 +217,14 @@ func TestLiveJobStopHarvestsProcessGroup(t *testing.T) {
 // TestLiveJobKillEscalates covers the SIGKILL path: nothing can trap it, so no
 // exit code is recorded, and the stopped marker is what makes the state honest.
 func TestLiveJobKillEscalates(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	marker := 500 + time.Now().Nanosecond()%200
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
 		"--", "trap '' TERM; echo started; sleep "+strconv.Itoa(marker))
-	id := env.str(t, "id")
+	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
 	// This job ignores SIGTERM — exactly the case `kill` exists for. `job stop`
@@ -240,8 +244,10 @@ func TestLiveJobKillEscalates(t *testing.T) {
 		t.Errorf("state after kill = %q, want stopped", got)
 	}
 	// No exit code was written, and rhost says so rather than inventing one.
-	if got := status.num(t, "exit_code"); got != -1 {
-		t.Errorf("exit_code after kill = %d, want -1 (nothing recorded)", got)
+	var exitCode *int
+	status.field(t, "exit_code", &exitCode)
+	if exitCode != nil {
+		t.Errorf("exit_code after kill = %v, want null (nothing recorded)", *exitCode)
 	}
 }
 
@@ -252,12 +258,13 @@ func TestLiveJobKillEscalates(t *testing.T) {
 // observer — and rhost must then refuse to call it running and refuse to signal
 // it, while the job itself keeps running untouched.
 func TestLiveJobPIDReuseIsRefused(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
 	env := c.mustJSON(t, "--json", "job", "start", host, "--name", liveName("pidreuse"),
 		"--", "i=0; while [ $i -lt 600 ]; do echo tick; sleep 1; i=$((i+1)); done")
-	id := env.str(t, "id")
+	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
 	dir := "${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/jobs/" + id
@@ -314,11 +321,12 @@ func TestLiveJobPIDReuseIsRefused(t *testing.T) {
 // TestLiveJobFailureIsRecorded checks that a job's own non-zero status survives:
 // the stop call afterwards must not relabel a real result as "stopped".
 func TestLiveJobFailureIsRecorded(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
 	env := c.mustJSON(t, "--json", "job", "start", host, "--", "echo about-to-fail; exit 4")
-	id := env.str(t, "id")
+	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
 	deadline := time.Now().Add(90 * time.Second)
@@ -338,7 +346,7 @@ func TestLiveJobFailureIsRecorded(t *testing.T) {
 
 	// stderr goes to its own stream, and never into stdout's cursor.
 	errEnv := c.mustJSON(t, "--json", "job", "start", host, "--", "echo to-stdout; echo to-stderr >&2; exit 1")
-	errID := errEnv.str(t, "id")
+	errID := errEnv.str(t, "job_id")
 	defer cleanupJob(t, c, host, errID)
 	waitJobState(t, c, host, errID, "failed")
 	out := string(decodeBytes(t, c.mustJSON(t, "--json", "job", "logs", host, errID, "--stream", "stdout", "--since", "0")))
@@ -355,12 +363,13 @@ func TestLiveJobFailureIsRecorded(t *testing.T) {
 // job was running, the pid is gone, and no exit code was ever written. That is
 // `stale`, and it must never be reported as a success.
 func TestLiveJobStaleIsNeverSuccess(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	marker := 700 + time.Now().Nanosecond()%200
 
 	env := c.mustJSON(t, "--json", "job", "start", host, "--", "sleep "+strconv.Itoa(marker))
-	id := env.str(t, "id")
+	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 	pid := env.num(t, "pid")
 
@@ -376,8 +385,10 @@ func TestLiveJobStaleIsNeverSuccess(t *testing.T) {
 	if got := status.str(t, "state"); got != "stale" {
 		t.Errorf("state = %q, want stale", got)
 	}
-	if got := status.num(t, "exit_code"); got != -1 {
-		t.Errorf("exit_code = %d, want -1: nothing was ever recorded", got)
+	var exitCode *int
+	status.field(t, "exit_code", &exitCode)
+	if exitCode != nil {
+		t.Errorf("exit_code = %v, want null: nothing was ever recorded", *exitCode)
 	}
 	assertJobListed(t, c, host, id, "stale")
 }
@@ -385,6 +396,7 @@ func TestLiveJobStaleIsNeverSuccess(t *testing.T) {
 // TestLiveJobUnknownIDIsAnError keeps a missing job a stable code rather than an
 // empty success: agents branch on error.code (AGENTS.md §6).
 func TestLiveJobUnknownIDIsAnError(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -405,6 +417,7 @@ func TestLiveJobUnknownIDIsAnError(t *testing.T) {
 // types back in, and the id is what an agent keeps. Names may collide, so a
 // collision has to be an error rather than a guess.
 func TestLiveJobNameLookup(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -413,10 +426,10 @@ func TestLiveJobNameLookup(t *testing.T) {
 	name := "livename" + strconv.FormatInt(time.Now().UnixNano(), 36)
 
 	first := c.mustJSON(t, "--json", "job", "start", host, "--name", name, "--", "echo by-name; sleep 3")
-	id := first.str(t, "id")
+	id := first.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
-	if got := c.mustJSON(t, "--json", "job", "status", host, name).str(t, "id"); got != id {
+	if got := c.mustJSON(t, "--json", "job", "status", host, name).str(t, "job_id"); got != id {
 		t.Errorf("status by name resolved to %q, want %q", got, id)
 	}
 	if got := decodeLog(t, c.mustJSON(t, "--json", "job", "logs", host, name, "--since", "0")); !strings.Contains(got, "by-name") {
@@ -426,7 +439,7 @@ func TestLiveJobNameLookup(t *testing.T) {
 	// A second job with the same name makes the handle ambiguous. Both jobs stay
 	// addressable by id; the name stops working, loudly.
 	second := c.mustJSON(t, "--json", "job", "start", host, "--name", name, "--", "echo collision")
-	id2 := second.str(t, "id")
+	id2 := second.str(t, "job_id")
 	defer cleanupJob(t, c, host, id2)
 
 	ambiguous := c.wantErrorCode(t, errs.ConfigInvalid, "--json", "job", "status", host, name)
@@ -434,7 +447,7 @@ func TestLiveJobNameLookup(t *testing.T) {
 		t.Errorf("ambiguous-name failure must point at the alternative handle: %+v", ambiguous.Error)
 	}
 	for _, want := range []string{id, id2} {
-		if got := c.mustJSON(t, "--json", "job", "status", host, want).str(t, "id"); got != want {
+		if got := c.mustJSON(t, "--json", "job", "status", host, want).str(t, "job_id"); got != want {
 			t.Errorf("status by id %q resolved to %q", want, got)
 		}
 	}
@@ -449,6 +462,7 @@ func TestLiveJobNameLookup(t *testing.T) {
 // handle. A malformed handle must be refused locally, without an SSH round trip,
 // and must never leave a trace on the remote host.
 func TestLiveJobHostileHandleNeverExecutes(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -467,17 +481,14 @@ func TestLiveJobHostileHandleNeverExecutes(t *testing.T) {
 
 // helpers
 
-// cleanupJob removes the remote state a test created. There is no `job rm` in
-// v0.1 (not in §46), so tests use exec on the directory they own.
+// cleanupJob queues remote state for the suite-wide cleanup call. There is no
+// public `job rm`, and paying one SSH round trip per test adds no coverage.
 func cleanupJob(t *testing.T, c liveCLI, host, id string) {
 	t.Helper()
 	if id == "" {
 		return
 	}
-	if _, stderr, code := c.run(t, "--json", "exec", host, "--",
-		`rm -rf "${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/jobs/`+id+`"`); code != 0 {
-		t.Logf("cleanup job %s: exit=%d %s", id, code, strings.TrimSpace(stderr))
-	}
+	registerLiveJob(id)
 }
 
 // remoteProcs lists pid/ppid/pgid/args on the remote host, for survivor checks.
@@ -486,7 +497,7 @@ func remoteProcs(t *testing.T, c liveCLI, host string) string {
 	return c.mustJSON(t, "--json", "exec", host, "--", "ps -eo pid,ppid,pgid,args").str(t, "stdout")
 }
 
-// decodeLog returns the base64 `data` field of a job.logs envelope.
+// decodeLog returns the base64 `content` field of a job.logs envelope.
 func decodeLog(t *testing.T, env envelope) string {
 	t.Helper()
 	return string(decodeBytes(t, env))
@@ -494,9 +505,9 @@ func decodeLog(t *testing.T, env envelope) string {
 
 func decodeBytes(t *testing.T, env envelope) []byte {
 	t.Helper()
-	raw, err := base64.StdEncoding.DecodeString(env.str(t, "data"))
+	raw, err := base64.StdEncoding.DecodeString(env.str(t, "content"))
 	if err != nil {
-		t.Fatalf("data is not valid base64 (%v): %q", err, env.str(t, "data"))
+		t.Fatalf("content is not valid base64 (%v): %q", err, env.str(t, "content"))
 	}
 	return raw
 }
@@ -525,7 +536,7 @@ func assertJobListed(t *testing.T, c liveCLI, host, id, state string) {
 	var jobs []map[string]interface{}
 	env.field(t, "jobs", &jobs)
 	for _, j := range jobs {
-		if j["id"] == id {
+		if j["job_id"] == id {
 			if j["state"] != state {
 				t.Errorf("job %s listed as %v, want %s", id, j["state"], state)
 			}

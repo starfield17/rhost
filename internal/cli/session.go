@@ -63,7 +63,7 @@ func newSessionCreateCmd() *cobra.Command {
 			if jsonFlag {
 				_ = output.Success("session.create", host, info).Write(os.Stdout)
 			} else {
-				fmt.Printf("created session %s (name %s)\n", info.ID, info.Name)
+				fmt.Printf("created session %s (name %s)\n", info.SessionID, info.Name)
 			}
 			return nil
 		},
@@ -99,7 +99,7 @@ func newSessionListCmd() *cobra.Command {
 			}
 			fmt.Printf("%-16s %-16s %-7s %s\n", "ID", "NAME", "STATUS", "CWD")
 			for _, s := range sessions {
-				fmt.Printf("%-16s %-16s %-7s %s\n", s.ID, s.Name, s.Status, s.InitialCwd)
+				fmt.Printf("%-16s %-16s %-7s %s\n", s.SessionID, s.Name, s.Status, s.InitialCwd)
 			}
 			return nil
 		},
@@ -168,7 +168,7 @@ func newSessionExecCmd() *cobra.Command {
 // when the command did not finish.
 type sessionExecView struct {
 	SessionID        string `json:"session_id"`
-	Output           string `json:"output"`
+	Stdout           string `json:"stdout"`
 	ExitCode         int    `json:"exit_code"`
 	TimedOut         bool   `json:"timed_out"`
 	SessionPreserved bool   `json:"session_preserved"`
@@ -177,7 +177,7 @@ type sessionExecView struct {
 func sessionExecData(res app.SessionExecResult) sessionExecView {
 	return sessionExecView{
 		SessionID:        res.SessionID,
-		Output:           res.Output,
+		Stdout:           res.Output,
 		ExitCode:         res.ExitCode,
 		TimedOut:         res.TimedOut,
 		SessionPreserved: res.SessionPreserved,
@@ -186,18 +186,19 @@ func sessionExecData(res app.SessionExecResult) sessionExecView {
 
 func newSessionSendCmd() *cobra.Command {
 	var (
-		data string
-		key  string
+		data  string
+		key   string
+		enter bool
 	)
 	cmd := &cobra.Command{
-		Use:   "send <host> <session> (--data TEXT | --key KEY)",
+		Use:   "send <host> <session> (--data TEXT [--enter] | --key KEY)",
 		Short: "Send raw input or a control key to a session",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			audit := startAudit("session.send", host)
 			a := app.NewDefault()
-			if aerr := a.SessionSend(cmd.Context(), host, session, data, key, 30*time.Second); aerr != nil {
+			if aerr := a.SessionSend(cmd.Context(), host, session, data, key, enter, 30*time.Second); aerr != nil {
 				audit.fail(aerr)
 				emitFailure("session.send", host, aerr)
 				return nil
@@ -218,6 +219,7 @@ func newSessionSendCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&data, "data", "", "raw text to inject (verbatim)")
 	cmd.Flags().StringVar(&key, "key", "", "control key, e.g. C-c, Enter, Up")
+	cmd.Flags().BoolVar(&enter, "enter", false, "press Enter after sending --data")
 	return cmd
 }
 
@@ -239,14 +241,7 @@ func newSessionReadCmd() *cobra.Command {
 				return nil
 			}
 			if jsonFlag {
-				data := map[string]interface{}{
-					"session_id": res.SessionID,
-					"from":       res.From,
-					"next":       res.Next,
-					"data":       res.Data,
-					"more":       res.HasMore,
-				}
-				_ = output.Success("session.read", host, data).Write(os.Stdout)
+				_ = output.Success("session.read", host, sessionReadData(res)).Write(os.Stdout)
 			} else {
 				_, _ = os.Stdout.WriteString(res.Data)
 			}
@@ -256,6 +251,13 @@ func newSessionReadCmd() *cobra.Command {
 	cmd.Flags().IntVar(&since, "since", 0, "byte offset to read from")
 	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "read timeout")
 	return cmd
+}
+
+func sessionReadData(res app.SessionReadResult) map[string]interface{} {
+	return map[string]interface{}{
+		"session_id": res.SessionID, "from": res.From, "next": res.Next,
+		"content": res.Data, "encoding": "utf-8", "more": res.HasMore,
+	}
 }
 
 func newSessionCloseCmd() *cobra.Command {

@@ -24,6 +24,7 @@ import (
 // behaviour under a hostile path (covered by its own python suite), and anything
 // about a host that reboots mid-operation.
 func TestLiveTools(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	dir := remoteTemp(t, c, host)
@@ -36,6 +37,11 @@ func TestLiveTools(t *testing.T) {
 	read := c.mustJSON(t, "--json", "fs", "read", host, target)
 	if read.str(t, "content") != "alpha\nbeta\n" || read.str(t, "sha256") != write.str(t, "sha256") {
 		t.Fatal("read/write mismatch")
+	}
+	nestedWrite := dir + "/new/write/text.txt"
+	c.mustJSON(t, "--json", "fs", "write", host, nestedWrite, "--from", local, "--parents")
+	if got := c.mustJSON(t, "--json", "fs", "read", host, nestedWrite).str(t, "content"); got != "alpha\nbeta\n" {
+		t.Fatalf("write --parents mismatch: %q", got)
 	}
 	patch := filepath.Join(t.TempDir(), "patch.json")
 	data, _ := json.Marshal(map[string]interface{}{"sha256": read.str(t, "sha256"), "edits": []interface{}{map[string]interface{}{"start": 2, "end": 2, "text": "gamma\n"}}})
@@ -55,6 +61,7 @@ func TestLiveTools(t *testing.T) {
 	// patch carries no longer describes the file. This is the whole reason the
 	// command group is safe to hand to an agent.
 	c.mustJSON(t, "--json", "fs", "put", host, local, dir+"/verified.txt", "--checksum")
+	c.mustJSON(t, "--json", "fs", "put", host, local, dir+"/new/put/copied.txt", "--parents")
 	c.mustJSON(t, "--json", "fs", "get", host, dir+"/verified.txt", filepath.Join(t.TempDir(), "get.txt"), "--resume")
 	c.mustJSON(t, "--json", "fs", "put", host, local, dir+"/file with space.txt", "--checksum")
 	manifest := filepath.Join(t.TempDir(), "manifest.json")
@@ -87,9 +94,9 @@ func TestLiveTools(t *testing.T) {
 // the local machine. The service answering is on this side, so the assertion is
 // about the tunnel and not about any remote daemon.
 func TestLiveTunnelReverseTraffic(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
-	c := cli(t)
-	t.Setenv("RHOST_STATE_DIR", t.TempDir())
+	c := cli(t).withEnv("RHOST_STATE_DIR=" + t.TempDir())
 	server, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)
@@ -117,6 +124,7 @@ func TestLiveTunnelReverseTraffic(t *testing.T) {
 // the session, so if the shell state is still there afterwards it can only be the
 // remote tmux's doing.
 func TestLiveSessionRecoveryExplicit(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	name := "recover-" + strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -129,7 +137,7 @@ func TestLiveSessionRecoveryExplicit(t *testing.T) {
 	if !preserved {
 		t.Fatal("recovery did not preserve session")
 	}
-	if got := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "printf '%s' \"$RHOST_RECOVERY_VALUE\"").str(t, "output"); !strings.Contains(got, "retained") {
+	if got := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "printf '%s' \"$RHOST_RECOVERY_VALUE\"").str(t, "stdout"); !strings.Contains(got, "retained") {
 		t.Fatalf("lost shell state: %q", got)
 	}
 }
@@ -138,9 +146,9 @@ func TestLiveSessionRecoveryExplicit(t *testing.T) {
 // `list` cannot rediscover is one whose id the caller has no way to keep, and the
 // id is the entire interface to closing it.
 func TestLiveTunnelPersistence(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
-	c := cli(t)
-	t.Setenv("RHOST_STATE_DIR", t.TempDir())
+	c := cli(t).withEnv("RHOST_STATE_DIR=" + t.TempDir())
 	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		t.Fatal(err)

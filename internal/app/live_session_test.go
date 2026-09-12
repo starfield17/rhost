@@ -13,18 +13,19 @@ import (
 	"github.com/starfield17/rhost/internal/errs"
 )
 
-// TestLiveSession is docs/ARCHITECTURE.md §41 Test B: shell state must survive
+// TestLiveSession is docs/architecture/engineering.md: shell state must survive
 // separate rhost *processes*, because the session is owned by remote tmux and
 // the CLI owns nothing durable (AGENTS.md §4). Every step below is its own
 // child process; nothing shares memory with the previous one.
 
 func TestLiveSession(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	name := liveName("sess")
 
 	env := c.mustJSON(t, "--json", "session", "create", host, "--name", name, "--cwd", "/tmp")
-	if id := env.str(t, "id"); id == "" {
+	if id := env.str(t, "session_id"); id == "" {
 		t.Fatal("session.create returned no id")
 	}
 	defer func() {
@@ -36,21 +37,21 @@ func TestLiveSession(t *testing.T) {
 
 	// cwd persists across process boundaries.
 	c.mustJSON(t, "--json", "session", "exec", host, name, "--", "cd /var/log && echo moved")
-	got := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "pwd").str(t, "output")
+	got := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "pwd").str(t, "stdout")
 	if strings.TrimSpace(got) != "/var/log" {
 		t.Errorf("cwd did not survive a process exit: got %q, want /var/log", strings.TrimSpace(got))
 	}
 
 	// Environment persists too, and does so under the *same* shell process.
 	c.mustJSON(t, "--json", "session", "exec", host, name, "--", "export RHOST_LIVE_ENV=42")
-	got = c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo $RHOST_LIVE_ENV").str(t, "output")
+	got = c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo $RHOST_LIVE_ENV").str(t, "stdout")
 	if strings.TrimSpace(got) != "42" {
 		t.Errorf("env did not survive a process exit: got %q, want 42", strings.TrimSpace(got))
 	}
 
 	// The remote shell pid is stable across invocations: it is the same tmux pane.
 	shellPID := func() string {
-		return strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo $$").str(t, "output"))
+		return strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo $$").str(t, "stdout"))
 	}
 	if first, second := shellPID(), shellPID(); first == "" || first != second {
 		t.Errorf("session shell changed between calls: %q -> %q", first, second)
@@ -96,8 +97,8 @@ func testReadCursor(t *testing.T, c liveCLI, host, name string) {
 	c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo "+token)
 
 	first := c.mustJSON(t, "--json", "session", "read", host, name, "--since", "0")
-	if !strings.Contains(first.str(t, "data"), token) {
-		t.Fatalf("read --since 0 did not contain %q: %q", token, first.str(t, "data"))
+	if !strings.Contains(first.str(t, "content"), token) {
+		t.Fatalf("read --since 0 did not contain %q: %q", token, first.str(t, "content"))
 	}
 	next := first.num(t, "next")
 	if next <= 0 {
@@ -105,7 +106,7 @@ func testReadCursor(t *testing.T, c liveCLI, host, name string) {
 	}
 
 	second := c.mustJSON(t, "--json", "session", "read", host, name, "--since", strconv.Itoa(next))
-	if strings.Contains(second.str(t, "data"), token) {
+	if strings.Contains(second.str(t, "content"), token) {
 		t.Errorf("read --since %d re-delivered the token", next)
 	}
 }
@@ -121,12 +122,13 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 	// keeps the writer lock until the command ends. The next session exec then
 	// hits a non-blocking flock and is refused with SESSION_UNHEALTHY rather
 	// than interleaving into the pane.
-	cmd, out := c.start(t, "--json", "session", "exec", host, name, "--", "sleep 8")
+	cmd, out, started := c.start(t, "--json", "session", "exec", host, name, "--", "sleep 8")
 	time.Sleep(4 * time.Second)
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatalf("kill local rhost process: %v", err)
 	}
 	_ = cmd.Wait() // reaping only: a killed process has no meaningful status
+	recordLiveCall(time.Since(started))
 	t.Logf("killed local CLI mid-command; captured stdout=%q", out.String())
 
 	busy := c.wantErrorCode(t, errs.SessionUnhealthy,
@@ -151,6 +153,7 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 }
 
 func TestLiveSessionBoundaryIsReliable(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	name := liveName("bound")
@@ -184,13 +187,14 @@ func TestLiveSessionBoundaryIsReliable(t *testing.T) {
 
 	// A boundary miss surfaces as a timeout, and a timeout must still leave the
 	// session usable: check the shell is alive after the whole sequence.
-	if got := strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo still-here").str(t, "output")); !strings.Contains(got, "still-here") {
+	if got := strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo still-here").str(t, "stdout")); !strings.Contains(got, "still-here") {
 		t.Errorf("session unusable after the boundary sequence: %q", got)
 	}
 }
 
 // TestLiveSessionSendRawInput covers the raw-injection path agents use for REPLs.
 func TestLiveSessionSendRawInput(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	name := liveName("send")
@@ -198,11 +202,11 @@ func TestLiveSessionSendRawInput(t *testing.T) {
 	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
 	defer c.run(t, "--json", "session", "close", host, name)
 
-	c.mustJSON(t, "--json", "session", "send", host, name, "--data", "echo sent-ok\n")
+	c.mustJSON(t, "--json", "session", "send", host, name, "--data", "echo sent-ok", "--enter")
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		env := c.mustJSON(t, "--json", "session", "read", host, name, "--since", "0")
-		if strings.Contains(env.str(t, "data"), "sent-ok") {
+		if strings.Contains(env.str(t, "content"), "sent-ok") {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -217,6 +221,7 @@ func TestLiveSessionSendRawInput(t *testing.T) {
 // pasting a managed command into that program, `session send` stays the raw path,
 // and `session recover` is what brings the shell back.
 func TestLiveSessionBusyRefusesExec(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	name := liveName("busy")
@@ -255,7 +260,7 @@ func TestLiveSessionBusyRefusesExec(t *testing.T) {
 		t.Errorf("SESSION_BUSY must name what owns the pane, got %q", msg)
 	}
 	// The refused command must not have run: its output cannot be in the log.
-	if got := c.mustJSON(t, "--json", "session", "read", host, name, "--since", "0").str(t, "data"); strings.Contains(got, "must-not-run") {
+	if got := c.mustJSON(t, "--json", "session", "read", host, name, "--since", "0").str(t, "content"); strings.Contains(got, "must-not-run") {
 		t.Errorf("a refused exec ran anyway: %q", got)
 	}
 
@@ -265,7 +270,7 @@ func TestLiveSessionBusyRefusesExec(t *testing.T) {
 		t.Fatal("session recover did not bring the shell back")
 	}
 	after := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo back-ok")
-	if got := strings.TrimSpace(after.str(t, "output")); got != "back-ok" {
+	if got := strings.TrimSpace(after.str(t, "stdout")); got != "back-ok" {
 		t.Errorf("exec after recover = %q, want back-ok", got)
 	}
 }
@@ -273,6 +278,7 @@ func TestLiveSessionBusyRefusesExec(t *testing.T) {
 // TestLiveSessionExitIsReported pins the documented behaviour: running `exit`
 // inside a session ends it, and the adapter says so with a stable code.
 func TestLiveSessionExitIsReported(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	name := liveName("exit")
@@ -286,20 +292,23 @@ func TestLiveSessionExitIsReported(t *testing.T) {
 // TestLiveSessionRejectsUnknownTarget checks a missing session is a stable code
 // and never a silent success.
 func TestLiveSessionRejectsUnknownTarget(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 	c.wantErrorCode(t, errs.SessionNotFound, "--json", "session", "exec", host, "nosuchsession", "--", "true")
 }
 
 // start launches a CLI process without waiting on it, for kill-the-client tests.
-func (c liveCLI) start(t *testing.T, args ...string) (*exec.Cmd, *bytes.Buffer) {
+func (c liveCLI) start(t *testing.T, args ...string) (*exec.Cmd, *bytes.Buffer, time.Time) {
 	t.Helper()
 	cmd := exec.Command(c.bin, args...)
-	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+c.cache)
+	cmd.Env = append(os.Environ(), c.env...)
+	cmd.Dir = c.dir
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
+	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start %v: %v", args, err)
 	}
-	return cmd, &out
+	return cmd, &out, started
 }

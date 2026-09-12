@@ -144,6 +144,19 @@ class RemoteFilesTest(unittest.TestCase):
                                    content=base64.b64encode(b'x').decode()),
                          'FILE_NOT_FOUND')
 
+    def test_write_parents_creates_missing_directories(self):
+        path = self.root / 'one' / 'two' / 'file'
+        self.request(op='write', path=str(path), parents=True,
+                     content=base64.b64encode(b'x').decode())
+        self.assertEqual(path.read_bytes(), b'x')
+
+    def test_write_parents_is_explicit(self):
+        path = self.root / 'new' / 'tree' / 'file'
+        result = self.request(op='write', path=str(path), parents=True,
+                              content=base64.b64encode(b'x').decode())
+        self.assertEqual(path.read_bytes(), b'x')
+        self.assertEqual(result['bytes'], 1)
+
     def test_write_requires_creation_or_hash(self):
         path = self.root / 'text'
         path.write_text('one\ntwo\n')

@@ -320,6 +320,15 @@ func TestReadScriptCursor(t *testing.T) {
 	}
 }
 
+func TestSendScriptCanPasteThenPressEnter(t *testing.T) {
+	s := SendScript("debug", "data-enter", "python3 -i")
+	paste := indexOf(s, "tmux paste-buffer")
+	enter := indexOf(s, "tmux send-keys -t \"$TMUX:0.0\" Enter")
+	if paste < 0 || enter < paste {
+		t.Fatalf("data-enter must paste before Enter: paste=%d enter=%d", paste, enter)
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(needle) == 0 || (len(haystack) >= len(needle) && indexOf(haystack, needle) >= 0)
 }

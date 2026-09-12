@@ -30,18 +30,18 @@ type JobStartOptions struct {
 
 // JobStartResult is the immediate outcome of launching a job.
 type JobStartResult struct {
-	ID    string `json:"id"`
+	JobID string `json:"job_id"`
 	State string `json:"state"`
 	PID   int    `json:"pid"`
 }
 
 // JobInfo is the CLI-facing view of one job.
 type JobInfo struct {
-	ID         string `json:"id"`
+	JobID      string `json:"job_id"`
 	Name       string `json:"name,omitempty"`
 	State      string `json:"state"`
 	PID        int    `json:"pid"`
-	ExitCode   int    `json:"exit_code"` // -1 while not finished
+	ExitCode   *int   `json:"exit_code"`
 	Command    string `json:"command"`
 	Cwd        string `json:"cwd,omitempty"`
 	StartedAt  string `json:"started_at"`
@@ -56,7 +56,7 @@ type JobLogsResult struct {
 	Next     int    `json:"next"`
 	More     bool   `json:"more"`
 	Encoding string `json:"encoding"` // "base64"
-	Data     string `json:"data"`     // base64-encoded chunk
+	Content  string `json:"content"`  // encoded according to Encoding
 }
 
 // JobSignalResult is the outcome of a stop/kill request.
@@ -134,7 +134,7 @@ func isGeneratedJobID(ref string) bool {
 
 // errInvalidJobRef is the taxonomy answer to a handle that is not a handle. It
 // is validation of user input, not a usage/flag parse failure, so it is
-// CONFIG_INVALID rather than USAGE_ERROR (docs/ARCHITECTURE.md §33).
+// CONFIG_INVALID rather than USAGE_ERROR (docs/architecture/persistent-work.md).
 func errInvalidJobRef(ref string) *errs.Error {
 	return errs.New(errs.ConfigInvalid,
 		fmt.Sprintf("invalid job id or name %q (start with a letter, then letters, digits, _ . -)", ref),
@@ -244,14 +244,14 @@ func (a *App) JobStart(ctx context.Context, opts JobStartOptions) (JobStartResul
 	}
 	res, aerr := a.runJobHelper(ctx, opts.Host, detached.StartScript(meta, cmdScript), opts.Timeout)
 	if aerr != nil {
-		return JobStartResult{ID: id, State: "unknown", PID: 0}, aerr
+		return JobStartResult{JobID: id, State: "unknown", PID: 0}, aerr
 	}
 	facts, herr := detached.ParseStart(string(res.Stdout))
 	if herr != "" {
-		return JobStartResult{ID: id, State: "unknown", PID: 0}, mapJobHelperErr(herr)
+		return JobStartResult{JobID: id, State: "unknown", PID: 0}, mapJobHelperErr(herr)
 	}
 	return JobStartResult{
-		ID:    facts.ID,
+		JobID: facts.ID,
 		State: string(detached.StateFromFacts(facts)),
 		PID:   facts.PID,
 	}, nil
@@ -268,7 +268,7 @@ func (a *App) JobStatus(ctx context.Context, host, ref string, timeout time.Dura
 		return JobInfo{}, mapJobHelperErr(herr)
 	}
 	info := toJobInfo(facts)
-	info.ID = id
+	info.JobID = id
 	return info, nil
 }
 
@@ -293,8 +293,7 @@ func jobsFromList(stdout string) []JobInfo {
 }
 
 // JobLogs reads a job log stream incrementally. Data is base64-encoded in the
-// result so binary log content survives JSON untouched (docs/ARCHITECTURE.md
-// §24). `ref` is a job id or a unique name.
+// result so binary log content survives JSON untouched (docs/architecture/persistent-work.md). `ref` is a job id or a unique name.
 func (a *App) JobLogs(ctx context.Context, host, ref, stream string, since int, timeout time.Duration) (JobLogsResult, *errs.Error) {
 	if stream != "stdout" && stream != "stderr" {
 		return JobLogsResult{}, errs.New(errs.ConfigInvalid, "stream must be stdout or stderr", false)
@@ -316,7 +315,7 @@ func (a *App) JobLogs(ctx context.Context, host, ref, stream string, since int, 
 		Next:     lo.Next,
 		More:     lo.Next < lo.Size,
 		Encoding: "base64",
-		Data:     base64.StdEncoding.EncodeToString(lo.Data),
+		Content:  base64.StdEncoding.EncodeToString(lo.Data),
 	}, nil
 }
 
@@ -357,12 +356,15 @@ func jobScriptTimeout(user time.Duration) time.Duration {
 
 func toJobInfo(f detached.Facts) JobInfo {
 	info := JobInfo{
-		ID:         f.ID,
+		JobID:      f.ID,
 		State:      string(detached.StateFromFacts(f)),
 		PID:        f.PID,
-		ExitCode:   f.ExitCode,
 		StartedAt:  "",
 		FinishedAt: f.FinishedAt,
+	}
+	if f.ExitCode >= 0 {
+		code := f.ExitCode
+		info.ExitCode = &code
 	}
 	if f.Meta != nil {
 		info.Name = f.Meta.Name

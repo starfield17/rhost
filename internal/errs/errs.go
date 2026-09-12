@@ -10,8 +10,8 @@ import (
 	"sort"
 )
 
-// Code identifies a class of adapter failure. It matches the candidate
-// taxonomy in docs/ARCHITECTURE.md §33.
+// Code identifies a class of adapter failure. It is the taxonomy documented in
+// docs/architecture/files-and-json.md.
 type Code string
 
 const (

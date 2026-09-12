@@ -44,7 +44,7 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 			a := app.NewDefault()
 
 			audit := startAudit("session.recover", host)
-			if aerr := a.SessionSend(c.Context(), host, session, "", "C-c", timeout); aerr != nil {
+			if aerr := a.SessionSend(c.Context(), host, session, "", "C-c", false, timeout); aerr != nil {
 				audit.fail(aerr)
 				emitFailure("session.recover", host, aerr)
 				return nil

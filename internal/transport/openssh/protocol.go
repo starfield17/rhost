@@ -1,4 +1,4 @@
-// Package openssh implements rhost's v0.1 transport: it orchestrates the system
+// Package openssh implements rhost's OpenSSH transport: it orchestrates the system
 // OpenSSH client rather than reimplementing the SSH protocol. OpenSSH stays the
 // source of truth for authentication, host-key policy, ProxyJump, and
 // connection reuse (ControlMaster).

@@ -61,6 +61,14 @@ type ExecResult struct {
 	CleanupConfirmed bool
 }
 
+func executionTimeout(timeout time.Duration, cleanupConfirmed bool) *errs.Error {
+	if cleanupConfirmed {
+		return errs.New(errs.RemoteCommandTimeout, fmt.Sprintf("command exceeded timeout %s", timeout), true)
+	}
+	return errs.New(errs.RemoteCommandTimeout,
+		"execution deadline exceeded; remote cleanup could not be confirmed, so the command may still be running", false)
+}
+
 // Execute runs a command in a fresh remote execution context.
 //
 // A non-nil *errs.Error indicates an adapter/transport failure (or a timeout).
@@ -131,12 +139,9 @@ func (a *App) Execute(ctx context.Context, opts ExecOptions) (ExecResult, *errs.
 
 		if kerr == nil && !kres.TimedOut && bytes.Contains(kres.Stdout, []byte("killed:")) {
 			out.CleanupConfirmed = true
-			return out, errs.New(errs.RemoteCommandTimeout,
-				fmt.Sprintf("command exceeded timeout %s", timeout), true)
+			return out, executionTimeout(timeout, true)
 		}
-		return out, errs.New(errs.SSHUnreachable,
-			"execution deadline exceeded; remote cleanup could not be confirmed, "+
-				"so the command may still be running", true)
+		return out, executionTimeout(timeout, false)
 	}
 
 	body, code, ok := openssh.ParseMarker(res.Stdout, nonce)

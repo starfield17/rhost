@@ -22,7 +22,7 @@ import (
 // content comparison, a resumable partial file, and a SHA-256 computed at both
 // ends after the copy. That costs three remote round trips and requires rsync on
 // both sides plus a remote `sha256sum`, which is exactly why it is opt-in
-// (docs/ARCHITECTURE.md §28: report which backend did the work).
+// (docs/architecture/files-and-json.md: report which backend did the work).
 //
 // The hash is the last word. A transfer that "succeeded" but whose bytes differ
 // is a failure, because the only reason to ask for verification is to be told

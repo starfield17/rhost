@@ -82,7 +82,7 @@ func newJobStartCmd() *cobra.Command {
 					exitCode = adapterExitCode(aerr)
 				} else {
 					fmt.Fprintf(os.Stderr, "rhost: %s: %s (job id %s; state unknown, query before retrying)\n",
-						aerr.Code, aerr.Message, res.ID)
+						aerr.Code, aerr.Message, res.JobID)
 					exitCode = adapterExitCode(aerr)
 				}
 				return nil
@@ -91,7 +91,7 @@ func newJobStartCmd() *cobra.Command {
 			if jsonFlag {
 				_ = output.Success("job.start", host, res).Write(os.Stdout)
 			} else {
-				fmt.Printf("started job %s (pid %d, state %s)\n", res.ID, res.PID, res.State)
+				fmt.Printf("started job %s (pid %d, state %s)\n", res.JobID, res.PID, res.State)
 			}
 			return nil
 		},
@@ -128,10 +128,10 @@ func newJobListCmd() *cobra.Command {
 			fmt.Printf("%-16s %-16s %-8s %-9s %s\n", "ID", "NAME", "STATE", "EXIT", "COMMAND")
 			for _, j := range jobs {
 				ec := "-"
-				if j.ExitCode >= 0 {
-					ec = strconv.Itoa(j.ExitCode)
+				if j.ExitCode != nil {
+					ec = strconv.Itoa(*j.ExitCode)
 				}
-				fmt.Printf("%-16s %-16s %-8s %-9s %s\n", j.ID, j.Name, j.State, ec, j.Command)
+				fmt.Printf("%-16s %-16s %-8s %-9s %s\n", j.JobID, j.Name, j.State, ec, j.Command)
 			}
 			return nil
 		},
@@ -157,13 +157,12 @@ func newJobStatusCmd() *cobra.Command {
 			if jsonFlag {
 				_ = output.Success("job.status", host, info).Write(os.Stdout)
 			} else {
-				// -1 means "no exit code recorded yet", which reads as a lie when
-				// printed as a number; the JSON keeps the integer.
+				// A missing exit status renders as "-" for humans and null in JSON.
 				exitField := "-"
-				if info.ExitCode >= 0 {
-					exitField = strconv.Itoa(info.ExitCode)
+				if info.ExitCode != nil {
+					exitField = strconv.Itoa(*info.ExitCode)
 				}
-				fmt.Printf("%s  state=%s pid=%d exit=%s\n", info.ID, info.State, info.PID, exitField)
+				fmt.Printf("%s  state=%s pid=%d exit=%s\n", info.JobID, info.State, info.PID, exitField)
 				if info.Command != "" {
 					fmt.Printf("command=%s\n", info.Command)
 				}
@@ -203,7 +202,7 @@ func newJobLogsCmd() *cobra.Command {
 				_ = output.Success("job.logs", host, res).Write(os.Stdout)
 				return nil
 			}
-			data, derr := base64.StdEncoding.DecodeString(res.Data)
+			data, derr := base64.StdEncoding.DecodeString(res.Content)
 			if derr != nil {
 				emitFailure("job.logs", host, configErr(derr))
 				return nil

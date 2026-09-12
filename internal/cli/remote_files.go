@@ -61,6 +61,7 @@ func newRemoteFileCmd(op string) *cobra.Command {
 	spec := remoteFileOps[op]
 	var (
 		from, hash, patchFile string
+		parents               bool
 		fileMode              string
 		start, lines          int
 		maxBytes              int
@@ -78,6 +79,9 @@ func newRemoteFileCmd(op string) *cobra.Command {
 			request := map[string]interface{}{"op": op, "max_bytes": maxBytes}
 			request["path"] = args[1]
 			request["if_hash"] = hash
+			if op == "write" {
+				request["parents"] = parents
+			}
 			if op == "read" {
 				request["start"], request["lines"] = start, lines
 			}
@@ -100,7 +104,7 @@ func newRemoteFileCmd(op string) *cobra.Command {
 
 			// Writes are the only remote actions in this family, so they are the
 			// only ones the audit trail records: reads are polling,
-			// and §36 keeps the trail to actions (docs/ARCHITECTURE.md §36).
+			// while the audit trail stays focused on actions.
 			var audit *auditTimer
 			if op == "write" || op == "patch" {
 				audit = startAudit("fs."+op, args[0])
@@ -126,6 +130,7 @@ func newRemoteFileCmd(op string) *cobra.Command {
 		c.Flags().StringVar(&from, "from", "-", "local file, or - for stdin")
 		c.Flags().StringVar(&hash, "if-hash", "", "SHA-256 from fs read, required to replace a file")
 		c.Flags().StringVar(&fileMode, "mode", "", "octal permissions, e.g. 0755 (new files default to 0600)")
+		c.Flags().BoolVar(&parents, "parents", false, "create missing remote parent directories")
 	case "patch":
 		c.Flags().StringVar(&patchFile, "patch", "-", "patch JSON file, or - for stdin")
 		c.Flags().StringVar(&hash, "if-hash", "", "SHA-256 from fs read (the patch file usually carries it)")
@@ -203,7 +208,7 @@ func loadPatch(request map[string]interface{}, data []byte, host string) *errs.E
 
 // emitHelper renders one helper response. `--json` always carries the whole
 // document; the human view is the part of it a person asked for, with the rest
-// on stderr, so `rhost fs read host file > copy.txt` stays clean (docs §32).
+// on stderr, so `rhost fs read host file > copy.txt` stays clean.
 func emitHelper(op, host string, res map[string]interface{}) {
 	operation := "fs." + op
 	if jsonFlag {

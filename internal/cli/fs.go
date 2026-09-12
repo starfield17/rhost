@@ -11,7 +11,7 @@ import (
 	"github.com/starfield17/rhost/internal/output"
 )
 
-// newFsCmd builds `rhost fs put|get|sync` (docs/ARCHITECTURE.md §26–§28).
+// newFsCmd builds `rhost fs put|get|sync` (docs/architecture/files-and-json.md).
 //
 // The endpoints stay separate arguments rather than scp's `host:path` shorthand:
 // a positional `~/x` is ambiguous, and guessing wrong here copies a file the wrong
@@ -42,7 +42,7 @@ func fsTimeoutFlags(cmd *cobra.Command, timeout *time.Duration) {
 
 func newFsPutCmd() *cobra.Command {
 	var timeout time.Duration
-	var resume, checksum bool
+	var resume, checksum, parents bool
 	cmd := &cobra.Command{
 		Use:   "put <host> <local-path> <remote-path>",
 		Short: "Copy one local file to the remote host",
@@ -53,7 +53,7 @@ func newFsPutCmd() *cobra.Command {
 			a := app.NewDefault()
 			res, aerr := a.FsPut(cmd.Context(), app.FsPutOptions{
 				Host: host, LocalPath: local, Remote: remote, Timeout: timeout,
-				Resume: resume, Checksum: checksum,
+				Resume: resume, Checksum: checksum, Parents: parents,
 			})
 			if aerr != nil {
 				audit.fail(aerr)
@@ -72,6 +72,7 @@ func newFsPutCmd() *cobra.Command {
 	fsTimeoutFlags(cmd, &timeout)
 	cmd.Flags().BoolVar(&resume, "resume", false, "resume using rsync partial files and verify SHA-256")
 	cmd.Flags().BoolVar(&checksum, "checksum", false, "verify end-to-end SHA-256 using rsync and sha256sum")
+	cmd.Flags().BoolVar(&parents, "parents", false, "create missing remote parent directories")
 	return cmd
 }
 

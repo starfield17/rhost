@@ -1,6 +1,6 @@
 // Package shell centralises quoting/escaping for values that reach a remote
 // shell command line. There must be exactly one implementation of this logic in
-// the codebase (docs/ARCHITECTURE.md §9).
+// the codebase (docs/architecture/runtime.md).
 package shell
 
 import (

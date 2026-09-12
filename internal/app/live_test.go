@@ -11,45 +11,74 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/starfield17/rhost/internal/config"
 	"github.com/starfield17/rhost/internal/errs"
+	"github.com/starfield17/rhost/internal/shell"
 )
 
 // Live tests drive the *built binary* as a child process, never the Go API
 // directly. That is the whole point: rhost owns nothing durable, so anything
 // promised to survive a CLI invocation can only be proven by exiting the
-// process and starting a new one (AGENTS.md §4, docs/ARCHITECTURE.md §41).
+// process and starting a new one (AGENTS.md §4, docs/architecture/engineering.md).
 //
 // They are opt-in and take their target from the environment, so this file runs
 // unchanged on any machine:
 //
 //	RHOST_TEST_LIVE=1 RHOST_TEST_HOST=<user>@<host> go test ./internal/app/ -run Live -v
 //
-// docs/ARCHITECTURE.md §41 Test D (network interruption) is deliberately not
+// docs/architecture/engineering.md (network interruption) is deliberately not
 // automated here: it needs a human to cut the link, so it stays a manual step.
 
 // liveBinDir holds the throwaway binary built once per live run.
 var liveBinDir string
 
-// liveCacheDir is the ControlMaster namespace shared by tests that do not
-// themselves prove isolation. Tests that close the master or inspect the
-// socket root keep a private dir via cliIsolated / withCacheDir.
-var liveCacheDir string
+// liveCacheDirs are a small pool of ControlMaster namespaces. A parallel test
+// leases one namespace for its lifetime, so its own CLI calls reuse a connection
+// without opening concurrent channels on the same master as another test.
+var liveCacheDirs []string
+var liveCachePool chan string
+
+var liveHarness struct {
+	sync.Mutex
+	remoteDirs []string
+	jobIDs     []string
+	calls      int
+	total      time.Duration
+	max        time.Duration
+	started    time.Time
+}
+
+var liveResourceMu sync.Mutex
+var liveNameSeq atomic.Uint64
 
 // livePoll is the wait between live-test observations. Persistence is proven
 // by a later CLI process, not by sleeping a full second between polls.
 const livePoll = 200 * time.Millisecond
+const liveParallelism = 3
 
 func TestMain(m *testing.M) {
 	code := m.Run()
+	if err := cleanupLiveResources(); err != nil {
+		fmt.Fprintf(os.Stderr, "live cleanup: %v\n", err)
+		code = 1
+	}
+	liveHarness.Lock()
+	if liveHarness.calls > 0 {
+		fmt.Fprintf(os.Stderr, "live stats: calls=%d cli_time=%s max_call=%s wall=%s\n",
+			liveHarness.calls, liveHarness.total.Round(time.Millisecond),
+			liveHarness.max.Round(time.Millisecond), time.Since(liveHarness.started).Round(time.Millisecond))
+	}
+	liveHarness.Unlock()
 	if liveBinDir != "" {
 		_ = os.RemoveAll(liveBinDir)
 	}
-	if liveCacheDir != "" {
-		_ = os.RemoveAll(liveCacheDir)
+	for _, dir := range liveCacheDirs {
+		_ = os.RemoveAll(dir)
 	}
 	os.Exit(code)
 }
@@ -58,7 +87,7 @@ func TestMain(m *testing.M) {
 // an earlier run cannot collide. It stays inside both the session and job
 // name character classes.
 func liveName(prefix string) string {
-	return fmt.Sprintf("rlive-%s-%d", prefix, time.Now().UnixNano())
+	return fmt.Sprintf("rlive-%s-%d-%d", prefix, time.Now().UnixNano(), liveNameSeq.Add(1))
 }
 
 // liveCLI is one rhost invocation environment: a binary plus an RHOST_CACHE_DIR
@@ -66,6 +95,8 @@ func liveName(prefix string) string {
 type liveCLI struct {
 	bin   string
 	cache string
+	env   []string
+	dir   string
 	// controlPath is resolved through internal/config, the same code the child
 	// process runs, so the parent never duplicates rhost's path arithmetic.
 	controlPath string
@@ -111,13 +142,12 @@ func liveHost(t *testing.T) string {
 	return host
 }
 
-// cli builds rhost once for the run and points it at the shared cache dir so
-// tests reuse one ControlMaster. The dir stays short on purpose so this suite
-// exercises rhost's primary ControlPath; TestLiveControlPathDeepCacheDir
-// covers the long-path fallback.
+// cli builds rhost once for the run and leases one ControlMaster namespace from
+// the suite pool. Each test reuses its connection across child processes, while
+// parallel tests never contend for channels on the same master.
 func cli(t *testing.T) liveCLI {
 	t.Helper()
-	return withCacheDir(t, liveCLI{bin: buildBinary(t)}, sharedCacheDir(t))
+	return withCacheDir(t, liveCLI{bin: buildBinary(t)}, pooledCacheDir(t))
 }
 
 // cliIsolated is cli with a private ControlMaster namespace. Use it when the
@@ -132,16 +162,26 @@ func cliIsolated(t *testing.T) liveCLI {
 	return withCacheDir(t, liveCLI{bin: buildBinary(t)}, dir)
 }
 
-func sharedCacheDir(t *testing.T) string {
+func pooledCacheDir(t *testing.T) string {
 	t.Helper()
-	if liveCacheDir == "" {
-		dir, err := os.MkdirTemp("", "rhost-live-cache-*")
-		if err != nil {
-			t.Fatalf("shared cache dir: %v", err)
+	liveResourceMu.Lock()
+	if liveCachePool == nil {
+		liveCachePool = make(chan string, liveParallelism)
+		for range liveParallelism {
+			dir, err := os.MkdirTemp("", "rhost-live-cache-*")
+			if err != nil {
+				liveResourceMu.Unlock()
+				t.Fatalf("cache pool: %v", err)
+			}
+			liveCacheDirs = append(liveCacheDirs, dir)
+			liveCachePool <- dir
 		}
-		liveCacheDir = dir
 	}
-	return liveCacheDir
+	pool := liveCachePool
+	liveResourceMu.Unlock()
+	dir := <-pool
+	t.Cleanup(func() { pool <- dir })
+	return dir
 }
 
 // withCacheDir re-points a CLI at another cache root and resolves the socket
@@ -149,14 +189,26 @@ func sharedCacheDir(t *testing.T) string {
 func withCacheDir(t *testing.T, c liveCLI, dir string) liveCLI {
 	t.Helper()
 	c.cache = dir
-	t.Setenv("RHOST_CACHE_DIR", dir)
-	c.controlPath = config.ControlPath()
+	c.env = append(c.env, "RHOST_CACHE_DIR="+dir)
+	c.controlPath = config.ControlPathForCache(dir)
+	return c
+}
+
+func (c liveCLI) withEnv(values ...string) liveCLI {
+	c.env = append(append([]string{}, c.env...), values...)
+	return c
+}
+
+func (c liveCLI) withDir(dir string) liveCLI {
+	c.dir = dir
 	return c
 }
 
 // buildBinary compiles the CLI under test once per live run.
 func buildBinary(t *testing.T) string {
 	t.Helper()
+	liveResourceMu.Lock()
+	defer liveResourceMu.Unlock()
 	if liveBinDir == "" {
 		dir, err := os.MkdirTemp("", "rhost-bin")
 		if err != nil {
@@ -184,11 +236,14 @@ func (c liveCLI) run(t *testing.T, args ...string) (stdout, stderr string, code 
 func (c liveCLI) runInput(t *testing.T, input string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	cmd := exec.Command(c.bin, args...)
-	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+c.cache)
+	cmd.Env = append(os.Environ(), c.env...)
+	cmd.Dir = c.dir
 	cmd.Stdin = strings.NewReader(input)
 	var so, se bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &so, &se
+	started := time.Now()
 	err := cmd.Run()
+	recordLiveCall(time.Since(started))
 	code = 0
 	var ee *exec.ExitError
 	switch {
@@ -199,6 +254,81 @@ func (c liveCLI) runInput(t *testing.T, input string, args ...string) (stdout, s
 		t.Fatalf("run %v: %v", args, err)
 	}
 	return so.String(), se.String(), code
+}
+
+func recordLiveCall(elapsed time.Duration) {
+	liveHarness.Lock()
+	defer liveHarness.Unlock()
+	if liveHarness.calls == 0 {
+		liveHarness.started = time.Now().Add(-elapsed)
+	}
+	liveHarness.calls++
+	liveHarness.total += elapsed
+	if elapsed > liveHarness.max {
+		liveHarness.max = elapsed
+	}
+}
+
+func registerLiveRemoteDir(dir string) {
+	liveHarness.Lock()
+	defer liveHarness.Unlock()
+	liveHarness.remoteDirs = append(liveHarness.remoteDirs, dir)
+}
+
+func registerLiveJob(jobID string) {
+	liveHarness.Lock()
+	defer liveHarness.Unlock()
+	liveHarness.jobIDs = append(liveHarness.jobIDs, jobID)
+}
+
+func cleanupLiveResources() error {
+	liveHarness.Lock()
+	dirs := append([]string{}, liveHarness.remoteDirs...)
+	jobIDs := append([]string{}, liveHarness.jobIDs...)
+	liveHarness.Unlock()
+	if (len(dirs) == 0 && len(jobIDs) == 0) || liveBinDir == "" {
+		return nil
+	}
+	cacheDir := ""
+	if len(liveCacheDirs) > 0 {
+		cacheDir = liveCacheDirs[0]
+	}
+	if cacheDir == "" {
+		var err error
+		cacheDir, err = os.MkdirTemp("", "rhost-live-cleanup-*")
+		if err != nil {
+			return fmt.Errorf("create cache directory: %w", err)
+		}
+		defer os.RemoveAll(cacheDir)
+	}
+	parts := make([]string, 0, 2)
+	if len(dirs) > 0 {
+		var removeDirs strings.Builder
+		removeDirs.WriteString("rm -rf --")
+		for _, dir := range dirs {
+			removeDirs.WriteByte(' ')
+			removeDirs.WriteString(shell.Quote(dir))
+		}
+		parts = append(parts, removeDirs.String())
+	}
+	if len(jobIDs) > 0 {
+		var removeJobs strings.Builder
+		removeJobs.WriteString(`state=${RHOST_REMOTE_STATE:-"$HOME/.local/state/rhost"}; rm -rf --`)
+		for _, jobID := range jobIDs {
+			removeJobs.WriteString(` "$state/jobs/"`)
+			removeJobs.WriteString(shell.Quote(jobID))
+		}
+		parts = append(parts, removeJobs.String())
+	}
+	cmd := exec.Command(filepath.Join(liveBinDir, "rhost"), "--host", os.Getenv("RHOST_TEST_HOST"), "--", strings.Join(parts, "; "))
+	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+cacheDir)
+	started := time.Now()
+	out, err := cmd.CombinedOutput()
+	recordLiveCall(time.Since(started))
+	if err != nil {
+		return fmt.Errorf("remove remote test directories: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // mustJSON runs a command that must succeed and decodes its envelope.
@@ -287,6 +417,7 @@ func (c liveCLI) wantErrorCode(t *testing.T, code errs.Code, args ...string) env
 // TestLiveExec proves foreground execution end to end through the CLI: stdout,
 // the remote exit status mirrored into the process status, and explicit cwd.
 func TestLiveExec(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -333,6 +464,7 @@ func TestLiveExec(t *testing.T) {
 // TestLiveExecTimeout checks the foreground timeout kills the remote process
 // group, not just the local ssh, and reports 124 + REMOTE_COMMAND_TIMEOUT.
 func TestLiveExecTimeout(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -362,13 +494,18 @@ func TestLiveExecTimeout(t *testing.T) {
 }
 
 func TestLiveExecDirectCancellation(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
-	c := cli(t)
+	// Keep interruption testing away from the suite-wide master: this test sends
+	// SIGINT to its rhost process and should not perturb unrelated parallel work.
+	c := cliIsolated(t)
 	sleepFor := strconv.Itoa(800 + time.Now().Nanosecond()%100)
 	cmd := exec.Command(c.bin, "--json", "--host", host, "--", "sleep "+sleepFor)
-	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+c.cache)
+	cmd.Env = append(os.Environ(), c.env...)
+	cmd.Dir = c.dir
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
+	started := time.Now()
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -380,6 +517,7 @@ func TestLiveExecDirectCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := cmd.Wait()
+	recordLiveCall(time.Since(started))
 	var ee *exec.ExitError
 	if !errors.As(err, &ee) || ee.ExitCode() != 130 {
 		t.Fatalf("cancel exit = %v, want 130; stdout=%s", err, stdout.String())
@@ -411,6 +549,7 @@ func matchingLines(text, needle string) []string {
 
 // TestLiveDoctor probes a real host's capabilities.
 func TestLiveDoctor(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
 
@@ -428,10 +567,11 @@ func TestLiveDoctor(t *testing.T) {
 	}
 }
 
-// TestLiveTransportReuse is docs/ARCHITECTURE.md §41 Test A: two *separate*
+// TestLiveTransportReuse is docs/architecture/engineering.md: two *separate*
 // rhost processes must reuse one OpenSSH ControlMaster, and the master must
 // outlive the process that created it.
 func TestLiveTransportReuse(t *testing.T) {
+	t.Parallel()
 	host := liveHost(t)
 	c := cliIsolated(t)
 

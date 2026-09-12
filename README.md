@@ -65,9 +65,11 @@ process status.
 
 ```bash
 rhost fs put gpu ./file '~/work/file'
+rhost fs put gpu ./file '~/new/project/file' --parents
 rhost fs get gpu '~/work/result.json' ./result.json
 rhost fs sync gpu ./project '~/work/project' --dry-run
 rhost fs read gpu '~/work/project/main.go' --json
+rhost fs write gpu '~/new/project/main.go' --from ./main.go --parents
 rhost fs write gpu '~/work/project/main.go' --from ./main.go --if-hash <sha256>
 
 rhost job start gpu --json --cwd '~/work/project' -- 'make long-task'
@@ -76,11 +78,14 @@ rhost job logs gpu <job-id> --json --since 0
 
 rhost session create gpu --name debug --cwd '~/work/project'
 rhost session exec gpu debug --json -- 'python -m pdb app.py'
+rhost session send gpu debug --data 'next()' --enter
 rhost session read gpu debug --json --since 0
 ```
 
-File replacement and patching require the SHA-256 from the last `fs read`, use
-atomic same-directory replacement, and reject symlink targets. Sync and mirror
+Creating a file needs no hash; replacing or patching one requires the SHA-256
+from the last `fs read`. Writes use atomic same-directory replacement and
+reject symlink targets. Transfers and writes create missing directories only
+with `--parents`. Sync and mirror
 delete only with explicit `--delete`; preview destructive syncs with `--dry-run`.
 Remote search is intentionally an ordinary command, for example:
 
@@ -107,6 +112,7 @@ promised to preserve.
 make build
 make check
 
+RHOST_TEST_HOST=<user>@<host> make test-live-smoke
 RHOST_TEST_HOST=<user>@<host> make test-live
 RHOST_TEST_HOST=<user>@<host> make test-live-session
 RHOST_TEST_HOST=<user>@<host> make test-live-all
@@ -114,4 +120,6 @@ RHOST_TEST_HOST=<user>@<host> make test-live-all
 
 Live suites always take their target from `RHOST_TEST_HOST`; the repository has
 no machine-specific default. The remote side is an SSH-reachable Linux host and
-the local side is macOS or Linux.
+the local side is macOS or Linux. Use `test-live-smoke` for frequent checks of
+the main exec, file, session and job workflows; `test-live-all` remains the full
+failure, persistence and transport gate.

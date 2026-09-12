@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,25 @@ import (
 	"github.com/starfield17/rhost/internal/app"
 	"github.com/starfield17/rhost/internal/errs"
 )
+
+func TestSessionExecAndReadJSONFieldNames(t *testing.T) {
+	execRaw, err := json.Marshal(sessionExecData(app.SessionExecResult{SessionID: "s_1", Output: "ready", ExitCode: 0}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(execRaw), `"stdout":"ready"`) || strings.Contains(string(execRaw), `"output":`) {
+		t.Fatalf("session exec JSON = %s", execRaw)
+	}
+	readRaw, err := json.Marshal(sessionReadData(app.SessionReadResult{SessionID: "s_1", Data: "ready", From: 0, Next: 5}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{`"content":"ready"`, `"encoding":"utf-8"`} {
+		if !strings.Contains(string(readRaw), field) {
+			t.Fatalf("session read JSON = %s", readRaw)
+		}
+	}
+}
 
 func TestRunBatchManifestValidation(t *testing.T) {
 	write := func(t *testing.T, body string) string {

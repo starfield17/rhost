@@ -26,11 +26,17 @@ when the result must be classified programmatically; branch on `error.code`, and
 inspect `data.exit_code`, truncation, timeout/cancellation, and
 `cleanup_confirmed` rather than parsing English output.
 
+Combine related read-only observations on the same host into one remote command
+to avoid repeated SSH round trips. Keep unrelated mutations separate so each
+result has an unambiguous exit and retry decision.
+
 ## Rules
 
 - Pass exactly one shell command after `--`. Quote it as one local argument.
 - Treat `--cwd` as a remote path. Quote a leading `~` so the local shell does not
   expand it.
+- For every remote path argument, write `'~/path'`, not `"'~/path'"`: shell
+  quotes protect the argument but are not part of the path.
 - Do not place secrets in command text. It is visible to the remote process list,
   shell history, and rhost's bounded local audit summary.
 - Do not weaken OpenSSH host-key or authentication policy. Diagnose failures with

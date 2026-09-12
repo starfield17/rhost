@@ -46,9 +46,12 @@ travel through the remote process environment and are visible there.
   that makes pruning a whole home safe.
 - A destination containing glob characters is refused, because the remote shell
   would expand it into something you did not name.
-- `fs write` and `fs patch` require the hash of the file you last read. That is
-  the compare-and-swap: a hash you did not just read is a guess about someone
-  else's current contents, and it is refused rather than applied.
+- `fs write` can create a missing file without a hash. Replacing a file and
+  every `fs patch` require the hash of the file you last read. That is the
+  compare-and-swap: a hash you did not just read is a guess about someone else's
+  current contents, and it is refused rather than applied.
+- `fs put` and `fs write` create missing parent directories only with an
+  explicit `--parents`.
 - Writes are atomic within the directory and are never applied through a symlink.
 - Everything about `fs` is foreground: if this process dies, the copy stops. A
   transfer you need to survive a disconnect is a `job` running `rsync` or `scp`

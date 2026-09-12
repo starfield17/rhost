@@ -4,7 +4,7 @@ The program is embedded into the rhost binary and executed by a *remote* python3
 (AGENTS.md §5: nothing is installed here, a missing interpreter is reported as a
 dependency failure instead). It reads one JSON request on stdin and writes one
 JSON response on stdout, so no path, pattern or file content ever has to survive
-a shell parser, and the CLI needs only one transport (docs/ARCHITECTURE.md §28).
+a shell parser, and the CLI needs only one transport (docs/architecture/files-and-json.md).
 
 Stability rules this file has to keep:
 
@@ -234,6 +234,8 @@ def write_or_patch(q, path):
     """
     op = q['op']
     parent = os.path.dirname(path)
+    if op == 'write' and q.get('parents'):
+        os.makedirs(parent, mode=0o700, exist_ok=True)
     if not os.path.exists(parent):
         raise Failure('FILE_NOT_FOUND', 'no such parent directory: %s' % parent)
     if not os.path.isdir(parent):
