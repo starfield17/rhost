@@ -40,6 +40,15 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - name: Install ripgrep
+        # remote.py search tests are part of `make check`.
+        run: |
+          if [ "${RUNNER_OS}" = Linux ]; then
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          else
+            brew list ripgrep >/dev/null 2>&1 || brew install ripgrep
+          fi
       - name: Check (gofmt + vet + unit tests + portability + release contract, AGENTS.md §9)
         run: make check
 
