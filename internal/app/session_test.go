@@ -32,6 +32,13 @@ func TestMapHelperErr(t *testing.T) {
 	}
 }
 
+func TestMapHelperErrNamesInputSubmissionFailure(t *testing.T) {
+	got := mapHelperErr("inputfailed")
+	if got.Code != errs.SessionUnhealthy || got.Message != "could not submit command input to session" {
+		t.Errorf("mapHelperErr(inputfailed) = %+v", got)
+	}
+}
+
 // TestSessionHelperTimeoutCoversHelperPhases guards the timeout budget: the
 // transport must not kill the helper while it is still waiting on the lock, the
 // idle pane, or the user command's own timeout.

@@ -227,6 +227,21 @@ func TestExecScriptProtocol(t *testing.T) {
 	}
 }
 
+// TestExecScriptConfirmsInputSubmission guards the concurrent-session failure
+// path: loading, pasting and submitting a command are one logical write. They
+// must run in one tmux command queue and fail explicitly, otherwise a dropped
+// paste is misreported 60 seconds later as a user-command timeout.
+func TestExecScriptConfirmsInputSubmission(t *testing.T) {
+	s := ExecScript("dev", "echo hi", 5*time.Second, "0123456789abcdef0123456789abcdef")
+	want := `tmux load-buffer -b "$BUF" - \; paste-buffer -d -b "$BUF" -t "$TMUX:0.0" \; send-keys -t "$TMUX:0.0" Enter`
+	if !contains(s, want) {
+		t.Errorf("ExecScript does not submit input through one tmux command queue:\n%s", s)
+	}
+	if !contains(s, `RHOST_ERR=inputfailed`) {
+		t.Errorf("ExecScript does not report an input submission failure")
+	}
+}
+
 // TestExecScriptScansEveryByte is the regression test for a real failure:
 // `session exec --command "bash -c 'exit 4'"` timed out on a live host although the
 // completion marker had been written. The scan advanced its offset to a size it
