@@ -163,6 +163,9 @@ timeout/cancellation state, and whether cleanup was confirmed.
 
 A remote program can return the same numeric values. In ambiguous cases inspect
 `ok`, `data.exit_code`, and `error.code` instead of branching on English text.
+The process-status table does not describe the JSON sentinel: an exec
+`data.exit_code` of `-1` means rhost did not observe a remote command status.
+Use `error.code`, `data.timed_out`, and `data.cancelled` to classify that result.
 
 ## Use as an agent skill
 

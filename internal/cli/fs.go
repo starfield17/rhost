@@ -46,7 +46,7 @@ func newFsPutCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "put <host> <local-path> <remote-path>",
 		Short: "Copy one local file to the remote host",
-		Args:  cobra.ExactArgs(3),
+		Args:  exactNamedArgs("<host>", "<local>", "<remote>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, local, remote := args[0], args[1], args[2]
 			audit := startAudit("fs.put", host)
@@ -82,7 +82,7 @@ func newFsGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get <host> <remote-path> <local-path>",
 		Short: "Copy one remote file to this machine",
-		Args:  cobra.ExactArgs(3),
+		Args:  exactNamedArgs("<host>", "<remote>", "<local>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, remote, local := args[0], args[1], args[2]
 			audit := startAudit("fs.get", host)
@@ -129,7 +129,7 @@ changes nothing; an empty plan means the two sides already match.
 
 Syncing into a top-level directory (/, /srv, ~) with --delete is refused: the
 prune would be a disaster, and there is no flag that makes it safe.`,
-		Args: cobra.ExactArgs(3),
+		Args: exactNamedArgs("<host>", "<local-directory>", "<remote-directory>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, local, remote := args[0], args[1], args[2]
 			audit := startAudit("fs.sync", host)

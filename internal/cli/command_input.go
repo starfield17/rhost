@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -29,12 +30,23 @@ func bindShellCommand(cmd *cobra.Command, value *shellCommandValue) {
 	cmd.Flags().VarP(value, "command", "c", "exact shell program to execute")
 }
 
-func (v *shellCommandValue) validate(fixedArgs int) cobra.PositionalArgs {
+// exactNamedArgs keeps Cobra's exact-arity rejection while naming the operands
+// a caller forgot. The names are the public CLI grammar, not parser internals.
+func exactNamedArgs(names ...string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) < len(names) {
+			return fmt.Errorf("%s requires %s", cmd.CommandPath(), strings.Join(names, " "))
+		}
+		return cobra.ExactArgs(len(names))(cmd, args)
+	}
+}
+
+func (v *shellCommandValue) validate(fixedArgs ...string) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		if cmd.ArgsLenAtDash() >= 0 {
 			return fmt.Errorf("%s does not accept a command after --; use --command <string>", cmd.CommandPath())
 		}
-		if err := cobra.ExactArgs(fixedArgs)(cmd, args); err != nil {
+		if err := exactNamedArgs(fixedArgs...)(cmd, args); err != nil {
 			return err
 		}
 		if !v.set {

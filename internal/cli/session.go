@@ -48,7 +48,7 @@ func newSessionCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <host>",
 		Short: "Create a persistent session",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactNamedArgs("<host>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
 			audit := startAudit("session.create", host)
@@ -80,7 +80,7 @@ func newSessionListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list <host>",
 		Short: "List sessions and their liveness",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactNamedArgs("<host>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
 			a := app.NewDefault()
@@ -114,7 +114,7 @@ func newSessionExecCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "exec <host> <session> --command <shell-program>",
 		Short: "Run a command in a session (state persists)",
-		Args:  command.validate(2),
+		Args:  command.validate("<host>", "<session>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			audit := startAudit("session.exec", host)
@@ -194,7 +194,7 @@ func newSessionSendCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "send <host> <session> (--data TEXT [--enter] | --key KEY)",
 		Short: "Send raw input or a control key to a session",
-		Args:  cobra.ExactArgs(2),
+		Args:  exactNamedArgs("<host>", "<session>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			audit := startAudit("session.send", host)
@@ -232,7 +232,7 @@ func newSessionReadCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "read <host> <session> [--since N]",
 		Short: "Read a session's output log incrementally",
-		Args:  cobra.ExactArgs(2),
+		Args:  exactNamedArgs("<host>", "<session>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			a := app.NewDefault()
@@ -265,7 +265,7 @@ func newSessionCloseCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "close <host> <session>",
 		Short: "Close a session and remove its state",
-		Args:  cobra.ExactArgs(2),
+		Args:  exactNamedArgs("<host>", "<session>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			audit := startAudit("session.close", host)
@@ -290,7 +290,7 @@ func newSessionAttachCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "attach <host> <session>",
 		Short: "Attach the local terminal to a session (interactive)",
-		Args:  cobra.ExactArgs(2),
+		Args:  exactNamedArgs("<host>", "<session>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			if jsonFlag {

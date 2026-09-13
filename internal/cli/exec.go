@@ -36,7 +36,7 @@ redirections, variables and compound shell syntax work:
 Human mode streams stdout and stderr and forwards stdin. There is no default
 execution deadline. The process status mirrors the remote command; adapter
 failures use 255 and timeouts use 124.`,
-		Args: command.validate(1),
+		Args: command.validate("<host>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDirectExec(cmd, args[0], command.value, cwd, envs, timeout, maxOutput)
 		},

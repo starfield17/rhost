@@ -37,8 +37,10 @@ Time:
   session, check `data.session_preserved`: false means something still holds the
   pane (`session read` to see what, `session recover` to interrupt it). Work that
   should outlive a timeout belongs in a `job`.
-- `REMOTE_COMMAND_CANCELLED` — the local rhost received SIGINT or SIGTERM. Check
-  `data.cancel_signal` and `data.cleanup_confirmed` before retrying a side effect.
+- `REMOTE_COMMAND_CANCELLED` — the local rhost received SIGINT or SIGTERM.
+  `data.cancel_signal` names that signal when `data.cancelled` is true; the field
+  is absent otherwise. Check it and `data.cleanup_confirmed` before retrying a
+  side effect.
 - `OUTPUT_WRITE_FAILED` — the local stdout/stderr consumer closed or failed.
   Do not infer that the remote operation failed or retry a side effect. For a
   streamed exec, remote cleanup was attempted; inspect `data.cleanup_confirmed`

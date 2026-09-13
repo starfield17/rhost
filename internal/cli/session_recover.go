@@ -38,7 +38,7 @@ If another program still owns the pane after the recovery budget, the result
 carries SESSION_BUSY and data.foreground. Recover never exits a REPL for you.
 The next step is ` + "`session read`" + ` — to see what
 it is doing — or ` + "`session close`" + `, not another blind command.`,
-		Args: cobra.ExactArgs(2),
+		Args: exactNamedArgs("<host>", "<session>"),
 		RunE: func(c *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
 			a := app.NewDefault()

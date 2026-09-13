@@ -21,7 +21,7 @@ func newDoctorCmd() *cobra.Command {
 The probe is read-only and runs through the same exec path used by real work, so
 a successful doctor run also proves batch authentication, bash, setsid, and the
 completion-marker protocol work on this host.`,
-		Args: cobra.ExactArgs(1),
+		Args: exactNamedArgs("<host>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
 			audit := startAudit("doctor", host)

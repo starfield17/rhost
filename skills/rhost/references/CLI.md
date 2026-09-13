@@ -37,8 +37,12 @@ Every JSON response has `schema_version`, `operation`, `ok`, `data` and
 | tunnel open/list | `data.tunnel_id`, `data.status`; `data.tunnels[].tunnel_id`, `data.tunnels[].status` |
 | audit | `data.entries[]` |
 
-For exec, inspect `data.timed_out`, `data.cancelled`, `data.cancel_signal` and
+For exec, inspect `data.timed_out`, `data.cancelled` and
 `data.cleanup_confirmed` before deciding whether a side effect is safe to retry.
+When `data.cancelled` is true, `data.cancel_signal` names the local signal;
+the field is absent when the command was not cancelled. An `exit_code` of `-1`
+means rhost did not observe a remote command status, so classify the outcome
+from `error.code` and the timeout/cancellation fields instead.
 Compare `data.stdout_bytes` and `data.stderr_bytes` with the captured strings,
 and check `data.stdout_truncated` and `data.stderr_truncated`. A true truncation
 flag means the captured text is incomplete even though the byte count describes
@@ -133,8 +137,9 @@ rhost tunnel close <id> --json
 rhost audit --json
 ```
 
-Tunnels bind loopback by default and use a dedicated OpenSSH master. `alive`
-means the forward exists; it does not probe the destination service. Audit
+Tunnels bind loopback by default and use a dedicated OpenSSH master. A
+`data.status` or `data.tunnels[].status` value of `"alive"` means the forward
+exists; it does not probe the destination service. Audit
 records bounded local operation metadata and can be disabled with
 `RHOST_AUDIT=0`. Keep `data.tunnel_id` from `tunnel open`; `data.id` is an
 identical compatibility alias for older callers.

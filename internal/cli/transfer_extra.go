@@ -28,7 +28,7 @@ The plan is the same shape fs sync reports, so --dry-run shows exactly what woul
 be written before anything is. --delete prunes local files that are not on the
 remote: destructive, refused against a top-level directory or an entire home, and
 never implied.`,
-		Args: cobra.ExactArgs(3),
+		Args: exactNamedArgs("<host>", "<remote-directory>", "<local-directory>"),
 		RunE: func(c *cobra.Command, args []string) error {
 			o.Host, o.Remote, o.LocalPath = args[0], args[1], args[2]
 			audit := startAudit("fs.mirror", o.Host)
@@ -109,7 +109,7 @@ Entries run serially and a failed entry does not stop the ones after it:
 check data.failed and data.items[], not just the envelope. This is convenience
 orchestration, not a transaction: there is no isolation or rollback. Prefer
 put/get for new callers; this existing manifest surface is not being expanded.`,
-		Args: cobra.ExactArgs(1),
+		Args: exactNamedArgs("<host>"),
 		RunE: func(c *cobra.Command, args []string) error {
 			host := args[0]
 			entries, aerr := readBatchManifest(manifest)

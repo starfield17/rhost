@@ -69,8 +69,9 @@ travel through the remote process environment and are visible there.
   it. Keep the canonical `data.tunnel_id` (`data.id` is an identical compatibility
   alias); `tunnel list` is the only way back to an id you did not keep. Nothing
   restarts a tunnel after a reboot.
-- `alive` means the forward exists, not that a service answers behind it. rhost
-  does not probe the far end for you.
+- `data.status == "alive"` (or `data.tunnels[].status` in a list) means the
+  forward exists, not that a service answers behind it. rhost does not probe the
+  far end for you.
 
 ## Host keys and connection health
 

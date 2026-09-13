@@ -54,7 +54,7 @@ func newJobStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start <host> --command <shell-program>",
 		Short: "Start a detached background job",
-		Args:  command.validate(1),
+		Args:  command.validate("<host>"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
 			audit := startAudit("job.start", host)

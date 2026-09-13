@@ -43,7 +43,7 @@ kinds:
 The bind defaults to loopback. Anything else lets other machines in through the
 forward and has to be asked for with --allow-exposure. The remote sshd has its own
 say: a denied reverse bind is reported as OpenSSH said it, never worked around.`,
-		Args: cobra.ExactArgs(1),
+		Args: exactNamedArgs("<host>"),
 		RunE: func(c *cobra.Command, args []string) error {
 			audit := startAudit("tunnel.open", args[0])
 			if aerr := validateTunnelOpen(kind, listen, destination, expose); aerr != nil {
@@ -101,7 +101,7 @@ exists, not that anything is answering on the other end.`,
 		Long: `Close exactly one tunnel: its dedicated master is asked to exit and its
 record is removed. The shared connection used by exec, session and job traffic is
 untouched, and other tunnels keep running.`,
-		Args: cobra.ExactArgs(1),
+		Args: exactNamedArgs("<id>"),
 		RunE: func(c *cobra.Command, args []string) error {
 			audit := startAudit("tunnel.close", "")
 			err := tunnelClient().CloseTunnel(c.Context(), args[0])
