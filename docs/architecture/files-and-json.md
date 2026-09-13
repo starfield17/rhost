@@ -67,9 +67,6 @@ The top-level envelope is fixed. Operation data uses these canonical paths:
 | session recover | `data.session_id` | `data.session_preserved`, `data.foreground` when busy |
 | tunnel open/list | `data.tunnel_id` / `data.tunnels[].tunnel_id` | `id` remains an identical compatibility alias |
 | session read | `data.session_id` | `data.content`, `data.encoding == "utf-8"` |
-| job start/status | `data.job_id` | `data.exit_code` is integer or null |
-| job list | `data.jobs[].job_id` | `data.jobs[]` |
-| job logs | `data.job_id` | `data.content`, `data.encoding == "base64"` |
 | hosts | — | `data.hosts[]`, discovery metadata |
 | audit | — | `data.entries[]` |
 
@@ -84,4 +81,6 @@ Use explicit REPL input to exit it; recover never types an exit command.
 
 Incremental reads also carry `from`, `next` and `more`. Agents branch on
 `error.code`, never on `error.message`. The authoritative machine-readable
-contract is `schemas/result-v1.schema.json`.
+contract is `schemas/result-v1.schema.json`. That schema is retained as a
+wire-history contract and includes operation variants emitted by earlier CLI
+majors; current command availability is defined by `rhost --help`.

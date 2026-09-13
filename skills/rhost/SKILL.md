@@ -1,6 +1,6 @@
 ---
 name: rhost
-description: Run an ordinary command on an SSH-reachable remote host with local-like stdin, output, and exit behavior; use explicit job, session, file, or tunnel operations only when their extra guarantee is required.
+description: Run an ordinary command on an SSH-reachable remote host with local-like stdin, output, and exit behavior; use explicit session, file, or tunnel operations only when their extra guarantee is required.
 ---
 
 # rhost
@@ -55,12 +55,18 @@ result has an unambiguous exit and retry decision.
 
 | requirement | operation |
 |---|---|
-| command must outlive this process or connection | `rhost job` |
 | interactive shell, REPL, or debugger state must persist | `rhost session` |
 | bytes must cross between local and remote filesystems | `rhost fs` |
 | text replacement needs a hash precondition and atomic write | `rhost fs read/write/patch` |
 | port forward must survive the creating invocation | `rhost tunnel` |
 | SSH or dependency diagnosis | `rhost doctor` |
+
+For a long command that only needs to stop blocking the current agent, run the
+ordinary `rhost exec` invocation with the agent runtime's background-execution
+facility. If work must survive the agent runtime itself, explicitly invoke a
+scheduler already installed on the remote host through `rhost exec`. Do not use
+sessions as a generic scheduler, and do not install or choose a remote scheduler
+on the user's behalf.
 
 Read [references/CLI.md](references/CLI.md) for those commands,
 [references/RECOVERY.md](references/RECOVERY.md) after a failure, and

@@ -21,13 +21,13 @@ replace OpenSSH authentication, or keep durable work inside the CLI process.
 agent
   -> rhost CLI
      -> system OpenSSH / scp / rsync
-        -> remote shell, tmux, processes and files
+        -> remote shell, tmux, schedulers and files
 ```
 
 OpenSSH owns target resolution, authentication, host keys and reusable
-connections. Remote tmux and remote processes own persistent sessions and jobs.
-The filesystem owns file state. The CLI may exit without invalidating any
-persistence promise.
+connections. Remote tmux owns persistent sessions, and remote schedulers own
+scheduled work. The filesystem owns file state. The CLI may exit without
+invalidating any persistence promise.
 
 ## Product rules
 

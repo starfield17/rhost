@@ -2,8 +2,8 @@
 
 Read `ok`, `error.code`, `error.retryable` and the operation's `data` from the
 JSON envelope. The message is for the human reading the transcript; the code is
-what to branch on. Half of these answers are "the session/job is fine, use the
-other command".
+what to branch on. Several answers preserve uncertain remote state rather than
+pretending a failed local call proves the remote side stopped.
 
 ## Codes, and what each asks for
 
@@ -21,9 +21,8 @@ Connection and authentication:
 The remote is missing something:
 
 - `REMOTE_DEPENDENCY_MISSING` — `rhost doctor <host>` names what is missing and
-  what still works without it. For jobs this includes `bash`, `setsid`, `nohup`
-  and a readable `/proc`; for sessions `tmux` and `flock`; for `fs sync` `rsync`;
-  for `fs read/write/patch` `python3`.
+  what still works without it. Sessions need `tmux` and `flock`; `fs sync` needs
+  `rsync`; `fs read/write/patch` needs `python3`.
   rhost never installs anything for you.
 - `UNSUPPORTED_REMOTE_OS` — the probe could not establish a supported platform.
 
@@ -33,10 +32,11 @@ Time:
   `data.cleanup_confirmed`: when true the remote process group was observed and
   killed and `error.retryable` may be true; when false the command may still be
   running and `error.retryable` is false. Check state before another side
-  effect. For a
-  session, check `data.session_preserved`: false means something still holds the
-  pane (`session read` to see what, `session recover` to interrupt it). Work that
-  should outlive a timeout belongs in a `job`.
+  effect. For a session, check `data.session_preserved`: false means something
+  still holds the pane (`session read` to see what, `session recover` to
+  interrupt it). If work
+  must survive the agent runtime, submit it explicitly to a scheduler already
+  installed on the remote host through `rhost exec`.
 - `REMOTE_COMMAND_CANCELLED` — the local rhost received SIGINT or SIGTERM.
   `data.cancel_signal` names that signal when `data.cancelled` is true; the field
   is absent otherwise. Check it and `data.cleanup_confirmed` before retrying a
@@ -59,18 +59,6 @@ Sessions:
 - `SESSION_NOT_FOUND` — the session is gone: closed, or ended by `exit` inside
   it. A recovery never recreates a session, because doing so silently discards
   the state that was being kept. Create a new one if that is acceptable.
-
-Jobs:
-
-- `JOB_NOT_FOUND` — no job with that id (or unique name) on that host. It may be
-  from another host, or the state was deleted. `job list` rediscovers.
-- `JOB_STATE_UNKNOWN` — the job exists but its state could not be read or
-  written: the state directory is unwritable, or a helper died mid-write. The job
-  itself is usually unaffected; retry, and inspect the host if it repeats.
-- a `state` of `stale` is not an error code but the same kind of answer: the
-  recorded process is gone or its pid now belongs to a different process.
-  Nothing was signalled (`data.signalled` is false), the result is unknown, and
-  re-running the work is the only honest next step.
 
 Files:
 
@@ -108,8 +96,8 @@ Tunnels:
 
 Input and adapter:
 
-- `CONFIG_INVALID` — bad input: an invalid env var name, a job handle shaped like
-  shell syntax, an ambiguous job name, a destination that cannot be written.
+- `CONFIG_INVALID` — bad input: an invalid env var name or a destination that
+  cannot be written.
 - `USAGE_ERROR` — the command line itself was invalid (missing host, unknown
   flag). Fix the invocation; never retryable.
 - `INTERNAL` — adapter bug. Report it with the JSON envelope attached.
@@ -127,11 +115,10 @@ does not interpret `\n`. `session exec` will keep refusing with
 `SESSION_BUSY` while it owns the pane, and that refusal is the guard rail, not a
 failure to work around.
 
-**The connection dropped mid-job.** Nothing was lost: jobs are detached remote
-processes. `job list`, then `job status`/`job logs --since <cursor>`.
-
-**A job shows `stale`.** The process is gone, or the pid belongs to something
-else now. Read its logs for what happened, then re-run if the work mattered.
+**A long command must survive the agent runtime.** Use `rhost exec` to submit it
+to a scheduler already installed on the remote host, then use that scheduler's
+own status, log, cancellation, and retention interfaces. rhost does not choose,
+install, or unify schedulers.
 
 **Everything fails with "no diagnostic".** Re-run one command with
 `RHOST_SSH_LOG_LEVEL=VERBOSE`; rhost keeps OpenSSH quiet by default.

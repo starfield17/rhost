@@ -11,7 +11,7 @@ never environment maps, file contents or `session send --data` payloads.
 ## Repository boundaries
 
 Go packages under `internal/` own distinct capabilities: CLI parsing and
-rendering, application policy, OpenSSH transport, remote session/job protocol,
+rendering, application policy, OpenSSH transport, remote session protocol,
 and file operations. Remote scripts are generated or embedded by their owning
 package. `reffer/` is read-only reference material and is not part of the
 product.
@@ -33,7 +33,7 @@ RHOST_TEST_HOST=<user>@<host> make test-live-all
 `make check` covers formatting, vet, unit tests, portability and the release
 contract. Live suites prove behavior across independent CLI processes on a real
 remote Linux host. `test-live-smoke` is the frequent, bounded check of the main
-exec, file, session and job workflows. The feature suites and `test-live-all`
+exec, file and session workflows. The feature suites and `test-live-all`
 retain the exhaustive failure, persistence and transport cases. Independent
 live tests run with at most three tests in parallel. Each active test leases one
 of three persistent OpenSSH ControlMasters, so its CLI processes reuse a

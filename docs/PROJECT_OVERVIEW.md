@@ -22,12 +22,13 @@ an SSH-reachable machine.
 
 The rhost process owns no durable remote work. OpenSSH owns target resolution,
 authentication, host keys, ProxyJump, and connection reuse. Remote tmux owns
-sessions. Remote process groups and state files own jobs. The filesystem owns
-file state.
+sessions. Remote schedulers own scheduled work. The filesystem owns file state.
 
-Direct execution is therefore the default. Jobs, sessions, file operations, and
+Direct execution is therefore the default. Sessions, file operations, and
 tunnels exist only where a foreground command cannot provide the required
-guarantee cheaply.
+guarantee cheaply. Work that must outlive the agent runtime belongs to a
+scheduler already installed on the remote host and invoked explicitly through
+direct execution; rhost does not become that scheduler.
 
 Every agent-visible behavior also has a versioned JSON path. Callers classify
 adapter failures with `error.code`, completed commands with `data.exit_code`,

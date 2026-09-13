@@ -31,9 +31,12 @@ const (
 	// not the managed shell: a REPL or debugger owns the terminal, so a pasted
 	// command would land in it. It is retryable because the caller can interrupt
 	// that program, or drive it with session send/read instead.
-	SessionBusy         Code = "SESSION_BUSY"
-	SessionNotFound     Code = "SESSION_NOT_FOUND"
-	SessionUnhealthy    Code = "SESSION_UNHEALTHY"
+	SessionBusy      Code = "SESSION_BUSY"
+	SessionNotFound  Code = "SESSION_NOT_FOUND"
+	SessionUnhealthy Code = "SESSION_UNHEALTHY"
+	// JobNotFound and JobStateUnknown are reserved wire-history values. v3 has
+	// no job commands and does not emit them, but removing published codes would
+	// make the v1 result schema reject envelopes stored by earlier CLI majors.
 	JobNotFound         Code = "JOB_NOT_FOUND"
 	JobStateUnknown     Code = "JOB_STATE_UNKNOWN"
 	TransferFailed      Code = "TRANSFER_FAILED"

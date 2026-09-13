@@ -31,9 +31,6 @@ Every JSON response has `schema_version`, `operation`, `ok`, `data` and
 | session create/list | `data.session_id`, `data.sessions[].session_id` |
 | session exec | `data.stdout`, `data.exit_code`, `data.session_preserved` |
 | session read | `data.content`, `data.encoding`, `data.next`, `data.more` |
-| job start/status | `data.job_id`, `data.exit_code` |
-| job list | `data.jobs[].job_id` |
-| job logs | `data.content`, `data.encoding`, `data.next`, `data.more` |
 | tunnel open/list | `data.tunnel_id`, `data.status`; `data.tunnels[].tunnel_id`, `data.tunnels[].status` |
 | audit | `data.entries[]` |
 
@@ -50,9 +47,7 @@ the full stream. Raise the limit deliberately or redirect large remote output
 to a file; do not make decisions from a truncated stream.
 
 `session exec` uses a PTY, so `data.stdout` is the combined pane output.
-`session.read` content is UTF-8. `job.logs` content is base64 because job
-output may contain arbitrary bytes. A job without a recorded final status has
-`exit_code:null`.
+`session.read` content is UTF-8.
 
 ## Hosts and diagnosis
 
@@ -65,20 +60,6 @@ rhost doctor <host> --json
 `hosts` array with `complete:true` means discovery succeeded but found no
 concrete aliases. `complete:false` means an included config could not be read.
 Any target accepted by OpenSSH may still be passed directly.
-
-## Durable jobs
-
-```bash
-rhost job start <host> --command '<shell-program>' --json --cwd '<remote-directory>'
-rhost job list <host> --json
-rhost job status <host> <job-id> --json
-rhost job logs <host> <job-id> --json --since 0
-rhost job stop <host> <job-id> --json
-rhost job kill <host> <job-id> --json
-```
-
-Jobs are remote process groups with remote metadata and logs. Pass
-`data.next` from a log response back through `--since`.
 
 ## Persistent sessions
 

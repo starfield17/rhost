@@ -86,7 +86,7 @@ whether it can retry safely and classify a result correctly:
 - remote command failure is distinguishable from usage and transport failure;
 - a timeout reports whether remote cleanup was confirmed instead of pretending
   an uncertain mutation failed;
-- durable jobs and sessions survive the rhost process and SSH connection;
+- persistent sessions and tunnels survive the rhost invocation that created them;
 - OpenSSH configuration, authentication, host keys, ProxyJump, and connection
   reuse remain authoritative;
 - replacing remote text can require the hash returned by the preceding read.
@@ -102,22 +102,30 @@ work needs an additional guarantee.
 
 | Requirement | Operation |
 |---|---|
-| Work must outlive this CLI or SSH connection | `rhost job` |
 | A shell, REPL, or debugger must keep state | `rhost session` |
 | Bytes must cross local and remote filesystems | `rhost fs` |
 | A remote text edit needs an atomic hash precondition | `rhost fs read/write/patch` |
 | A port forward must survive its creating invocation | `rhost tunnel` |
 | SSH or remote dependency diagnosis | `rhost doctor` |
 
-For example, start a training command that must keep running after the agent's
-invocation ends, then inspect it later:
+For work that only needs to outlive one blocking tool call, let the coding
+agent run an ordinary `rhost exec` invocation in its own background execution
+facility. The rhost process remains the foreground owner of that remote command,
+so its output and exit status keep their normal meaning.
+
+Work that must survive the coding agent itself belongs to a scheduler already
+installed on the remote host. Invoke that scheduler explicitly with `rhost
+exec`; for example:
 
 ```bash
-rhost job start gpu --name training --cwd '~/work/project' \
-  --command 'python train.py --config configs/train.yaml'
-rhost job status gpu training --json
-rhost job logs gpu training --json --since 0
+rhost exec gpu --cwd '~/work/project' \
+  --command 'systemd-run --user --unit=training --collect python train.py --config configs/train.yaml'
 ```
+
+rhost does not select, install, or unify remote schedulers. Use the host's own
+`systemd`, Slurm, Kubernetes, tmux, or other established runtime when its
+lifecycle guarantees are actually required. A persistent rhost session is for
+terminal state such as a shell, REPL, or debugger, not a generic scheduler.
 
 File operations and interactive sessions remain explicit:
 
@@ -143,8 +151,8 @@ rhost does not manage SSH keys, maintain a host database, install a remote
 agent, run a daemon, or define a deployment language.
 
 OpenSSH owns connections and authentication. Remote tmux owns persistent
-terminals. Remote processes own jobs. The filesystem owns files. rhost owns the
-contract between those components and the caller.
+terminals. Remote schedulers own scheduled work. The filesystem owns files.
+rhost owns the contract between those components and the caller.
 
 ## Structured results
 
@@ -170,8 +178,8 @@ Use `error.code`, `data.timed_out`, and `data.cancelled` to classify that result
 ## Use as an agent skill
 
 The repository includes a concise skill that teaches an agent to prefer normal
-commands and select jobs, sessions, file operations, or tunnels only when their
-extra guarantees are needed:
+commands and select sessions, file operations, or tunnels only when their extra
+guarantees are needed:
 
 ```bash
 npx skills add starfield17/rhost --skill rhost
@@ -211,3 +219,11 @@ RHOST_TEST_HOST=<user>@<host> make test-live-all
 Live suites always take their target from `RHOST_TEST_HOST`; the repository has
 no machine-specific default. See the architecture documents for the exact
 runtime, persistence, file, and recovery contracts.
+
+The v1 result schema is retained as a wire-history contract and includes
+operation variants emitted by earlier CLI majors. Current command availability
+is defined by `rhost --help`.
+
+When upgrading from v2, rhost leaves existing remote job processes and state
+untouched. Inspect or stop work that v2 created before upgrading, or manage it
+with the remote host's own process and scheduling tools afterward.

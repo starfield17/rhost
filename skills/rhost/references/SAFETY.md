@@ -56,8 +56,8 @@ travel through the remote process environment and are visible there.
   explicit `--parents`.
 - Writes are atomic within the directory and are never applied through a symlink.
 - Everything about `fs` is foreground: if this process dies, the copy stops. A
-  transfer you need to survive a disconnect is a `job` running `rsync` or `scp`
-  on the remote side.
+  transfer that must survive the caller belongs in a scheduler already installed
+  on the remote host; invoke it explicitly with `rhost exec`.
 
 ## Tunnels
 
@@ -93,7 +93,7 @@ That is a bound, not a filter: a secret typed into a command line is still
 recorded, which is why secrets do not belong there.
 
 Auditing is fail-open: a write failure never blocks the remote operation. Direct
-commands, file writes and transfers, every batch entry, session mutations, job
-mutations, tunnel open/close, and `doctor` are recorded, including failures.
+commands, file writes and transfers, every batch entry, session mutations,
+tunnel open/close, and `doctor` are recorded, including failures.
 Read-only `fs read`, `hosts`, and `audit` are not. The file is local state; do not
 place `RHOST_STATE_DIR` in a repository or upload the audit log to GitHub.

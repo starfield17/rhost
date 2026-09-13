@@ -49,9 +49,9 @@ copy its product shape (see [Repository boundaries](docs/architecture/engineerin
 ## 4. The persistence invariant
 
 Anything promised to survive a CLI invocation must be owned outside the CLI
-process: connections by OpenSSH ControlMaster, sessions by remote tmux and remote
-state, jobs by remote processes. The CLI owns nothing durable; no local Go map may
-be the only copy of persistent state, and no hidden `rhost` server in v0.1.
+process: connections by OpenSSH ControlMaster and sessions by remote tmux and
+remote state. The CLI owns nothing durable; no local Go map may
+be the only copy of persistent state, and no hidden `rhost` server.
 
 ## 5. OpenSSH owns auth and host keys
 
