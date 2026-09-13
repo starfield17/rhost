@@ -89,11 +89,29 @@ func TestParseExecRejectsIncompleteOrForeignResults(t *testing.T) {
 func TestParseRead(t *testing.T) {
 	payload := base64.StdEncoding.EncodeToString([]byte("abc"))
 	out := ParseRead("RHOST_FROM=10\nRHOST_NEXT=13\nRHOST_SIZE=20\n" + payload + "\n")
-	if out.From != 10 || out.Next != 13 || out.Size != 20 {
-		t.Errorf("cursors = (%d,%d,%d)", out.From, out.Next, out.Size)
+	if out.Error != "" || out.From != 10 || out.Next != 13 || out.Size != 20 {
+		t.Errorf("parsed read = %+v", out)
 	}
 	if string(out.Data) != "abc" {
 		t.Errorf("data = %q", out.Data)
+	}
+}
+
+func TestParseReadRejectsMalformedHelperResponses(t *testing.T) {
+	payload := base64.StdEncoding.EncodeToString([]byte("abc"))
+	cases := map[string]string{
+		"missing field":       "RHOST_FROM=10\nRHOST_NEXT=13\n" + payload + "\n",
+		"duplicate field":     "RHOST_FROM=10\nRHOST_FROM=10\nRHOST_NEXT=13\nRHOST_SIZE=20\n" + payload + "\n",
+		"invalid cursor":      "RHOST_FROM=nope\nRHOST_NEXT=13\nRHOST_SIZE=20\n" + payload + "\n",
+		"inconsistent cursor": "RHOST_FROM=10\nRHOST_NEXT=21\nRHOST_SIZE=20\n" + payload + "\n",
+		"damaged content":     "RHOST_FROM=10\nRHOST_NEXT=13\nRHOST_SIZE=20\n%%%\n",
+	}
+	for name, response := range cases {
+		t.Run(name, func(t *testing.T) {
+			if out := ParseRead(response); out.Error != "protocol" {
+				t.Errorf("ParseRead(%q) = %+v, want protocol failure", response, out)
+			}
+		})
 	}
 }
 

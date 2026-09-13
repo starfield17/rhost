@@ -18,7 +18,8 @@ func TestSessionExecAndReadJSONFieldNames(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(execRaw), `"stdout":"ready"`) || strings.Contains(string(execRaw), `"output":`) {
+	if !strings.Contains(string(execRaw), `"stdout":"ready"`) ||
+		!strings.Contains(string(execRaw), `"output_kind":"pty"`) || strings.Contains(string(execRaw), `"output":`) {
 		t.Fatalf("session exec JSON = %s", execRaw)
 	}
 	unknownRaw, err := json.Marshal(sessionExecData(app.SessionExecResult{SessionID: "s_1"}))

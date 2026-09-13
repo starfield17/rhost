@@ -170,6 +170,7 @@ func newSessionExecCmd() *cobra.Command {
 type sessionExecView struct {
 	SessionID        string `json:"session_id"`
 	Stdout           string `json:"stdout"`
+	OutputKind       string `json:"output_kind"`
 	ExitCode         *int   `json:"exit_code"`
 	TimedOut         bool   `json:"timed_out"`
 	SessionPreserved bool   `json:"session_preserved"`
@@ -179,6 +180,7 @@ func sessionExecData(res app.SessionExecResult) sessionExecView {
 	return sessionExecView{
 		SessionID:        res.SessionID,
 		Stdout:           res.Output,
+		OutputKind:       "pty",
 		ExitCode:         res.ExitCode,
 		TimedOut:         res.TimedOut,
 		SessionPreserved: res.SessionPreserved,

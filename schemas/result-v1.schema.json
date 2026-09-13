@@ -131,6 +131,7 @@
       "required": [
         "session_id",
         "stdout",
+        "output_kind",
         "exit_code",
         "timed_out",
         "session_preserved"
@@ -141,7 +142,12 @@
           "type": "string"
         },
         "stdout": {
-          "type": "string"
+          "type": "string",
+          "description": "Captured terminal output from the session PTY; stdout and stderr are not separable."
+        },
+        "output_kind": {
+          "const": "pty",
+          "description": "The session output source. A PTY carries merged terminal output, not independent stdout/stderr streams."
         },
         "exit_code": {
           "type": [

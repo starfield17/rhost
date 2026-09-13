@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "rhost",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Use an installed rhost CLI to run local-like commands on SSH-reachable machines.",
   "author": {
     "name": "starfield17",

@@ -63,7 +63,7 @@ The top-level envelope is fixed. Operation data uses these canonical paths:
 | --- | --- | --- |
 | exec | — | `data.stdout`, `data.stderr`, `data.exit_code` |
 | session create/list | `session_id` | `data.sessions[]` for list |
-| session exec | `data.session_id` | `data.stdout`, `data.exit_code` (integer or null) |
+| session exec | `data.session_id` | `data.stdout` (PTY output), `data.output_kind == "pty"`, `data.exit_code` (integer or null) |
 | session recover | `data.session_id` | `data.session_preserved`, `data.foreground` when busy |
 | tunnel open/list | `data.tunnel_id` / `data.tunnels[].tunnel_id` | `id` remains an identical compatibility alias |
 | session read | `data.session_id` | `data.content`, `data.encoding == "utf-8"` |
@@ -71,8 +71,11 @@ The top-level envelope is fixed. Operation data uses these canonical paths:
 | audit | — | `data.entries[]` |
 
 Session exec accepts completion only with an invocation-specific token and a
-valid exit status. Unknown exit status is `null`, never zero; malformed helper
-results return `SESSION_UNHEALTHY`. Exec refuses a foreground REPL with
+valid exit status. Its `data.stdout` name is a compatibility field: because the
+command runs in a tmux PTY, it contains merged terminal output and cannot be
+split into stdout and stderr; `data.output_kind` is always `"pty"`. Unknown exit
+status is `null`, never zero; malformed helper results return
+`SESSION_UNHEALTHY`. Exec refuses a foreground REPL with
 `SESSION_BUSY`. Recover sends Ctrl-C under the same writer lock as exec/send and
 requires a fresh shell prompt; a REPL that catches the interrupt remains running,
 with `SESSION_BUSY`, `data.foreground` and `data.session_preserved:false`.

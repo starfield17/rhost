@@ -8,11 +8,20 @@ rhost invocations.
 
 `session exec` only writes into an idle managed shell. If a REPL or debugger
 owns the pane it returns `SESSION_BUSY`; the agent drives that program with
-`session send/read` or interrupts it with `session recover`.
+`session send/read` or interrupts it with `session recover`. The session surface
+is intentionally frozen at create/list/exec/send/read/attach/recover/close:
+it owns terminal state, not windows, layouts, process management, or scheduling.
 
 `session send --data` is verbatim. It does not interpret backslash escapes.
 Use `--data 'python3 -i' --enter` to paste text and press Enter in one
 operation. Incremental reads use byte cursors and return UTF-8 content.
+
+The tmux helper is an internal line protocol. Successful `session exec` responses
+carry exactly one `RHOST_TOKEN`, `RHOST_EXIT`, and base64-encoded `RHOST_OUTPUT`;
+`session read` responses carry exactly one non-negative `RHOST_FROM`, `RHOST_NEXT`,
+and `RHOST_SIZE` followed by base64 content. Missing, duplicate, malformed, or
+inconsistent fields are protocol failures and become `SESSION_UNHEALTHY`; they
+are never treated as an empty successful result.
 
 ## Long-running work
 
