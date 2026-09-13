@@ -6,6 +6,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -37,7 +38,7 @@ func CacheDir() string {
 // exactly this directory, and ControlPath is derived from it.
 //
 // Two shapes of cache root cannot be used as the socket home, and both move to
-// the same short per-user root: a deep one plus OpenSSH's fixed 40-byte %C
+// a short per-cache root: a deep one plus OpenSSH's fixed 40-byte %C
 // expansion overflows sun_path (ssh then refuses every command with "ControlPath
 // too long"), and one containing whitespace cannot ride rsync's -e string, which
 // would silently cost a multiplexed `fs sync` its connection reuse.
@@ -62,13 +63,15 @@ func controlDirIn(root string) string {
 	if socketFits(dir) && rshSafe(dir) {
 		return dir
 	}
-	return filepath.Join(socketFallbackRoot, fmt.Sprintf("rhost-%d", os.Getuid()), "ssh")
+	digest := sha256.Sum256([]byte(filepath.Clean(root)))
+	fallback := fmt.Sprintf("rhost-%d-%x", os.Getuid(), digest[:8])
+	return filepath.Join(socketFallbackRoot, fallback, "ssh")
 }
 
 // rshSafe reports whether a socket path can travel inside rsync's -e string.
 // rsync splits that string itself, so a path with whitespace would have to be
 // quoted inside it — one more parsing rule for a value rhost can simply choose
-// differently. The fallback root is short, fixed and whitespace-free.
+// differently. The fallback root is short, stable and whitespace-free.
 func rshSafe(dir string) bool {
 	return !strings.ContainsAny(dir, " \t\n")
 }
