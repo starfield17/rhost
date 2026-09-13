@@ -228,14 +228,21 @@ func TestExecScriptProtocol(t *testing.T) {
 }
 
 // TestExecScriptConfirmsInputSubmission guards the concurrent-session failure
-// path: loading, pasting and submitting a command are one logical write. They
-// must run in one tmux command queue and fail explicitly, otherwise a dropped
-// paste is misreported 60 seconds later as a user-command timeout.
+// path: the command and its terminating Enter are one logical write. The Enter
+// must be the final newline in the pasted buffer, because a separate send-keys
+// may reach the pane before tmux has delivered the paste. Submission must also
+// fail explicitly, otherwise a dropped paste is misreported 60 seconds later as
+// a user-command timeout.
 func TestExecScriptConfirmsInputSubmission(t *testing.T) {
 	s := ExecScript("dev", "echo hi", 5*time.Second, "0123456789abcdef0123456789abcdef")
-	want := `tmux load-buffer -b "$BUF" - \; paste-buffer -d -b "$BUF" -t "$TMUX:0.0" \; send-keys -t "$TMUX:0.0" Enter`
+	want := `printf '%s\n' "$cmd" | tmux load-buffer -b "$BUF" - \; paste-buffer -d -b "$BUF" -t "$TMUX:0.0"`
 	if !contains(s, want) {
-		t.Errorf("ExecScript does not submit input through one tmux command queue:\n%s", s)
+		t.Errorf("ExecScript does not paste command and Enter as one input:\n%s", s)
+	}
+	start := indexOf(s, `start=$(wc -c`)
+	finish := indexOf(s, `rpat=$(printf`)
+	if start < 0 || finish < start || contains(s[start:finish], `send-keys`) {
+		t.Errorf("ExecScript submits Enter separately from the command paste")
 	}
 	if !contains(s, `RHOST_ERR=inputfailed`) {
 		t.Errorf("ExecScript does not report an input submission failure")

@@ -117,6 +117,8 @@ func mapHelperErr(code string) *errs.Error {
 		return errs.New(errs.RemoteCommandTimeout, "command exceeded timeout in session", true)
 	case "locked":
 		return errs.New(errs.SessionUnhealthy, "session is busy (another writer holds the lock)", true)
+	case "inputfailed":
+		return errs.New(errs.SessionUnhealthy, "could not submit command input to session", true)
 	case "busy":
 		return errs.New(errs.SessionBusy,
 			"session foreground is not the managed shell; use session send/read, or session recover", true)

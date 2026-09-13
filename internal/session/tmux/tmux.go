@@ -305,10 +305,10 @@ func ExecScript(nameOrID, command string, timeout time.Duration, token string) s
 
 	// Paste the command as one compound command so it produces a single D.
 	b.WriteString("cmd=$(printf '%s' '" + cmdB64 + "' | base64 -d)\n")
-	b.WriteString("printf '%s' \"$cmd\" | tmux load-buffer -b \"$BUF\" -\n")
-	b.WriteString("tmux paste-buffer -b \"$BUF\" -t \"$TMUX:0.0\" 2>/dev/null\n")
-	b.WriteString("tmux delete-buffer -b \"$BUF\" 2>/dev/null\n")
-	b.WriteString("tmux send-keys -t \"$TMUX:0.0\" Enter\n")
+	// Include the submitting newline in the paste: a separate send-keys Enter
+	// can reach the pane before the paste, even within one tmux command queue.
+	// Report submission failures instead of waiting for a command timeout.
+	b.WriteString("printf '%s\\n' \"$cmd\" | tmux load-buffer -b \"$BUF\" - \\; paste-buffer -d -b \"$BUF\" -t \"$TMUX:0.0\" 2>/dev/null || { echo RHOST_ERR=inputfailed; exit 0; }\n")
 	b.WriteString("rpat=$(printf '\\033]133;R;" + token + ";'); dpat=$rpat; dlen=${#dpat}\n")
 
 	// Wait for the next D marker after start, incrementally and with backoff, but
