@@ -127,6 +127,38 @@ func TestControlDirAvoidsWhitespaceRoot(t *testing.T) {
 	}
 }
 
+// TestControlDirFallbackPreservesCacheIsolation covers cache roots that cannot
+// directly hold an OpenSSH socket. Distinct RHOST_CACHE_DIR values still need
+// distinct socket namespaces; otherwise one parallel CLI can close or reuse
+// another CLI's ControlMaster.
+func TestControlDirFallbackPreservesCacheIsolation(t *testing.T) {
+	deepA := filepath.Join("/private", strings.Repeat("isolated-cache-a-", 10))
+	deepB := filepath.Join("/private", strings.Repeat("isolated-cache-b-", 10))
+	spacey := filepath.Join(string(filepath.Separator), "tmp", "isolated cache")
+
+	gotA := controlDirIn(deepA)
+	gotB := controlDirIn(deepB)
+	gotSpacey := controlDirIn(spacey)
+
+	if gotA == gotB || gotA == gotSpacey || gotB == gotSpacey {
+		t.Fatalf("distinct fallback cache roots share a control directory: %q, %q, %q", gotA, gotB, gotSpacey)
+	}
+	if got := controlDirIn(deepA); got != gotA {
+		t.Errorf("fallback directory is not deterministic: first %q, then %q", gotA, got)
+	}
+	for root, got := range map[string]string{deepA: gotA, deepB: gotB, spacey: gotSpacey} {
+		if !strings.HasPrefix(got, socketFallbackRoot+string(filepath.Separator)) {
+			t.Errorf("controlDirIn(%q) = %q, want fallback below %q", root, got, socketFallbackRoot)
+		}
+		if !socketFits(got) {
+			t.Errorf("controlDirIn(%q) = %q exceeds the socket path budget", root, got)
+		}
+		if !rshSafe(got) {
+			t.Errorf("controlDirIn(%q) = %q is not safe for rsync -e", root, got)
+		}
+	}
+}
+
 // TestControlPathIsDerivedFromControlDir keeps the two in step: the directory
 // rhost creates is the directory it binds in. A mismatch made ssh fail with
 // "unix_listener: cannot bind to path ...: No such file or directory".
