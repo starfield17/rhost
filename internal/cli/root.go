@@ -118,13 +118,8 @@ policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname
 	root.Flags().IntVar(&maxOutput, "max-output-bytes", 0, "captured bytes per stream (0 = unlimited; JSON defaults to 1 MiB)")
 	root.PersistentFlags().BoolVar(&jsonFlag, "json", false, "emit machine-readable JSON on stdout")
 	root.RunE = func(c *cobra.Command, args []string) error {
-		if host != "" {
-			if c.ArgsLenAtDash() < 0 || len(args) != 1 {
-				emitFailure("exec", host, errs.New(errs.UsageError,
-					"direct execution requires exactly one shell command after --", false))
-				return nil
-			}
-			return runDirectExec(c, host, args[0], cwd, envs, timeout, maxOutput)
+		if len(args) != 0 || host != "" || cwd != "" || len(envs) != 0 || timeout != 0 || maxOutput != 0 {
+			return fmt.Errorf("direct execution requires: rhost exec <host> --command <string>")
 		}
 		if jsonFlag {
 			emitFailure("usage", "", errs.New(errs.UsageError, "rhost needs a subcommand", false))

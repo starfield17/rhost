@@ -110,16 +110,16 @@ func newSessionListCmd() *cobra.Command {
 
 func newSessionExecCmd() *cobra.Command {
 	var timeout time.Duration
+	command := &shellCommandValue{}
 	cmd := &cobra.Command{
-		Use:   "exec <host> <session> [--] <command...>",
+		Use:   "exec <host> <session> --command <shell-program>",
 		Short: "Run a command in a session (state persists)",
-		Args:  cobra.MinimumNArgs(3),
+		Args:  command.validate(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host, session := args[0], args[1]
-			command := strings.Join(args[2:], " ")
 			audit := startAudit("session.exec", host)
 			a := app.NewDefault()
-			res, aerr := a.SessionExec(cmd.Context(), host, session, command, timeout)
+			res, aerr := a.SessionExec(cmd.Context(), host, session, command.value, timeout)
 			if aerr != nil {
 				audit.fail(aerr)
 				// A timeout is reported *with* the state of the session: the caller's
@@ -146,7 +146,7 @@ func newSessionExecCmd() *cobra.Command {
 				return nil
 			}
 			code := *res.ExitCode
-			audit.succeed("", command, &code)
+			audit.succeed("", command.value, &code)
 			if jsonFlag {
 				writeEnvelope(output.Success("session.exec", host, sessionExecData(res)))
 			} else {
@@ -159,6 +159,7 @@ func newSessionExecCmd() *cobra.Command {
 			return nil
 		},
 	}
+	bindShellCommand(cmd, command)
 	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "per-command timeout")
 	return cmd
 }

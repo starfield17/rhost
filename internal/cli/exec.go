@@ -23,70 +23,31 @@ func newExecCmd() *cobra.Command {
 		envs      []string
 		maxOutput int
 	)
+	command := &shellCommandValue{}
 	cmd := &cobra.Command{
-		Use:    "exec <host> [--] <command...>",
-		Short:  "Compatibility foreground command; prefer rhost --host",
-		Hidden: true,
-		Long: `Compatibility surface for existing callers; no new execution features.
-For new calls use: rhost --host <host> -- '<command>'
-
-This form retains buffered output, no stdin forwarding, a default 60-second
-deadline and a 1 MiB capture limit per stream. --timeout 0 falls back to the
-configured default; it does not mean unlimited as it does in the direct form.
-
-Run a command in a fresh remote execution context.
+		Use:   "exec <host> --command <shell-program>",
+		Short: "Run a shell program on a remote host",
+		Long: `Run one exact shell program in a fresh remote execution context.
 
 Each call is independent: no shell state, cwd, or environment persists between
-exec calls. The command words after the host are joined with spaces and run by a
-login bash on the remote host, so shell syntax works:
+exec calls. The --command value runs under a remote login bash, so pipes,
+redirections, variables and compound shell syntax work:
 
-  rhost exec gpu -- pytest -q
-  rhost exec gpu -- 'echo hi | wc -l'
+  rhost exec gpu --command 'pytest -q'
+  rhost exec gpu --command 'echo hi | wc -l'
 
-The process exit status mirrors the remote command's exit status. Adapter
-failures use 255, timeouts use 124.`,
-		Args: cobra.MinimumNArgs(2),
+		Human mode streams stdout and stderr and forwards stdin. There is no default
+execution deadline. The process status mirrors the remote command; adapter
+failures use 255 and timeouts use 124.`,
+		Args: command.validate(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			host := args[0]
-			command := strings.Join(args[1:], " ")
-			audit := startAudit("exec", host)
-
-			env, err := parseEnv(envs)
-			if err != nil {
-				aerr := errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
-				audit.fail(aerr)
-				emitFailure("exec", host, aerr)
-				return nil
-			}
-
-			a := app.NewDefault()
-			if maxOutput < 0 || maxOutput > maxCLIOutputBytes {
-				emitFailure("exec", host, errs.New(errs.ConfigInvalid,
-					"max-output-bytes must be between 0 and 67108864", false))
-				return nil
-			}
-			res, aerr := a.Execute(cmd.Context(), app.ExecOptions{
-				Host:           host,
-				Command:        command,
-				Cwd:            cwd,
-				Env:            env,
-				Timeout:        timeout,
-				MaxOutputBytes: maxOutput,
-			})
-			if aerr != nil {
-				audit.fail(aerr)
-				renderExecFailure(host, res, aerr)
-				return nil
-			}
-			code := res.ExitCode
-			audit.succeed(cwd, command, &code)
-			renderExecSuccess(host, res)
-			return nil
+			return runDirectExec(cmd, args[0], command.value, cwd, envs, timeout, maxOutput)
 		},
 	}
+	bindShellCommand(cmd, command)
 	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory on the remote host")
-	cmd.Flags().IntVar(&maxOutput, "max-output-bytes", 1024*1024, "maximum bytes per stream (0 = unlimited)")
-	cmd.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "foreground timeout (e.g. 30s, 2m)")
+	cmd.Flags().IntVar(&maxOutput, "max-output-bytes", 0, "captured bytes per stream (0 = unlimited; JSON defaults to 1 MiB)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "execution deadline; 0 waits until completion")
 	cmd.Flags().StringArrayVar(&envs, "env", nil, "environment variable KEY=VALUE (repeatable)")
 	return cmd
 }

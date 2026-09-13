@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -51,13 +50,13 @@ func newJobStartCmd() *cobra.Command {
 		envs    []string
 		timeout time.Duration
 	)
+	command := &shellCommandValue{}
 	cmd := &cobra.Command{
-		Use:   "start <host> [flags] -- <command...>",
+		Use:   "start <host> --command <shell-program>",
 		Short: "Start a detached background job",
-		Args:  cobra.MinimumNArgs(2),
+		Args:  command.validate(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			host := args[0]
-			command := strings.Join(args[1:], " ")
 			audit := startAudit("job.start", host)
 			env, err := parseEnv(envs)
 			if err != nil {
@@ -71,7 +70,7 @@ func newJobStartCmd() *cobra.Command {
 				Host:    host,
 				Name:    name,
 				Cwd:     cwd,
-				Command: command,
+				Command: command.value,
 				Env:     env,
 				Timeout: timeout,
 			})
@@ -87,7 +86,7 @@ func newJobStartCmd() *cobra.Command {
 				}
 				return nil
 			}
-			audit.succeed(cwd, command, nil)
+			audit.succeed(cwd, command.value, nil)
 			if jsonFlag {
 				writeEnvelope(output.Success("job.start", host, res))
 			} else {
@@ -96,6 +95,7 @@ func newJobStartCmd() *cobra.Command {
 			return nil
 		},
 	}
+	bindShellCommand(cmd, command)
 	cmd.Flags().StringVar(&name, "name", "", "human-friendly label, addressable while unique (must not look like a job id)")
 	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory on the remote host")
 	cmd.Flags().StringArrayVar(&envs, "env", nil, "environment variable KEY=VALUE (repeatable)")
