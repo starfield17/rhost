@@ -44,7 +44,7 @@ pushed commit without an explicit request.
 ## 3. Do not touch `reffer/`
 
 Third-party reference source, git-ignored. Read for ideas; never edit, commit, or
-copy its product shape (`docs/ARCHITECTURE.md` §37).
+copy its product shape (see [Repository boundaries](docs/architecture/engineering.md#repository-boundaries)).
 
 ## 4. The persistence invariant
 
@@ -74,7 +74,8 @@ real process exit and reconnect on a real remote host.
 
 No `utils/` dumping ground, no interfaces for tidiness, no training/dataset/model
 concepts in a generic adapter, no daemon until real usage justifies one
-(`docs/ARCHITECTURE.md` §50–52).
+(see [Product rules](docs/ARCHITECTURE.md#product-rules) and
+[Repository boundaries](docs/architecture/engineering.md#repository-boundaries)).
 
 ## 9. Verify before reporting
 

@@ -125,7 +125,7 @@ func execData(res app.ExecResult) execView {
 
 func renderExecSuccess(host string, res app.ExecResult) {
 	if jsonFlag {
-		_ = output.Success("exec", host, execData(res)).Write(os.Stdout)
+		writeEnvelope(output.Success("exec", host, execData(res)))
 	} else {
 		_, _ = os.Stdout.WriteString(res.Stdout)
 		_, _ = os.Stderr.WriteString(res.Stderr)
@@ -136,7 +136,7 @@ func renderExecSuccess(host string, res app.ExecResult) {
 
 func renderExecFailure(host string, res app.ExecResult, aerr *errs.Error) {
 	if jsonFlag {
-		_ = output.Failure("exec", host, execData(res), aerr).Write(os.Stdout)
+		writeEnvelope(output.Failure("exec", host, execData(res), aerr))
 	} else {
 		fmt.Fprintf(os.Stderr, "rhost: %s: %s\n", aerr.Code, aerr.Message)
 		if res.Stdout != "" {

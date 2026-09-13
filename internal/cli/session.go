@@ -61,7 +61,7 @@ func newSessionCreateCmd() *cobra.Command {
 			}
 			audit.succeed(cwd, "", nil)
 			if jsonFlag {
-				_ = output.Success("session.create", host, info).Write(os.Stdout)
+				writeEnvelope(output.Success("session.create", host, info))
 			} else {
 				fmt.Printf("created session %s (name %s)\n", info.SessionID, info.Name)
 			}
@@ -90,7 +90,7 @@ func newSessionListCmd() *cobra.Command {
 				return nil
 			}
 			if jsonFlag {
-				_ = output.Success("session.list", host, map[string]interface{}{"sessions": sessions}).Write(os.Stdout)
+				writeEnvelope(output.Success("session.list", host, map[string]interface{}{"sessions": sessions}))
 				return nil
 			}
 			if len(sessions) == 0 {
@@ -126,7 +126,7 @@ func newSessionExecCmd() *cobra.Command {
 				// next move depends on whether the pane is free or still busy, and a
 				// bare failure envelope would not say (§32: partial data on failure).
 				if jsonFlag {
-					_ = output.Failure("session.exec", host, sessionExecData(res), aerr).Write(os.Stdout)
+					writeEnvelope(output.Failure("session.exec", host, sessionExecData(res), aerr))
 					exitCode = adapterExitCode(aerr)
 				} else {
 					fmt.Fprintf(os.Stderr, "rhost: %s: %s", aerr.Code, aerr.Message)
@@ -148,7 +148,7 @@ func newSessionExecCmd() *cobra.Command {
 			code := *res.ExitCode
 			audit.succeed("", command, &code)
 			if jsonFlag {
-				_ = output.Success("session.exec", host, sessionExecData(res)).Write(os.Stdout)
+				writeEnvelope(output.Success("session.exec", host, sessionExecData(res)))
 			} else {
 				_, _ = os.Stdout.WriteString(res.Output)
 				if res.Output != "" && !strings.HasSuffix(res.Output, "\n") {
@@ -210,7 +210,7 @@ func newSessionSendCmd() *cobra.Command {
 			}
 			audit.succeed("", summary, nil)
 			if jsonFlag {
-				_ = output.Success("session.send", host, map[string]interface{}{"sent": true}).Write(os.Stdout)
+				writeEnvelope(output.Success("session.send", host, map[string]interface{}{"sent": true}))
 			} else {
 				fmt.Println("sent")
 			}
@@ -241,7 +241,7 @@ func newSessionReadCmd() *cobra.Command {
 				return nil
 			}
 			if jsonFlag {
-				_ = output.Success("session.read", host, sessionReadData(res)).Write(os.Stdout)
+				writeEnvelope(output.Success("session.read", host, sessionReadData(res)))
 			} else {
 				_, _ = os.Stdout.WriteString(res.Data)
 			}
@@ -276,7 +276,7 @@ func newSessionCloseCmd() *cobra.Command {
 			}
 			audit.succeed("", session, nil)
 			if jsonFlag {
-				_ = output.Success("session.close", host, map[string]interface{}{"closed": true}).Write(os.Stdout)
+				writeEnvelope(output.Success("session.close", host, map[string]interface{}{"closed": true}))
 			} else {
 				fmt.Println("closed")
 			}

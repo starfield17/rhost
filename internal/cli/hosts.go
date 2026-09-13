@@ -30,7 +30,7 @@ authority. Wildcard and negated patterns are omitted. No host is contacted.`,
 				return nil
 			}
 			if jsonFlag {
-				_ = output.Success("hosts", "", result).Write(os.Stdout)
+				writeEnvelope(output.Success("hosts", "", result))
 				return nil
 			}
 			if len(result.Hosts) == 0 {

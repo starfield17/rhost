@@ -43,7 +43,7 @@ completion-marker protocol work on this host.`,
 
 func renderDoctor(r app.DoctorResult) {
 	if jsonFlag {
-		_ = output.Success("doctor", r.Host, r).Write(os.Stdout)
+		writeEnvelope(output.Success("doctor", r.Host, r))
 		return
 	}
 	w := os.Stdout

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 
 	"github.com/spf13/cobra"
@@ -33,7 +32,7 @@ func newVersionCmd() *cobra.Command {
 				SchemaVersion: output.SchemaVersion,
 			}
 			if jsonFlag {
-				_ = output.Success("version", "", info).Write(os.Stdout)
+				writeEnvelope(output.Success("version", "", info))
 				return nil
 			}
 			fmt.Printf("rhost %s\n", info.Version)

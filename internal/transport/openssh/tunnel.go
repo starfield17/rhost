@@ -54,6 +54,8 @@ const (
 	TunnelStale = "stale"
 )
 
+var errTunnelSocketAbsent = errors.New("tunnel control socket is absent")
+
 var tunnelID = regexp.MustCompile(`^t_[a-f0-9]{32}$`)
 
 func tunnelRoot() string { return filepath.Join(config.StateDir(), "tunnels") }
@@ -84,7 +86,10 @@ func (c *Client) ListTunnels(ctx context.Context) ([]Tunnel, error) {
 		if err != nil {
 			return nil, err
 		}
-		if c.masterError(ctx, t, "check") != nil {
+		if err := c.masterError(ctx, t, "check"); err != nil {
+			if !errors.Is(err, errTunnelSocketAbsent) {
+				return nil, err
+			}
 			t.Status = TunnelStale
 		}
 		out = append(out, t)
@@ -223,10 +228,12 @@ func (c *Client) CloseTunnel(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if c.masterError(ctx, t, "check") == nil {
+	if err := c.masterError(ctx, t, "check"); err == nil {
 		if err := c.masterError(ctx, t, "exit"); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, errTunnelSocketAbsent) {
+		return err
 	}
 	return os.Remove(filepath.Join(tunnelRoot(), id+".json"))
 }
@@ -269,10 +276,24 @@ func readTunnel(id string) (Tunnel, error) {
 func (c *Client) masterError(ctx context.Context, t Tunnel, action string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Only an absent socket establishes that this recorded master is gone.
+	// Other check failures (including an unresponsive socket) are uncertain.
+	if _, err := os.Lstat(tunnelSocket(t.ID)); err != nil {
+		if os.IsNotExist(err) {
+			return errTunnelSocketAbsent
+		}
+		return err
+	}
 	out, err := exec.CommandContext(ctx, c.cfg.SSHBin, "-S", tunnelSocket(t.ID),
 		"-O", action, "--", t.Host).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("ssh -O %s: %s", action, strings.TrimSpace(string(out)))
+		if ctx.Err() != nil {
+			return fmt.Errorf("ssh -O %s: %w", action, ctx.Err())
+		}
+		return fmt.Errorf("ssh -O %s: %s: %w", action, strings.TrimSpace(string(out)), err)
 	}
 	return nil
 }

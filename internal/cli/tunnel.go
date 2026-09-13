@@ -113,9 +113,9 @@ untouched, and other tunnels keep running.`,
 			}
 			audit.succeed("", args[0], nil)
 			if jsonFlag {
-				_ = output.Success("tunnel.close", "", map[string]interface{}{
+				writeEnvelope(output.Success("tunnel.close", "", map[string]interface{}{
 					"id": args[0], "closed": true,
-				}).Write(os.Stdout)
+				}))
 			} else {
 				fmt.Fprintf(os.Stderr, "closed %s\n", args[0])
 			}
@@ -157,7 +157,7 @@ func validateTunnelOpen(kind, listen, destination string, expose bool) *errs.Err
 // emitTunnel renders one tunnel; `open` returns the record it just created.
 func emitTunnel(operation, host string, t openssh.Tunnel) {
 	if jsonFlag {
-		_ = output.Success(operation, host, t).Write(os.Stdout)
+		writeEnvelope(output.Success(operation, host, t))
 		return
 	}
 	fmt.Printf("%s  %s  %s  %s  %s\n", t.ID, t.Status, t.Kind, t.Listen, t.Destination)
@@ -166,7 +166,7 @@ func emitTunnel(operation, host string, t openssh.Tunnel) {
 
 func emitTunnels(rows []openssh.Tunnel) {
 	if jsonFlag {
-		_ = output.Success("tunnel.list", "", map[string]interface{}{"tunnels": rows}).Write(os.Stdout)
+		writeEnvelope(output.Success("tunnel.list", "", map[string]interface{}{"tunnels": rows}))
 		return
 	}
 	if len(rows) == 0 {

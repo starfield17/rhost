@@ -42,9 +42,18 @@ func (b *capture) Write(p []byte) (int, error) {
 		p = p[room:]
 	}
 	if len(p) > 0 {
-		b.tail = append(b.tail, p...)
-		if len(b.tail) > tailKeep {
-			b.tail = append([]byte(nil), b.tail[len(b.tail)-tailKeep:]...)
+		if b.tail == nil {
+			b.tail = make([]byte, 0, tailKeep)
+		}
+		if len(p) >= tailKeep {
+			// The new chunk replaces the entire suffix; never allocate for
+			// bytes that will immediately be discarded.
+			b.tail = append(b.tail[:0], p[len(p)-tailKeep:]...)
+		} else {
+			if overflow := len(b.tail) + len(p) - tailKeep; overflow > 0 {
+				b.tail = b.tail[:copy(b.tail, b.tail[overflow:])]
+			}
+			b.tail = append(b.tail, p...)
 		}
 	}
 	return n, nil

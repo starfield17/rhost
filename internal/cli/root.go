@@ -31,6 +31,12 @@ var (
 // Run builds and executes the command tree, returning the process exit code.
 func Run() int {
 	exitCode = 0
+	outputFailed = false
+	// JSON delivery errors must reach writeEnvelope, including a closed pipe.
+	if usageWantsJSON() {
+		signal.Ignore(syscall.SIGPIPE)
+		defer signal.Reset(syscall.SIGPIPE)
+	}
 	root := newRootCmd()
 	root.SilenceErrors = true
 	root.SilenceUsage = true
@@ -41,11 +47,14 @@ func Run() int {
 		// error.code, because agents must never have to parse English text.
 		aerr := errs.New(errs.UsageError, err.Error(), false)
 		if usageWantsJSON() {
-			_ = output.Failure("usage", "", nil, aerr).Write(os.Stdout)
+			writeEnvelope(output.Failure("usage", "", nil, aerr))
 		} else {
 			fmt.Fprintf(os.Stderr, "rhost: %s: %v\n", aerr.Code, err)
 		}
 		// 255, so that a usage error is never mistaken for a remote status.
+		return 255
+	}
+	if outputFailed {
 		return 255
 	}
 	return exitCode
@@ -197,7 +206,7 @@ func runDirectExec(cmd *cobra.Command, host, command, cwd string, envs []string,
 	if aerr != nil {
 		audit.fail(aerr)
 		if jsonFlag {
-			_ = output.Failure("exec", host, execData(res), aerr).Write(os.Stdout)
+			writeEnvelope(output.Failure("exec", host, execData(res), aerr))
 		} else {
 			fmt.Fprintf(os.Stderr, "rhost: %s: %s\n", aerr.Code, aerr.Message)
 		}
@@ -215,7 +224,7 @@ func runDirectExec(cmd *cobra.Command, host, command, cwd string, envs []string,
 	code := res.ExitCode
 	audit.succeed(cwd, command, &code)
 	if jsonFlag {
-		_ = output.Success("exec", host, execData(res)).Write(os.Stdout)
+		writeEnvelope(output.Success("exec", host, execData(res)))
 	}
 	exitCode = code
 	return nil

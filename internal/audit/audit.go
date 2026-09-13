@@ -7,7 +7,8 @@
 //
 // Logging is deliberately fail-open: the caller is expected to report a write
 // failure and carry on, because a full or read-only disk must not make remote
-// work impossible (§36). It can be turned off entirely with RHOST_AUDIT=0.
+// work impossible (docs/architecture/engineering.md#security-and-audit).
+// It can be turned off entirely with RHOST_AUDIT=0.
 package audit
 
 import (
@@ -27,8 +28,7 @@ const EnvVar = "RHOST_AUDIT"
 // whole.
 const maxCommand = 200
 
-// Entry is one audited operation. Field names follow §36 so the file is a stable
-// surface.
+// Entry is one audited operation. Its JSON field names are a stable surface.
 type Entry struct {
 	Time       string `json:"time"`
 	Host       string `json:"host,omitempty"`

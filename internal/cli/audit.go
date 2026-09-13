@@ -103,7 +103,7 @@ By default the most recent 20 entries are shown; --limit 0 shows all.`,
 				entries = entries[len(entries)-limit:]
 			}
 			if jsonFlag {
-				_ = output.Success("audit", "", auditListing{Path: path, Entries: entries}).Write(os.Stdout)
+				writeEnvelope(output.Success("audit", "", auditListing{Path: path, Entries: entries}))
 				return nil
 			}
 			renderAudit(os.Stdout, path, entries)

@@ -57,7 +57,7 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 				// Not emitFailure: the partial data is the answer here, and an agent
 				// needs session_preserved even when the recovery failed.
 				if jsonFlag {
-					_ = output.Failure("session.recover", host, data, aerr).Write(os.Stdout)
+					writeEnvelope(output.Failure("session.recover", host, data, aerr))
 				} else {
 					fmt.Fprintf(os.Stderr, "rhost: %s: %s\n", aerr.Code, aerr.Message)
 				}
@@ -66,7 +66,7 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 			}
 			audit.succeed("", "key C-c and responsiveness probe", nil)
 			if jsonFlag {
-				_ = output.Success("session.recover", host, data).Write(os.Stdout)
+				writeEnvelope(output.Success("session.recover", host, data))
 			} else {
 				fmt.Println("session is responsive")
 			}

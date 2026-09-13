@@ -62,7 +62,7 @@ func newFsPutCmd() *cobra.Command {
 			}
 			audit.succeed("", "put "+local+" -> "+remote, nil)
 			if jsonFlag {
-				_ = output.Success("fs.put", host, res).Write(os.Stdout)
+				writeEnvelope(output.Success("fs.put", host, res))
 			} else {
 				renderFsTransfer(res)
 			}
@@ -98,7 +98,7 @@ func newFsGetCmd() *cobra.Command {
 			}
 			audit.succeed("", "get "+remote+" -> "+local, nil)
 			if jsonFlag {
-				_ = output.Success("fs.get", host, res).Write(os.Stdout)
+				writeEnvelope(output.Success("fs.get", host, res))
 			} else {
 				renderFsTransfer(res)
 			}
@@ -153,7 +153,7 @@ prune would be a disaster, and there is no flag that makes it safe.`,
 			}
 			audit.succeed("", summary, nil)
 			if jsonFlag {
-				_ = output.Success("fs.sync", host, res).Write(os.Stdout)
+				writeEnvelope(output.Success("fs.sync", host, res))
 			} else {
 				renderFsSync(res)
 			}

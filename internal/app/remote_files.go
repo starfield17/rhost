@@ -59,6 +59,9 @@ func (a *App) RemoteFile(ctx context.Context, host string, request map[string]in
 		return nil, errs.New(errs.RemoteDependencyMissing,
 			"this operation needs remote python3; rhost reports it, it does not install it", false)
 	}
+	if res.StdoutTruncated {
+		return nil, errs.New(errs.Internal, "remote file helper response exceeded its output budget", false)
+	}
 	var out map[string]interface{}
 	if err := json.Unmarshal([]byte(res.Stdout), &out); err != nil {
 		return nil, errs.New(errs.Internal,
@@ -86,8 +89,9 @@ func helperOutputBudget(request map[string]interface{}) int {
 	}
 	const overhead = 64 * 1024
 	maxInt := int(^uint(0) >> 1)
-	if maxBytes > (maxInt-overhead)/2 {
+	// JSON may encode each ASCII control byte as six bytes (backslash-u escape).
+	if maxBytes > (maxInt-overhead)/6 {
 		return maxInt
 	}
-	return 2*maxBytes + overhead
+	return 6*maxBytes + overhead
 }

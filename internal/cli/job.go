@@ -78,7 +78,7 @@ func newJobStartCmd() *cobra.Command {
 			if aerr != nil {
 				audit.fail(aerr)
 				if jsonFlag {
-					_ = output.Failure("job.start", host, res, aerr).Write(os.Stdout)
+					writeEnvelope(output.Failure("job.start", host, res, aerr))
 					exitCode = adapterExitCode(aerr)
 				} else {
 					fmt.Fprintf(os.Stderr, "rhost: %s: %s (job id %s; state unknown, query before retrying)\n",
@@ -89,7 +89,7 @@ func newJobStartCmd() *cobra.Command {
 			}
 			audit.succeed(cwd, command, nil)
 			if jsonFlag {
-				_ = output.Success("job.start", host, res).Write(os.Stdout)
+				writeEnvelope(output.Success("job.start", host, res))
 			} else {
 				fmt.Printf("started job %s (pid %d, state %s)\n", res.JobID, res.PID, res.State)
 			}
@@ -118,7 +118,7 @@ func newJobListCmd() *cobra.Command {
 				return nil
 			}
 			if jsonFlag {
-				_ = output.Success("job.list", host, map[string]interface{}{"jobs": jobs}).Write(os.Stdout)
+				writeEnvelope(output.Success("job.list", host, map[string]interface{}{"jobs": jobs}))
 				return nil
 			}
 			if len(jobs) == 0 {
@@ -155,7 +155,7 @@ func newJobStatusCmd() *cobra.Command {
 				return nil
 			}
 			if jsonFlag {
-				_ = output.Success("job.status", host, info).Write(os.Stdout)
+				writeEnvelope(output.Success("job.status", host, info))
 			} else {
 				// A missing exit status renders as "-" for humans and null in JSON.
 				exitField := "-"
@@ -199,7 +199,7 @@ func newJobLogsCmd() *cobra.Command {
 				return nil
 			}
 			if jsonFlag {
-				_ = output.Success("job.logs", host, res).Write(os.Stdout)
+				writeEnvelope(output.Success("job.logs", host, res))
 				return nil
 			}
 			data, derr := base64.StdEncoding.DecodeString(res.Content)
@@ -258,7 +258,7 @@ func runJobSignal(op string, cmd *cobra.Command, host, id, signal string, timeou
 	}
 	audit.succeed("", id, nil)
 	if jsonFlag {
-		_ = output.Success(op, host, res).Write(os.Stdout)
+		writeEnvelope(output.Success(op, host, res))
 	} else if !res.Signalled {
 		if res.State == "stale" {
 			fmt.Printf("%s: no signal sent (process identity not verified), state=%s\n", res.JobID, res.State)

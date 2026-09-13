@@ -117,7 +117,15 @@ def read_record(pipe, cap):
         used += len(chunk)
         if chunk.endswith(b'\n'):
             break
-    return b''.join(chunks), used < RECORD_LIMIT
+    complete = not chunks or chunks[-1].endswith(b'\n') or used < RECORD_LIMIT
+    if not complete:
+        # Consume the rest of this physical line without retaining it. A skipped
+        # oversized line must not renumber the following page.
+        chunk = pipe.readline(65536)
+        complete = not chunk  # exactly RECORD_LIMIT bytes at EOF is complete
+        while chunk and not chunk.endswith(b'\n'):
+            chunk = pipe.readline(65536)
+    return b''.join(chunks), complete
 
 
 def read(q, path):
@@ -187,7 +195,12 @@ def read(q, path):
 def open_file(path):
     """Open a regular file, refusing anything a symlink or device could hide."""
     try:
-        f = open(path, 'rb')
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            f = os.fdopen(fd, 'rb')
+        except BaseException:
+            os.close(fd)
+            raise
     except FileNotFoundError:
         raise Failure('FILE_NOT_FOUND', 'no such file: %s' % path)
     except IsADirectoryError:
@@ -339,7 +352,12 @@ def apply_patch(old, edits):
         integer(e, 'end', code='INVALID_PATCH')
         if type(e['text']) is not str:
             raise Failure('INVALID_PATCH', 'edit text must be a string')
-    lines = old.decode('utf-8').splitlines(keepends=True)
+    # Match read(): only LF separates lines; CR and Unicode separators are
+    # literal content. Preserve CRLF and a final line without a newline.
+    parts = old.decode('utf-8').split('\n')
+    lines = [part + '\n' for part in parts[:-1]]
+    if parts[-1]:
+        lines.append(parts[-1])
     ordered = sorted(edits, key=lambda e: e['start'])
     previous = 0
     for e in ordered:

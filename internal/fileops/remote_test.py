@@ -99,6 +99,40 @@ class RemoteFilesTest(unittest.TestCase):
         self.assertEqual(tail['content'], 'three')
         self.assertEqual(tail['lines'], 1)
 
+    def test_read_skips_oversized_physical_line(self):
+        path = self.root / 'long-line'
+        path.write_bytes(b'x' * (8 * 1024 * 1024) + b'tail\nsecond\n')
+        page = self.request(op='read', path=str(path), start=2, lines=1)
+        self.assertEqual(page['content'], 'second\n')
+        self.assertEqual(page['total_lines'], 2)
+        for ending in (b'', b'\n'):
+            path.write_bytes(b'x' * (8 * 1024 * 1024 - len(ending)) + ending)
+            page = self.request(op='read', path=str(path), max_bytes=8 * 1024 * 1024)
+            self.assertFalse(page['truncated'])
+            self.assertEqual(page['lines'], 1)
+
+    def test_read_fifo_is_rejected_without_waiting_for_writer(self):
+        path = self.root / 'fifo'
+        os.mkfifo(path)
+        proc = subprocess.run([sys.executable, str(HERE)],
+                              input=json.dumps(dict(op='read', path=str(path), max_bytes=1024)),
+                              capture_output=True, text=True, timeout=5)
+        self.assertEqual(json.loads(proc.stdout)['error'], 'INVALID_TARGET')
+
+    def test_patch_uses_read_line_boundaries(self):
+        path = self.root / 'separators'
+        for separator in ('\u2028', '\u2029', '\v', '\f', '\r', '\x85'):
+            for ending in ('\n', '\r\n'):
+                for tail in ('second', 'second\n'):
+                    first = 'first' + separator + 'still-first' + ending
+                    path.write_bytes((first + tail).encode())
+                    read = self.request(op='read', path=str(path))
+                    self.assertEqual(read['lines'], 2)
+                    result = self.request(op='patch', path=str(path), if_hash=read['sha256'],
+                                          edits=[dict(start=2, end=2, text='replaced\n')])
+                    self.assertNotIn('error', result)
+                    self.assertEqual(path.read_bytes(), (first + 'replaced\n').encode())
+
     # --- write and patch -------------------------------------------------
 
     def test_atomic_create_and_replace(self):

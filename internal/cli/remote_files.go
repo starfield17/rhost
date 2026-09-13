@@ -216,7 +216,7 @@ func loadPatch(request map[string]interface{}, data []byte, host string) *errs.E
 func emitHelper(op, host string, res map[string]interface{}) {
 	operation := "fs." + op
 	if jsonFlag {
-		_ = output.Success(operation, host, res).Write(os.Stdout)
+		writeEnvelope(output.Success(operation, host, res))
 		return
 	}
 	switch op {

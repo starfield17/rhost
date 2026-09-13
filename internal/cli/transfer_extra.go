@@ -40,7 +40,7 @@ never implied.`,
 			}
 			audit.succeed("", "mirror "+o.Remote, nil)
 			if jsonFlag {
-				_ = output.Success("fs.mirror", o.Host, res).Write(os.Stdout)
+				writeEnvelope(output.Success("fs.mirror", o.Host, res))
 			} else {
 				renderSyncDirection(res, "downloaded", "would download (dry run, nothing copied)")
 			}
@@ -117,7 +117,7 @@ entry does not stop the ones after it: check data.failed, not just the envelope.
 			}
 			report := runBatch(c, host, entries, timeout)
 			if jsonFlag {
-				_ = output.Success("fs.batch", host, report).Write(os.Stdout)
+				writeEnvelope(output.Success("fs.batch", host, report))
 			} else {
 				for _, item := range report.Items {
 					if item.OK {
