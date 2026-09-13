@@ -40,7 +40,10 @@ Time:
 - `REMOTE_COMMAND_CANCELLED` — the local rhost received SIGINT or SIGTERM. Check
   `data.cancel_signal` and `data.cleanup_confirmed` before retrying a side effect.
 - `OUTPUT_WRITE_FAILED` — the local stdout/stderr consumer closed or failed.
-  Remote cleanup was attempted; inspect `data.cleanup_confirmed`.
+  Do not infer that the remote operation failed or retry a side effect. For a
+  streamed exec, remote cleanup was attempted; inspect `data.cleanup_confirmed`
+  when it is available, otherwise check remote state separately. If writing the
+  final JSON document itself failed, only stderr and process status 255 may remain.
 
 Sessions:
 
@@ -71,6 +74,9 @@ Files:
 
 - `FILE_NOT_FOUND` — the remote path does not exist. Inspect it with a direct
   remote command such as `test`, `ls`, or `find` instead of guessing.
+- `HASH_REQUIRED` — the target already exists but no comparison hash was
+  supplied. Read it with `fs read`, merge if needed, and use that fresh SHA-256;
+  do not bypass or guess the precondition.
 - `FILE_CONFLICT` — the hash you supplied no longer describes the file, or the
   file changed during the operation. Read it again and merge; never replay an old
   hash.
@@ -90,9 +96,13 @@ Files:
 
 Tunnels:
 
-- `TUNNEL_FAILED` — the forward could not be opened; OpenSSH's reason is in the
-  message. `TUNNEL_NOT_FOUND` — that id has no live record on this machine.
-  `tunnel list` is how ids are rediscovered; keep `data.id` from `open`.
+- `TUNNEL_FAILED` — opening failed, or `list`/`close` could not confirm the
+  OpenSSH master state. An unresponsive control socket is uncertain, not proof
+  that the tunnel is stale or closed; preserve the record and retry or inspect
+  before acting on that assumption. `TUNNEL_NOT_FOUND` means that id has no live
+  record on this machine. Rediscover ids with `tunnel list`, and keep the
+  canonical `data.tunnel_id` returned by `open` (`data.id` is a compatibility
+  alias).
 
 Input and adapter:
 
@@ -125,5 +135,6 @@ else now. Read its logs for what happened, then re-run if the work mattered.
 `RHOST_SSH_LOG_LEVEL=VERBOSE`; rhost keeps OpenSSH quiet by default.
 
 **You need to know what rhost did earlier.** `rhost audit --json` reads the local
-trail (bounded operation metadata, never environment maps or file contents). It is the only record of operations this machine
-performed; the remote side has none of its own.
+trail (bounded operation metadata, never environment maps or file contents). It
+is the only record of operations this machine performed; the remote side has
+none of its own.

@@ -36,7 +36,7 @@ Every JSON response has `schema_version`, `operation`, `ok`, `data` and
 
 | operation | useful paths |
 | --- | --- |
-| exec | `data.stdout`, `data.stderr`, `data.exit_code`, `data.cleanup_confirmed` |
+| exec | `data.stdout`, `data.stderr`, `data.exit_code`, `data.timed_out`, `data.cancelled`, `data.cleanup_confirmed`, byte counts and truncation flags |
 | hosts | `data.hosts[]`, `data.config_found`, `data.complete`, `data.warnings[]` |
 | session create/list | `data.session_id`, `data.sessions[].session_id` |
 | session exec | `data.stdout`, `data.exit_code`, `data.session_preserved` |
@@ -44,7 +44,16 @@ Every JSON response has `schema_version`, `operation`, `ok`, `data` and
 | job start/status | `data.job_id`, `data.exit_code` |
 | job list | `data.jobs[].job_id` |
 | job logs | `data.content`, `data.encoding`, `data.next`, `data.more` |
+| tunnel open/list | `data.tunnel_id`, `data.status`; `data.tunnels[].tunnel_id`, `data.tunnels[].status` |
 | audit | `data.entries[]` |
+
+For exec, inspect `data.timed_out`, `data.cancelled`, `data.cancel_signal` and
+`data.cleanup_confirmed` before deciding whether a side effect is safe to retry.
+Compare `data.stdout_bytes` and `data.stderr_bytes` with the captured strings,
+and check `data.stdout_truncated` and `data.stderr_truncated`. A true truncation
+flag means the captured text is incomplete even though the byte count describes
+the full stream. Raise the limit deliberately or redirect large remote output
+to a file; do not make decisions from a truncated stream.
 
 `session exec` uses a PTY, so `data.stdout` is the combined pane output.
 `session.read` content is UTF-8. `job.logs` content is base64 because job
@@ -137,4 +146,5 @@ rhost audit --json
 Tunnels bind loopback by default and use a dedicated OpenSSH master. `alive`
 means the forward exists; it does not probe the destination service. Audit
 records bounded local operation metadata and can be disabled with
-`RHOST_AUDIT=0`.
+`RHOST_AUDIT=0`. Keep `data.tunnel_id` from `tunnel open`; `data.id` is an
+identical compatibility alias for older callers.

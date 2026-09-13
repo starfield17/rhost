@@ -38,9 +38,11 @@ travel through the remote process environment and are visible there.
 
 ## Destructive file operations
 
-- `fs sync` and `fs mirror` copy; only `--delete` prunes remote-only files. Run
-  the same command with `--dry-run` first and read `data.changes` and
-  `data.deletes` — that list is exactly what the applying run would do.
+- `fs sync` and `fs mirror` copy without pruning by default. With `--delete`,
+  `sync` prunes entries present only in the remote destination and `mirror`
+  prunes entries present only in the local destination. Run the same command
+  with `--dry-run` first: `data.changes` is the applying run's plan, and
+  `data.deletes` counts its pruning entries.
 - `--delete` is refused (`SYNC_REJECTED`) when the destination is a top-level
   directory or an entire home. Sync into a subdirectory instead; there is no flag
   that makes pruning a whole home safe.
@@ -64,8 +66,9 @@ travel through the remote process environment and are visible there.
   service on your local network, and a local forward can put a local port on the
   remote one.
 - A tunnel is a dedicated OpenSSH master that outlives the process that created
-  it. Keep `data.id`; `tunnel list` is the only way back to an id you did not
-  keep. Nothing restarts a tunnel after a reboot.
+  it. Keep the canonical `data.tunnel_id` (`data.id` is an identical compatibility
+  alias); `tunnel list` is the only way back to an id you did not keep. Nothing
+  restarts a tunnel after a reboot.
 - `alive` means the forward exists, not that a service answers behind it. rhost
   does not probe the far end for you.
 
