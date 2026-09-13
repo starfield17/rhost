@@ -323,7 +323,7 @@ func TestExecScriptRefusesWhenPaneIsBusy(t *testing.T) {
 	}
 	gate := indexOf(s, "RHOST_ERR=busy")
 	probe := indexOf(s, `stty -echo < "$TTY"`)
-	paste := indexOf(s, `tmux paste-buffer -b "$BUF"`)
+	paste := indexOf(s, `paste-buffer -d -b "$BUF"`)
 	if gate < 0 || probe < 0 || paste < 0 {
 		t.Fatalf("ExecScript has no foreground-check/probe/paste sequence: %d %d %d", gate, probe, paste)
 	}
