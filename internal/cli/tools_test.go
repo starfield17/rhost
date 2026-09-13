@@ -137,6 +137,11 @@ func TestDoctorHumanCapabilitiesIncludeRemoteHelpers(t *testing.T) {
 			t.Errorf("doctor human output omitted %s:\n%s", name, out)
 		}
 	}
+	for _, removed := range []string{"nohup", "Process identity"} {
+		if strings.Contains(out, removed) {
+			t.Errorf("doctor human output still advertises job-only capability %s:\n%s", removed, out)
+		}
+	}
 }
 
 func TestLoadPatchRequiresHashAndEdits(t *testing.T) {

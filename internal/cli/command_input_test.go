@@ -19,13 +19,12 @@ func TestShellCommandInputGrammar(t *testing.T) {
 	}{
 		{name: "exec long", build: newExecCmd, args: []string{"example-host", "--command", "printf '%s' '--json'"}, ok: true},
 		{name: "exec short and interspersed", build: newExecCmd, args: []string{"example-host", "-c", "pwd", "--cwd", "/var/log"}, ok: true},
-		{name: "job flags after command", build: newJobStartCmd, args: []string{"example-host", "--command", "sleep 1", "--name", "demo"}, ok: true},
-		{name: "session", build: newSessionExecCmd, args: []string{"example-host", "dev", "--command", "x=42"}, ok: true},
+		{name: "session flags after command", build: newSessionExecCmd, args: []string{"example-host", "dev", "--command", "x=42", "--timeout", "1s"}, ok: true},
 		{name: "missing command", build: newExecCmd, args: []string{"example-host"}},
 		{name: "empty command", build: newExecCmd, args: []string{"example-host", "--command", ""}},
-		{name: "duplicate command", build: newJobStartCmd, args: []string{"example-host", "--command", "true", "-c", "false"}},
+		{name: "duplicate command", build: newExecCmd, args: []string{"example-host", "--command", "true", "-c", "false"}},
 		{name: "extra operand", build: newSessionExecCmd, args: []string{"example-host", "dev", "extra", "--command", "true"}},
-		{name: "legacy delimiter", build: newJobStartCmd, args: []string{"example-host", "--", "sleep 1"}},
+		{name: "legacy delimiter", build: newSessionExecCmd, args: []string{"example-host", "dev", "--", "sleep 1"}},
 		{name: "empty delimiter", build: newExecCmd, args: []string{"example-host", "--command", "true", "--"}},
 	}
 
@@ -46,7 +45,7 @@ func TestShellCommandInputGrammar(t *testing.T) {
 	}
 }
 
-func TestLegacyJobCommandIsRejectedBeforeAuditOrSSH(t *testing.T) {
+func TestLegacyCommandIsRejectedBeforeAuditOrSSH(t *testing.T) {
 	t.Cleanup(saveGlobals())
 
 	dir := t.TempDir()
@@ -60,7 +59,7 @@ func TestLegacyJobCommandIsRejectedBeforeAuditOrSSH(t *testing.T) {
 	t.Setenv("RHOST_STATE_DIR", dir)
 	t.Setenv("RHOST_AUDIT", "1")
 
-	os.Args = []string{"rhost", "job", "start", "example-host", "--name", "demo", "--", "sleep 1; echo ok", "--json"}
+	os.Args = []string{"rhost", "exec", "example-host", "--", "sleep 1; echo ok", "--json"}
 	if code := Run(); code != 255 {
 		t.Fatalf("exit = %d, want usage status 255", code)
 	}

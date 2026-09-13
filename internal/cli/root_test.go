@@ -159,7 +159,7 @@ func captureStdout(t *testing.T, fn func()) string {
 func TestBareGroupIsAUsageError(t *testing.T) {
 	t.Cleanup(saveGlobals())
 
-	for _, group := range []string{"session", "job", "fs"} {
+	for _, group := range []string{"session", "fs"} {
 		jsonFlag = true
 		exitCode = 0
 		os.Args = []string{"rhost", "--json", group}
@@ -189,13 +189,79 @@ func TestBareGroupIsAUsageError(t *testing.T) {
 	// The human path keeps the help text.
 	jsonFlag = false
 	exitCode = 0
-	os.Args = []string{"rhost", "job"}
+	os.Args = []string{"rhost", "session"}
 	out := captureStdout(t, func() { Run() })
-	if !strings.Contains(out, "Usage:") || !strings.Contains(out, "start") {
+	if !strings.Contains(out, "Usage:") || !strings.Contains(out, "create") {
 		t.Errorf("bare group without --json must still print help, got %q", out)
 	}
 	if exitCode != 0 {
 		t.Errorf("help exit = %d, want 0", exitCode)
+	}
+}
+
+func TestRequiredPositionalsAreNamed(t *testing.T) {
+	t.Cleanup(saveGlobals())
+
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "exec host", args: []string{"exec", "--command", "true"}, want: "rhost exec requires <host>"},
+		{name: "doctor host", args: []string{"doctor"}, want: "rhost doctor requires <host>"},
+		{name: "tunnel id", args: []string{"tunnel", "close"}, want: "rhost tunnel close requires <id>"},
+		{name: "session operands", args: []string{"session", "exec", "example-host", "--command", "true"}, want: "rhost session exec requires <host> <session>"},
+		{name: "file operands", args: []string{"fs", "put", "example-host"}, want: "rhost fs put requires <host> <local> <remote>"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jsonFlag = false
+			os.Args = append([]string{"rhost", "--json"}, tt.args...)
+			code := 0
+			out := captureStdout(t, func() { code = Run() })
+
+			var doc struct {
+				Error struct {
+					Code    string `json:"code"`
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+				t.Fatalf("stdout is not one JSON document: %v\n%q", err, out)
+			}
+			if doc.Error.Code != "USAGE_ERROR" || doc.Error.Message != tt.want {
+				t.Errorf("usage error = %+v, want USAGE_ERROR %q", doc.Error, tt.want)
+			}
+			if code != 255 {
+				t.Errorf("exit = %d, want 255", code)
+			}
+		})
+	}
+}
+
+func TestJobCommandIsNotRegistered(t *testing.T) {
+	t.Cleanup(saveGlobals())
+
+	jsonFlag = false
+	os.Args = []string{"rhost", "--json", "job"}
+	code := 0
+	out := captureStdout(t, func() { code = Run() })
+
+	var doc struct {
+		Operation string `json:"operation"`
+		Error     struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\n%q", err, out)
+	}
+	if doc.Operation != "usage" || doc.Error.Code != "USAGE_ERROR" {
+		t.Errorf("rhost job = %+v, want root USAGE_ERROR", doc)
+	}
+	if code != 255 {
+		t.Errorf("exit = %d, want 255", code)
 	}
 }
 
