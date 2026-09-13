@@ -25,10 +25,10 @@ the tool itself provides.
 
 ```bash
 # no: the token is in the audit log, the process table, and your shell history
-rhost --host <host> -- 'curl -H "Authorization: Bearer <token>" https://api.example'
+rhost exec <host> --command 'curl -H "Authorization: Bearer <token>" https://api.example'
 
 # yes: the value stays on the remote side
-rhost --host <host> -- 'curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.example'
+rhost exec <host> --command 'curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.example'
 ```
 
 `session send --data` records the *key* or the fact that data was sent, never the

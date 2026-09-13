@@ -33,7 +33,7 @@ redirections, variables and compound shell syntax work:
   rhost exec gpu --command 'pytest -q'
   rhost exec gpu --command 'echo hi | wc -l'
 
-		Human mode streams stdout and stderr and forwards stdin. There is no default
+Human mode streams stdout and stderr and forwards stdin. There is no default
 execution deadline. The process status mirrors the remote command; adapter
 failures use 255 and timeouts use 124.`,
 		Args: command.validate(1),

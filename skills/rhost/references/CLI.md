@@ -3,30 +3,20 @@
 ## Direct foreground execution
 
 ```bash
-rhost --host <host> -- '<command>'
-rhost --host <host> --cwd '<remote-directory>' --env KEY=value -- '<command>'
-rhost --host <host> --json --timeout 30s -- '<command>'
+rhost exec <host> --command '<shell-program>'
+rhost exec <host> --cwd '<remote-directory>' --env KEY=value --command '<shell-program>'
+rhost exec <host> --command '<shell-program>' --json --timeout 30s
 ```
 
-The direct form accepts exactly one shell string after `--`. Human output
-streams and stdin is forwarded. JSON captures 1 MiB per stream by default;
-`--max-output-bytes 0` removes that capture limit.
-
-### Compatibility only: `exec`
-
-`rhost exec <host> -- <command...>` remains callable but is hidden from primary
-help. It joins argv with spaces, buffers output, does not forward stdin, and
-retains its 60-second default deadline and 1 MiB per-stream capture limit in
-both human and JSON modes. `--timeout 0` falls back to the configured default,
-not unlimited execution. No new capabilities are added to this surface.
-Migrate by passing one deliberately quoted shell string to the direct form;
-set `--timeout 60s` explicitly if the old deadline is required. Do not blindly
-convert argv into a shell string: review quoting and metacharacters.
+The exec form accepts exactly one non-empty shell program through `--command`
+(`-c` is its short form). Human output streams and stdin is forwarded. JSON
+captures 1 MiB per stream by default; `--max-output-bytes 0` removes that
+capture limit. Local flags may appear before or after the command field.
 
 Combine related read-only checks into one command when latency matters:
 
 ```bash
-rhost --host <host> -- 'uname -a; free -h; df -h'
+rhost exec <host> --command 'uname -a; free -h; df -h'
 ```
 
 ## JSON paths
@@ -75,7 +65,7 @@ Any target accepted by OpenSSH may still be passed directly.
 ## Durable jobs
 
 ```bash
-rhost job start <host> --json --cwd '<remote-directory>' -- '<command>'
+rhost job start <host> --command '<shell-program>' --json --cwd '<remote-directory>'
 rhost job list <host> --json
 rhost job status <host> <job-id> --json
 rhost job logs <host> <job-id> --json --since 0
@@ -91,7 +81,7 @@ Jobs are remote process groups with remote metadata and logs. Pass
 ```bash
 rhost session create <host> --json --name debug --cwd '<remote-directory>'
 rhost session list <host> --json
-rhost session exec <host> debug --json -- '<command>'
+rhost session exec <host> debug --command '<shell-program>' --json
 rhost session send <host> debug --data 'python3 -i' --enter
 rhost session send <host> debug --data 'next()' --enter
 rhost session send <host> debug --key C-c

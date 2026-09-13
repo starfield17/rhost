@@ -61,7 +61,7 @@ The top-level envelope is fixed. Operation data uses these canonical paths:
 
 | Operation | Identity | Output or collection |
 | --- | --- | --- |
-| direct/compat exec | — | `data.stdout`, `data.stderr`, `data.exit_code` |
+| exec | — | `data.stdout`, `data.stderr`, `data.exit_code` |
 | session create/list | `session_id` | `data.sessions[]` for list |
 | session exec | `data.session_id` | `data.stdout`, `data.exit_code` (integer or null) |
 | session recover | `data.session_id` | `data.session_preserved`, `data.foreground` when busy |

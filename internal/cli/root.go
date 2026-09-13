@@ -67,7 +67,7 @@ func usageWantsJSON() bool {
 		if a == "--json" || a == "--json=true" {
 			return true
 		}
-		if a == "--" { // everything after -- is the remote command, not our flags
+		if a == "--" { // everything after -- is an operand, not our flags
 			return false
 		}
 	}
@@ -101,7 +101,7 @@ func newRootCmd() *cobra.Command {
 		Short: "Run ordinary commands on an SSH-reachable host",
 		Long: `rhost runs an ordinary shell command in a remote execution context.
 
-Use --host TARGET -- 'command' for the normal path. rhost orchestrates your
+Use rhost exec TARGET --command 'program' for the normal path. rhost orchestrates your
 existing OpenSSH configuration and never duplicates authentication or host-key
 policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 	}

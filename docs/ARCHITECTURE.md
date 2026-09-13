@@ -6,7 +6,7 @@ rhost lets a coding agent operate an SSH-reachable machine with the same command
 model it uses locally:
 
 ```bash
-rhost --host gpu --cwd '~/work' -- 'ls -a'
+rhost exec gpu --cwd '~/work' --command 'ls -a'
 ```
 
 Text inside the command string is interpreted remotely. Flags outside it select
@@ -32,8 +32,8 @@ persistence promise.
 ## Product rules
 
 - Direct remote execution is the primary interface.
-- One exact shell string follows `--`; rhost does not rebuild shell syntax from
-  multiple arguments.
+- One exact shell program is supplied through `--command`; rhost never rebuilds
+  shell syntax from multiple arguments.
 - Every agent-visible behavior has a versioned JSON path.
 - Timeouts preserve execution uncertainty and never turn it into a connectivity
   claim.

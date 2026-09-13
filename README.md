@@ -9,7 +9,7 @@ model to any SSH-reachable Linux machine without installing an agent, running a
 daemon, or introducing another authentication system.
 
 ```bash
-rhost --host gpu --cwd '~/work/project' -- 'pytest -q'
+rhost exec gpu --cwd '~/work/project' --command 'pytest -q'
 ```
 
 Direct execution requires remote `bash`, `setsid`, and a base64 decoder.
@@ -54,22 +54,23 @@ Use a target that already works with `ssh`: an OpenSSH config alias,
 
 ```bash
 # Inspect an edge host.
-rhost --host edge -- 'uname -a && systemctl --failed'
+rhost exec edge --command 'uname -a && systemctl --failed'
 
 # Check a GPU worker.
-rhost --host gpu -- 'nvidia-smi'
+rhost exec gpu --command 'nvidia-smi'
 
 # Run the same command an agent would run locally.
-rhost --host gpu --cwd '~/work/project' -- 'pytest -q'
+rhost exec gpu --cwd '~/work/project' --command 'pytest -q'
 
 # Forward stdin and preserve normal pipeline behavior.
-printf 'hello\n' | rhost --host edge -- 'cat'
-rhost --host gpu -- 'cat results.txt' | sort
+printf 'hello\n' | rhost exec edge --command 'cat'
+rhost exec gpu --command 'cat results.txt' | sort
 ```
 
-The string after `--` is one complete remote shell command. Pipelines,
-redirects, variables, and compound syntax inside that string run in a fresh
-remote login-bash context. Shell syntax outside the string remains local.
+The `--command` value is one complete remote shell program. Pipelines,
+redirects, variables, and compound syntax inside that value run in a fresh
+remote login-bash context. Shell syntax outside the value remains local. Local
+flags may appear before or after `--command`; use `-c` as its short form.
 
 Human mode streams output and has no default deadline or output cap. Add
 `--timeout 30s` when a command has a meaningful bound. Use `--json` when the
@@ -112,8 +113,8 @@ For example, start a training command that must keep running after the agent's
 invocation ends, then inspect it later:
 
 ```bash
-rhost job start gpu --name training --cwd '~/work/project' -- \
-  'python train.py --config configs/train.yaml'
+rhost job start gpu --name training --cwd '~/work/project' \
+  --command 'python train.py --config configs/train.yaml'
 rhost job status gpu training --json
 rhost job logs gpu training --json --since 0
 ```
@@ -125,7 +126,7 @@ rhost fs read gpu '~/work/project/main.go' --json
 rhost fs write gpu '~/work/project/main.go' --from ./main.go --if-hash <sha256>
 
 rhost session create gpu --name debug --cwd '~/work/project'
-rhost session exec gpu debug --json -- 'python -m pdb app.py'
+rhost session exec gpu debug --command 'python -m pdb app.py' --json
 ```
 
 Creating a file needs no hash; replacing or patching one requires the SHA-256
@@ -133,7 +134,7 @@ from the last `fs read`. Sync and mirror delete only with explicit `--delete`.
 Remote search stays an ordinary command:
 
 ```bash
-rhost --host gpu --cwd '~/work/project' -- 'rg TODO src'
+rhost exec gpu --cwd '~/work/project' --command 'rg TODO src'
 ```
 
 ## What rhost does not own

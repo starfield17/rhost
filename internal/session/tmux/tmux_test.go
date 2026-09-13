@@ -228,7 +228,7 @@ func TestExecScriptProtocol(t *testing.T) {
 }
 
 // TestExecScriptScansEveryByte is the regression test for a real failure:
-// `session exec -- "bash -c 'exit 4'"` timed out on a live host although the
+// `session exec --command "bash -c 'exit 4'"` timed out on a live host although the
 // completion marker had been written. The scan advanced its offset to a size it
 // had measured but not read, so a marker that arrived in between sat in bytes the
 // loop never looked at again — and a finished command became a spurious timeout.

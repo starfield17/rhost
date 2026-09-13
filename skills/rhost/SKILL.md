@@ -8,16 +8,16 @@ description: Run an ordinary command on an SSH-reachable remote host with local-
 Use the command you would run locally and add only the remote execution context:
 
 ```bash
-rhost --host <host> --cwd '<remote-directory>' -- '<shell command>'
+rhost exec <host> --cwd '<remote-directory>' --command '<shell program>'
 ```
 
-The string after `--` runs in a fresh remote login-bash context. Pipes,
-redirections, variables, and compound syntax inside that string are remote.
-Pipes outside the quoted string are local:
+The `--command` value runs in a fresh remote login-bash context. Pipes,
+redirections, variables, and compound syntax inside that value are remote.
+Pipes outside the quoted value are local:
 
 ```bash
-rhost --host <host> -- 'cat result.txt | sort'   # sort is remote
-rhost --host <host> -- 'cat result.txt' | sort  # sort is local
+rhost exec <host> --command 'cat result.txt | sort'   # sort is remote
+rhost exec <host> --command 'cat result.txt' | sort  # sort is local
 ```
 
 Direct execution needs remote `bash`, `setsid`, and a base64 decoder. Optional
@@ -36,7 +36,8 @@ result has an unambiguous exit and retry decision.
 
 ## Rules
 
-- Pass exactly one shell command after `--`. Quote it as one local argument.
+- Pass exactly one non-empty shell program with `--command`. Quote it as one
+  local argument; `-c` is the equivalent short form.
 - Treat `--cwd` as a remote path. Quote a leading `~` so the local shell does not
   expand it.
 - For every remote path argument, write `'~/path'`, not `"'~/path'"`: shell

@@ -7,12 +7,12 @@ model across SSH while preserving the process contract the caller already
 understands:
 
 ```bash
-rhost --host gpu --cwd '~/work/project' -- 'git status --short'
+rhost exec gpu --cwd '~/work/project' --command 'git status --short'
 ```
 
-The quoted command belongs to the remote shell. Flags before `--` configure
+The quoted `--command` value belongs to the remote shell. Other flags configure
 rhost, and a pipeline after the invocation belongs to the local shell. That
-boundary is the center of the product.
+typed boundary is the center of the product.
 
 rhost is not a replacement SSH client, a remote development environment, or a
 resident agent server. It is a command-line adapter between a coding agent and

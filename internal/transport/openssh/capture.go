@@ -2,7 +2,7 @@ package openssh
 
 // capture is the bounded sink behind ssh's stdout and stderr.
 //
-// An unbounded buffer here turns `rhost exec host -- yes | head -c 999999999`
+// An unbounded buffer here turns `rhost exec host --command 'yes | head -c 999999999'`
 // into an unbounded allocation in the CLI, and the JSON would carry all of it. But
 // simply keeping the first N bytes would break the completion protocol: the
 // marker that carries the command's real exit status is the *last* thing on
