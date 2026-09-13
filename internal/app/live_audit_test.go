@@ -12,7 +12,7 @@ func TestLiveAudit(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t).withEnv("RHOST_STATE_DIR="+t.TempDir(), "RHOST_AUDIT=1")
 
-	c.mustJSON(t, "--json", "exec", host, "--", "echo audited; exit 5")
+	c.mustJSON(t, "--json", "exec", host, "--command", "echo audited; exit 5")
 
 	env := c.mustJSON(t, "--json", "audit")
 	var entries []struct {

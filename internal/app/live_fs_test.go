@@ -40,7 +40,7 @@ func changeMap(rows []changeRow) map[string]string {
 // registered directories in one remote call after the suite finishes.
 func remoteTemp(t *testing.T, c liveCLI, host string) string {
 	t.Helper()
-	env := c.mustJSON(t, "--json", "exec", host, "--", "mktemp -d")
+	env := c.mustJSON(t, "--json", "exec", host, "--command", "mktemp -d")
 	dir := strings.TrimSpace(env.str(t, "stdout"))
 	if !strings.HasPrefix(dir, "/") {
 		t.Fatalf("mktemp -d returned %q", dir)
@@ -51,7 +51,7 @@ func remoteTemp(t *testing.T, c liveCLI, host string) string {
 
 func remoteStdout(t *testing.T, c liveCLI, host, command string) string {
 	t.Helper()
-	return c.mustJSON(t, "--json", "exec", host, "--", command).str(t, "stdout")
+	return c.mustJSON(t, "--json", "exec", host, "--command", command).str(t, "stdout")
 }
 
 func remoteHas(t *testing.T, c liveCLI, host, path string) bool {
@@ -301,7 +301,7 @@ func TestLiveFsSyncWithSpaceInCacheRoot(t *testing.T) {
 	src := localTree(t)
 	dst := remoteTemp(t, c, host) + "/spaced"
 	// Open the connection first, so the sync below can only succeed by reusing it.
-	c.mustJSON(t, "--json", "exec", host, "--", "true")
+	c.mustJSON(t, "--json", "exec", host, "--command", "true")
 	c.mustJSON(t, "--json", "fs", "sync", host, src, dst)
 	if !remoteHas(t, c, host, dst+"/a.txt") {
 		t.Error("a sync with whitespace in the cache root did not copy the tree")

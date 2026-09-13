@@ -23,7 +23,7 @@ func TestSmokeLive(t *testing.T) {
 		t.Fatalf("smoke test needs bash and tmux: %v", capabilities)
 	}
 
-	direct := c.mustJSON(t, "--json", "--host", host, "--", "printf smoke-exec")
+	direct := c.mustJSON(t, "--json", "exec", host, "--command", "printf smoke-exec")
 	if direct.str(t, "stdout") != "smoke-exec" || direct.num(t, "exit_code") != 0 {
 		t.Fatalf("direct exec contract: %s", direct.Data)
 	}
@@ -48,13 +48,13 @@ func TestSmokeLive(t *testing.T) {
 		t.Fatal("session.create returned no session_id")
 	}
 	defer c.run(t, "--json", "session", "close", host, session)
-	c.mustJSON(t, "--json", "session", "exec", host, session, "--", "cd /tmp; export RHOST_SMOKE_VALUE=42")
-	preserved := c.mustJSON(t, "--json", "session", "exec", host, session, "--", "printf '%s|%s' \"$PWD\" \"$RHOST_SMOKE_VALUE\"")
+	c.mustJSON(t, "--json", "session", "exec", host, session, "--command", "cd /tmp; export RHOST_SMOKE_VALUE=42")
+	preserved := c.mustJSON(t, "--json", "session", "exec", host, session, "--command", "printf '%s|%s' \"$PWD\" \"$RHOST_SMOKE_VALUE\"")
 	if !strings.Contains(preserved.str(t, "stdout"), "/tmp|42") {
 		t.Fatalf("session state did not cross CLI processes: %s", preserved.Data)
 	}
 
-	started := c.mustJSON(t, "--json", "job", "start", host, "--", "printf smoke-job; sleep 60")
+	started := c.mustJSON(t, "--json", "job", "start", host, "--command", "printf smoke-job; sleep 60")
 	jobID := started.str(t, "job_id")
 	if jobID == "" {
 		t.Fatal("job.start returned no job_id")

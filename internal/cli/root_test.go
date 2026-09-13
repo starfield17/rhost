@@ -239,7 +239,7 @@ func TestNoCommandAtAllIsAUsageError(t *testing.T) {
 	}
 }
 
-func TestDirectExecutionRequiresOneShellStringAfterDash(t *testing.T) {
+func TestRemovedExecutionFormsAreUsageErrors(t *testing.T) {
 	t.Cleanup(saveGlobals())
 	for _, args := range [][]string{
 		{"rhost", "--json", "--host", "example-host", "ls"},
@@ -264,7 +264,7 @@ func TestDirectExecutionRequiresOneShellStringAfterDash(t *testing.T) {
 
 func TestDirectExecutionRejectsNegativeOutputLimit(t *testing.T) {
 	t.Cleanup(saveGlobals())
-	os.Args = []string{"rhost", "--json", "--host", "example-host", "--max-output-bytes", "-1", "--", "true"}
+	os.Args = []string{"rhost", "--json", "exec", "example-host", "--command", "true", "--max-output-bytes", "-1"}
 	out := captureStdout(t, func() { _ = Run() })
 	var doc struct {
 		Error struct {

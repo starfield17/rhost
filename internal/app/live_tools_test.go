@@ -79,7 +79,7 @@ func TestLiveTools(t *testing.T) {
 	if body, err := os.ReadFile(filepath.Join(dest, "text.txt")); err != nil || string(body) != "alpha\ngamma\n" {
 		t.Fatalf("mirror: %s %v", body, err)
 	}
-	capped := c.mustJSON(t, "--json", "exec", host, "--max-output-bytes", "1000", "--", "head -c 100000 /dev/zero | tr '\\0' x")
+	capped := c.mustJSON(t, "--json", "exec", host, "--max-output-bytes", "1000", "--command", "head -c 100000 /dev/zero | tr '\\0' x")
 	var truncated bool
 	capped.field(t, "stdout_truncated", &truncated)
 	if len(capped.str(t, "stdout")) != 1000 || !truncated || capped.num(t, "stdout_bytes") != 100000 {
@@ -130,14 +130,14 @@ func TestLiveSessionRecoveryExplicit(t *testing.T) {
 	name := "recover-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
 	t.Cleanup(func() { c.run(t, "--json", "session", "close", host, name) })
-	c.mustJSON(t, "--json", "session", "exec", host, name, "--", "export RHOST_RECOVERY_VALUE=retained")
+	c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "export RHOST_RECOVERY_VALUE=retained")
 	result := c.mustJSON(t, "--json", "session", "recover", host, name)
 	var preserved bool
 	result.field(t, "session_preserved", &preserved)
 	if !preserved {
 		t.Fatal("recovery did not preserve session")
 	}
-	if got := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "printf '%s' \"$RHOST_RECOVERY_VALUE\"").str(t, "stdout"); !strings.Contains(got, "retained") {
+	if got := c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "printf '%s' \"$RHOST_RECOVERY_VALUE\"").str(t, "stdout"); !strings.Contains(got, "retained") {
 		t.Fatalf("lost shell state: %q", got)
 	}
 }

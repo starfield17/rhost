@@ -320,7 +320,7 @@ func cleanupLiveResources() error {
 		}
 		parts = append(parts, removeJobs.String())
 	}
-	cmd := exec.Command(filepath.Join(liveBinDir, "rhost"), "--host", os.Getenv("RHOST_TEST_HOST"), "--", strings.Join(parts, "; "))
+	cmd := exec.Command(filepath.Join(liveBinDir, "rhost"), "exec", os.Getenv("RHOST_TEST_HOST"), "--command", strings.Join(parts, "; "))
 	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+cacheDir)
 	started := time.Now()
 	out, err := cmd.CombinedOutput()
@@ -421,7 +421,7 @@ func TestLiveExec(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
 
-	env := c.mustJSON(t, "--json", "exec", host, "--timeout", "60s", "--", "echo live-ok; exit 4")
+	env := c.mustJSON(t, "--json", "exec", host, "--timeout", "60s", "--command", "echo live-ok; exit 4")
 	if got := env.num(t, "exit_code"); got != 4 {
 		t.Errorf("data.exit_code = %d, want 4", got)
 	}
@@ -430,32 +430,32 @@ func TestLiveExec(t *testing.T) {
 	}
 
 	// The process exit status must mirror the remote command's own status.
-	if _, _, exit := c.run(t, "exec", host, "--", "exit 4"); exit != 4 {
+	if _, _, exit := c.run(t, "exec", host, "--command", "exit 4"); exit != 4 {
 		t.Errorf("process exit = %d, want 4 (remote status must be mirrored)", exit)
 	}
-	if _, _, exit := c.run(t, "--json", "exec", host, "--", "true"); exit != 0 {
+	if _, _, exit := c.run(t, "--json", "exec", host, "--command", "true"); exit != 0 {
 		t.Errorf("successful exec exit = %d, want 0", exit)
 	}
 
 	// --cwd must take effect in the same, stateless context.
-	pwd := c.mustJSON(t, "--json", "exec", host, "--cwd", "/var/log", "--", "pwd")
+	pwd := c.mustJSON(t, "--json", "exec", host, "--cwd", "/var/log", "--command", "pwd")
 	if got := strings.TrimSpace(pwd.str(t, "stdout")); got != "/var/log" {
 		t.Errorf("cwd /var/log not honoured: stdout=%q", got)
 	}
 
 	// exec is stateless by contract: a second process must not see the first's cd.
-	again := c.mustJSON(t, "--json", "exec", host, "--", "pwd")
+	again := c.mustJSON(t, "--json", "exec", host, "--command", "pwd")
 	if got := strings.TrimSpace(again.str(t, "stdout")); got == "/var/log" {
 		t.Errorf("exec leaked cwd between invocations: %q", got)
 	}
 
 	// The primary surface keeps one shell string intact and forwards stdin.
-	stdout, stderr, exit := c.runInput(t, "streamed input\n", "--host", host,
-		"--cwd", "/var/log", "--", "cat; pwd >&2")
+	stdout, stderr, exit := c.runInput(t, "streamed input\n", "exec", host,
+		"--cwd", "/var/log", "--command", "cat; pwd >&2")
 	if stdout != "streamed input\n" || strings.TrimSpace(stderr) != "/var/log" || exit != 0 {
 		t.Errorf("direct execution: stdout=%q stderr=%q exit=%d", stdout, stderr, exit)
 	}
-	direct := c.mustJSON(t, "--json", "--host", host, "--", "printf direct-json")
+	direct := c.mustJSON(t, "--json", "exec", host, "--command", "printf direct-json")
 	if got := direct.str(t, "stdout"); got != "direct-json" {
 		t.Errorf("direct JSON stdout = %q", got)
 	}
@@ -474,7 +474,7 @@ func TestLiveExecTimeout(t *testing.T) {
 	sleepFor := strconv.Itoa(300 + time.Now().Nanosecond()%400)
 
 	env := c.wantErrorCode(t, errs.RemoteCommandTimeout,
-		"--json", "exec", host, "--timeout", "3s", "--", "echo "+marker+"; sleep "+sleepFor)
+		"--json", "exec", host, "--timeout", "3s", "--command", "echo "+marker+"; sleep "+sleepFor)
 	if !env.bool(t, "timed_out") {
 		t.Errorf("data.timed_out = false, want true")
 	}
@@ -486,7 +486,7 @@ func TestLiveExecTimeout(t *testing.T) {
 	// rhost passes the whole wrapper script (marker included) as the remote argv,
 	// so pgrep's own wrapper is a hit. That false positive once looked like a
 	// product bug in the process-group kill; it was not.
-	procs := c.mustJSON(t, "--json", "exec", host, "--", "ps -eo pid,pgid,args").str(t, "stdout")
+	procs := c.mustJSON(t, "--json", "exec", host, "--command", "ps -eo pid,pgid,args").str(t, "stdout")
 	if strings.Contains(procs, "sleep "+sleepFor) {
 		t.Errorf("remote process group survived the timeout: 'sleep %s' is still running\n%s",
 			sleepFor, strings.Join(matchingLines(procs, "sleep "+sleepFor), "\n"))
@@ -500,7 +500,7 @@ func TestLiveExecDirectCancellation(t *testing.T) {
 	// SIGINT to its rhost process and should not perturb unrelated parallel work.
 	c := cliIsolated(t)
 	sleepFor := strconv.Itoa(800 + time.Now().Nanosecond()%100)
-	cmd := exec.Command(c.bin, "--json", "--host", host, "--", "sleep "+sleepFor)
+	cmd := exec.Command(c.bin, "--json", "exec", host, "--command", "sleep "+sleepFor)
 	cmd.Env = append(os.Environ(), c.env...)
 	cmd.Dir = c.dir
 	var stdout bytes.Buffer
@@ -531,7 +531,7 @@ func TestLiveExecDirectCancellation(t *testing.T) {
 		t.Fatalf("cancel result did not confirm cleanup: %s", stdout.String())
 	}
 	time.Sleep(500 * time.Millisecond)
-	procs := c.mustJSON(t, "--json", "--host", host, "--", "ps -eo args").str(t, "stdout")
+	procs := c.mustJSON(t, "--json", "exec", host, "--command", "ps -eo args").str(t, "stdout")
 	if strings.Contains(procs, "sleep "+sleepFor) {
 		t.Fatalf("cancelled remote process survived: sleep %s", sleepFor)
 	}
@@ -575,14 +575,14 @@ func TestLiveTransportReuse(t *testing.T) {
 	host := liveHost(t)
 	c := cliIsolated(t)
 
-	c.mustJSON(t, "--json", "exec", host, "--", "true") // process 1, cold connect
+	c.mustJSON(t, "--json", "exec", host, "--command", "true") // process 1, cold connect
 
 	pid1 := c.masterPID(t, host)
 	if pid1 <= 0 {
 		t.Fatalf("no ControlMaster running after process 1 exited (got %d): reuse is impossible", pid1)
 	}
 
-	c.mustJSON(t, "--json", "exec", host, "--", "true") // process 2, must reuse
+	c.mustJSON(t, "--json", "exec", host, "--command", "true") // process 2, must reuse
 
 	if pid2 := c.masterPID(t, host); pid2 != pid1 {
 		t.Errorf("process 2 did not reuse the transport: master pid %d -> %d", pid1, pid2)
@@ -602,7 +602,7 @@ func TestLiveControlPathDeepCacheDir(t *testing.T) {
 	host := liveHost(t)
 	deep := withCacheDir(t, liveCLI{bin: buildBinary(t)}, deepCacheRoot(t))
 
-	deep.mustJSON(t, "--json", "exec", host, "--", "echo deep-cache-ok")
+	deep.mustJSON(t, "--json", "exec", host, "--command", "echo deep-cache-ok")
 	if pid := deep.masterPID(t, host); pid <= 0 {
 		t.Errorf("no reusable master on the fallback socket root (pid=%d)", pid)
 	}

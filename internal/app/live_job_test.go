@@ -25,7 +25,7 @@ func TestLiveJob(t *testing.T) {
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
 		"--name", liveName("job"), "--cwd", "/var/log", "--env", "RHOST_LIVE_JOB=42",
-		"--", "echo starting; pwd; echo $RHOST_LIVE_JOB; sleep 5; echo finished; exit 0")
+		"--command", "echo starting; pwd; echo $RHOST_LIVE_JOB; sleep 5; echo finished; exit 0")
 	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 	if id == "" {
@@ -109,7 +109,7 @@ func TestLiveJobLogsCursor(t *testing.T) {
 	// rather than "whatever printf happened to send".
 	const payload = "0123456789"
 	env := c.mustJSON(t, "--json", "job", "start", host,
-		"--", "printf '"+payload+"'; sleep 1; printf 'tail'")
+		"--command", "printf '"+payload+"'; sleep 1; printf 'tail'")
 	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
@@ -165,7 +165,7 @@ func TestLiveJobStopHarvestsProcessGroup(t *testing.T) {
 	marker := 300 + time.Now().Nanosecond()%200
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
-		"--name", liveName("groupkill"), "--", "echo started; sleep "+strconv.Itoa(marker)+" & sleep "+strconv.Itoa(marker)+"; wait")
+		"--name", liveName("groupkill"), "--command", "echo started; sleep "+strconv.Itoa(marker)+" & sleep "+strconv.Itoa(marker)+"; wait")
 	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 	pgid := env.num(t, "pid")
@@ -223,7 +223,7 @@ func TestLiveJobKillEscalates(t *testing.T) {
 	marker := 500 + time.Now().Nanosecond()%200
 
 	env := c.mustJSON(t, "--json", "job", "start", host,
-		"--", "trap '' TERM; echo started; sleep "+strconv.Itoa(marker))
+		"--command", "trap '' TERM; echo started; sleep "+strconv.Itoa(marker))
 	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
@@ -263,14 +263,14 @@ func TestLiveJobPIDReuseIsRefused(t *testing.T) {
 	c := cli(t)
 
 	env := c.mustJSON(t, "--json", "job", "start", host, "--name", liveName("pidreuse"),
-		"--", "i=0; while [ $i -lt 600 ]; do echo tick; sleep 1; i=$((i+1)); done")
+		"--command", "i=0; while [ $i -lt 600 ]; do echo tick; sleep 1; i=$((i+1)); done")
 	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
 	dir := "${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/jobs/" + id
 	remote := func(command string) string {
 		t.Helper()
-		return c.mustJSON(t, "--json", "exec", host, "--", command).str(t, "stdout")
+		return c.mustJSON(t, "--json", "exec", host, "--command", command).str(t, "stdout")
 	}
 	// Keep the real identity, then claim a start time no live process can have.
 	remote(`cp "` + dir + `/identity" "` + dir + `/identity.testbak" && sed -i 's/^start_ticks=.*/start_ticks=1/' "` + dir + `/identity"`)
@@ -325,7 +325,7 @@ func TestLiveJobFailureIsRecorded(t *testing.T) {
 	host := liveHost(t)
 	c := cli(t)
 
-	env := c.mustJSON(t, "--json", "job", "start", host, "--", "echo about-to-fail; exit 4")
+	env := c.mustJSON(t, "--json", "job", "start", host, "--command", "echo about-to-fail; exit 4")
 	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
@@ -345,7 +345,7 @@ func TestLiveJobFailureIsRecorded(t *testing.T) {
 	}
 
 	// stderr goes to its own stream, and never into stdout's cursor.
-	errEnv := c.mustJSON(t, "--json", "job", "start", host, "--", "echo to-stdout; echo to-stderr >&2; exit 1")
+	errEnv := c.mustJSON(t, "--json", "job", "start", host, "--command", "echo to-stdout; echo to-stderr >&2; exit 1")
 	errID := errEnv.str(t, "job_id")
 	defer cleanupJob(t, c, host, errID)
 	waitJobState(t, c, host, errID, "failed")
@@ -368,7 +368,7 @@ func TestLiveJobStaleIsNeverSuccess(t *testing.T) {
 	c := cli(t)
 	marker := 700 + time.Now().Nanosecond()%200
 
-	env := c.mustJSON(t, "--json", "job", "start", host, "--", "sleep "+strconv.Itoa(marker))
+	env := c.mustJSON(t, "--json", "job", "start", host, "--command", "sleep "+strconv.Itoa(marker))
 	id := env.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 	pid := env.num(t, "pid")
@@ -376,7 +376,7 @@ func TestLiveJobStaleIsNeverSuccess(t *testing.T) {
 	// Kill it behind rhost's back — no stop request, so no stopped marker, and
 	// SIGKILL means the wrapper's EXIT trap never ran. This is what a host
 	// reboot or a stray OOM kill looks like to a later rhost process.
-	c.mustJSON(t, "--json", "exec", host, "--", "kill -9 -"+strconv.Itoa(pid))
+	c.mustJSON(t, "--json", "exec", host, "--command", "kill -9 -"+strconv.Itoa(pid))
 	if still := matchingLines(remoteProcs(t, c, host), "sleep "+strconv.Itoa(marker)); len(still) != 0 {
 		t.Fatalf("test setup failed, the group survived the direct kill:\n%s", strings.Join(still, "\n"))
 	}
@@ -425,7 +425,7 @@ func TestLiveJobNameLookup(t *testing.T) {
 	// from an earlier run would make this ambiguous.
 	name := "livename" + strconv.FormatInt(time.Now().UnixNano(), 36)
 
-	first := c.mustJSON(t, "--json", "job", "start", host, "--name", name, "--", "echo by-name; sleep 3")
+	first := c.mustJSON(t, "--json", "job", "start", host, "--name", name, "--command", "echo by-name; sleep 3")
 	id := first.str(t, "job_id")
 	defer cleanupJob(t, c, host, id)
 
@@ -438,7 +438,7 @@ func TestLiveJobNameLookup(t *testing.T) {
 
 	// A second job with the same name makes the handle ambiguous. Both jobs stay
 	// addressable by id; the name stops working, loudly.
-	second := c.mustJSON(t, "--json", "job", "start", host, "--name", name, "--", "echo collision")
+	second := c.mustJSON(t, "--json", "job", "start", host, "--name", name, "--command", "echo collision")
 	id2 := second.str(t, "job_id")
 	defer cleanupJob(t, c, host, id2)
 
@@ -473,7 +473,7 @@ func TestLiveJobHostileHandleNeverExecutes(t *testing.T) {
 		c.wantErrorCode(t, errs.ConfigInvalid, "--json", "job", verb, host, hostile)
 	}
 
-	check := c.mustJSON(t, "--json", "exec", host, "--", "test -e "+marker+" && echo created || echo absent")
+	check := c.mustJSON(t, "--json", "exec", host, "--command", "test -e "+marker+" && echo created || echo absent")
 	if got := strings.TrimSpace(check.str(t, "stdout")); got != "absent" {
 		t.Errorf("job handle executed shell on the remote host: %s = %q", marker, got)
 	}
@@ -494,7 +494,7 @@ func cleanupJob(t *testing.T, c liveCLI, host, id string) {
 // remoteProcs lists pid/ppid/pgid/args on the remote host, for survivor checks.
 func remoteProcs(t *testing.T, c liveCLI, host string) string {
 	t.Helper()
-	return c.mustJSON(t, "--json", "exec", host, "--", "ps -eo pid,ppid,pgid,args").str(t, "stdout")
+	return c.mustJSON(t, "--json", "exec", host, "--command", "ps -eo pid,ppid,pgid,args").str(t, "stdout")
 }
 
 // decodeLog returns the base64 `content` field of a job.logs envelope.

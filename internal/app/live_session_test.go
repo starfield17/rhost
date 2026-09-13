@@ -36,22 +36,22 @@ func TestLiveSession(t *testing.T) {
 	}()
 
 	// cwd persists across process boundaries.
-	c.mustJSON(t, "--json", "session", "exec", host, name, "--", "cd /var/log && echo moved")
-	got := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "pwd").str(t, "stdout")
+	c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "cd /var/log && echo moved")
+	got := c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "pwd").str(t, "stdout")
 	if strings.TrimSpace(got) != "/var/log" {
 		t.Errorf("cwd did not survive a process exit: got %q, want /var/log", strings.TrimSpace(got))
 	}
 
 	// Environment persists too, and does so under the *same* shell process.
-	c.mustJSON(t, "--json", "session", "exec", host, name, "--", "export RHOST_LIVE_ENV=42")
-	got = c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo $RHOST_LIVE_ENV").str(t, "stdout")
+	c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "export RHOST_LIVE_ENV=42")
+	got = c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "echo $RHOST_LIVE_ENV").str(t, "stdout")
 	if strings.TrimSpace(got) != "42" {
 		t.Errorf("env did not survive a process exit: got %q, want 42", strings.TrimSpace(got))
 	}
 
 	// The remote shell pid is stable across invocations: it is the same tmux pane.
 	shellPID := func() string {
-		return strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo $$").str(t, "stdout"))
+		return strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "echo $$").str(t, "stdout"))
 	}
 	if first, second := shellPID(), shellPID(); first == "" || first != second {
 		t.Errorf("session shell changed between calls: %q -> %q", first, second)
@@ -61,7 +61,7 @@ func TestLiveSession(t *testing.T) {
 	// the process status. It must be a subshell: a bare `exit N` closes the
 	// session's own shell, which is the documented SESSION_NOT_FOUND path and is
 	// covered by TestLiveSessionExitIsReported.
-	stdout, _, exit := c.run(t, "--json", "session", "exec", host, name, "--", "bash -c 'exit 4'")
+	stdout, _, exit := c.run(t, "--json", "session", "exec", host, name, "--command", "bash -c 'exit 4'")
 	if exit != 4 {
 		t.Errorf("session exec exit = %d, want 4\n%s", exit, stdout)
 	}
@@ -94,7 +94,7 @@ func assertRediscoverable(t *testing.T, c liveCLI, host, name string) {
 func testReadCursor(t *testing.T, c liveCLI, host, name string) {
 	t.Helper()
 	const token = "cursor-probe"
-	c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo "+token)
+	c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "echo "+token)
 
 	first := c.mustJSON(t, "--json", "session", "read", host, name, "--since", "0")
 	if !strings.Contains(first.str(t, "content"), token) {
@@ -122,7 +122,7 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 	// keeps the writer lock until the command ends. The next session exec then
 	// hits a non-blocking flock and is refused with SESSION_UNHEALTHY rather
 	// than interleaving into the pane.
-	cmd, out, started := c.start(t, "--json", "session", "exec", host, name, "--", "sleep 8")
+	cmd, out, started := c.start(t, "--json", "session", "exec", host, name, "--command", "sleep 8")
 	time.Sleep(4 * time.Second)
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatalf("kill local rhost process: %v", err)
@@ -132,7 +132,7 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 	t.Logf("killed local CLI mid-command; captured stdout=%q", out.String())
 
 	busy := c.wantErrorCode(t, errs.SessionUnhealthy,
-		"--json", "session", "exec", host, name, "--", "echo should-be-refused")
+		"--json", "session", "exec", host, name, "--command", "echo should-be-refused")
 	if !busy.Error.Retryable {
 		t.Errorf("SESSION_UNHEALTHY from a busy writer must be retryable: %+v", busy.Error)
 	}
@@ -141,7 +141,7 @@ func testLocalDeathDoesNotKillTheSession(t *testing.T, c liveCLI, host, name str
 	// Once the remote command finishes on its own, the same session works again.
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		stdout, _, exit := c.run(t, "--json", "session", "exec", host, name, "--", "echo alive-again")
+		stdout, _, exit := c.run(t, "--json", "session", "exec", host, name, "--command", "echo alive-again")
 		if exit == 0 && strings.Contains(stdout, "alive-again") {
 			return
 		}
@@ -178,7 +178,7 @@ func TestLiveSessionBoundaryIsReliable(t *testing.T) {
 	// Two passes: the race is a timing accident, so one pass proves little.
 	for round := 0; round < 2; round++ {
 		for _, tc := range cases {
-			env := c.mustJSON(t, "--json", "session", "exec", host, name, "--", tc.command)
+			env := c.mustJSON(t, "--json", "session", "exec", host, name, "--command", tc.command)
 			if got := env.num(t, "exit_code"); got != tc.want {
 				t.Fatalf("round %d: %q exit_code = %d, want %d (%s)", round, tc.command, got, tc.want, env.Data)
 			}
@@ -187,7 +187,7 @@ func TestLiveSessionBoundaryIsReliable(t *testing.T) {
 
 	// A boundary miss surfaces as a timeout, and a timeout must still leave the
 	// session usable: check the shell is alive after the whole sequence.
-	if got := strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo still-here").str(t, "stdout")); !strings.Contains(got, "still-here") {
+	if got := strings.TrimSpace(c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "echo still-here").str(t, "stdout")); !strings.Contains(got, "still-here") {
 		t.Errorf("session unusable after the boundary sequence: %q", got)
 	}
 }
@@ -238,7 +238,7 @@ func TestLiveSessionBusyRefusesExec(t *testing.T) {
 	deadline := time.Now().Add(20 * time.Second)
 	var busy envelope
 	for {
-		stdout, stderr, exit := c.run(t, "--json", "session", "exec", host, name, "--", "echo must-not-run")
+		stdout, stderr, exit := c.run(t, "--json", "session", "exec", host, name, "--command", "echo must-not-run")
 		var env envelope
 		if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &env); err == nil && !env.OK {
 			if env.Error == nil || env.Error.Code != string(errs.SessionBusy) {
@@ -269,7 +269,7 @@ func TestLiveSessionBusyRefusesExec(t *testing.T) {
 	if !recovered.bool(t, "session_preserved") {
 		t.Fatal("session recover did not bring the shell back")
 	}
-	after := c.mustJSON(t, "--json", "session", "exec", host, name, "--", "echo back-ok")
+	after := c.mustJSON(t, "--json", "session", "exec", host, name, "--command", "echo back-ok")
 	if got := strings.TrimSpace(after.str(t, "stdout")); got != "back-ok" {
 		t.Errorf("exec after recover = %q, want back-ok", got)
 	}
@@ -286,7 +286,7 @@ func TestLiveSessionExitIsReported(t *testing.T) {
 	c.mustJSON(t, "--json", "session", "create", host, "--name", name)
 	defer c.run(t, "--json", "session", "close", host, name)
 
-	c.wantErrorCode(t, errs.SessionNotFound, "--json", "session", "exec", host, name, "--", "exit 7")
+	c.wantErrorCode(t, errs.SessionNotFound, "--json", "session", "exec", host, name, "--command", "exit 7")
 }
 
 // TestLiveSessionRejectsUnknownTarget checks a missing session is a stable code
@@ -295,7 +295,7 @@ func TestLiveSessionRejectsUnknownTarget(t *testing.T) {
 	t.Parallel()
 	host := liveHost(t)
 	c := cli(t)
-	c.wantErrorCode(t, errs.SessionNotFound, "--json", "session", "exec", host, "nosuchsession", "--", "true")
+	c.wantErrorCode(t, errs.SessionNotFound, "--json", "session", "exec", host, "nosuchsession", "--command", "true")
 }
 
 // start launches a CLI process without waiting on it, for kill-the-client tests.
