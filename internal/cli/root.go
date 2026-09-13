@@ -96,12 +96,6 @@ func newGroup(use, short, long string) *cobra.Command {
 }
 
 func newRootCmd() *cobra.Command {
-	var (
-		host, cwd string
-		envs      []string
-		timeout   time.Duration
-		maxOutput int
-	)
 	root := &cobra.Command{
 		Use:   "rhost",
 		Short: "Run ordinary commands on an SSH-reachable host",
@@ -111,14 +105,9 @@ Use --host TARGET -- 'command' for the normal path. rhost orchestrates your
 existing OpenSSH configuration and never duplicates authentication or host-key
 policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 	}
-	root.Flags().StringVar(&host, "host", "", "SSH target for direct command execution")
-	root.Flags().StringVar(&cwd, "cwd", "", "working directory on the remote host")
-	root.Flags().StringArrayVar(&envs, "env", nil, "environment variable KEY=VALUE (repeatable)")
-	root.Flags().DurationVar(&timeout, "timeout", 0, "execution deadline; 0 waits until completion")
-	root.Flags().IntVar(&maxOutput, "max-output-bytes", 0, "captured bytes per stream (0 = unlimited; JSON defaults to 1 MiB)")
 	root.PersistentFlags().BoolVar(&jsonFlag, "json", false, "emit machine-readable JSON on stdout")
 	root.RunE = func(c *cobra.Command, args []string) error {
-		if len(args) != 0 || host != "" || cwd != "" || len(envs) != 0 || timeout != 0 || maxOutput != 0 {
+		if len(args) != 0 {
 			return fmt.Errorf("direct execution requires: rhost exec <host> --command <string>")
 		}
 		if jsonFlag {

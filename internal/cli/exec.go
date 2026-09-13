@@ -2,15 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/starfield17/rhost/internal/app"
-	"github.com/starfield17/rhost/internal/errs"
-	"github.com/starfield17/rhost/internal/output"
 	"github.com/starfield17/rhost/internal/shell"
 )
 
@@ -89,45 +86,6 @@ func execData(res app.ExecResult) execView {
 		StdoutBytes:      res.StdoutBytes,
 		StderrBytes:      res.StderrBytes,
 		DurationMS:       res.Duration.Milliseconds(),
-	}
-}
-
-func renderExecSuccess(host string, res app.ExecResult) {
-	if jsonFlag {
-		writeEnvelope(output.Success("exec", host, execData(res)))
-	} else {
-		_, _ = os.Stdout.WriteString(res.Stdout)
-		_, _ = os.Stderr.WriteString(res.Stderr)
-		noteTruncated(res)
-	}
-	exitCode = res.ExitCode
-}
-
-func renderExecFailure(host string, res app.ExecResult, aerr *errs.Error) {
-	if jsonFlag {
-		writeEnvelope(output.Failure("exec", host, execData(res), aerr))
-	} else {
-		fmt.Fprintf(os.Stderr, "rhost: %s: %s\n", aerr.Code, aerr.Message)
-		if res.Stdout != "" {
-			_, _ = os.Stdout.WriteString(res.Stdout)
-		}
-		if res.Stderr != "" {
-			_, _ = os.Stderr.WriteString(res.Stderr)
-		}
-		noteTruncated(res)
-		if res.TimedOut && !res.CleanupConfirmed {
-			fmt.Fprintln(os.Stderr, "warning: the remote command may still be running; the process group could not be confirmed dead")
-		}
-	}
-	exitCode = adapterExitCode(aerr)
-}
-
-// noteTruncated tells a human that the text they are reading is not all of it.
-// In JSON the same fact is two booleans and two counters.
-func noteTruncated(res app.ExecResult) {
-	if res.StdoutTruncated || res.StderrTruncated {
-		fmt.Fprintf(os.Stderr, "rhost: output truncated (stdout %d bytes, stderr %d bytes total)\n",
-			res.StdoutBytes, res.StderrBytes)
 	}
 }
 
