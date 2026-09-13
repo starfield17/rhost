@@ -122,7 +122,6 @@ policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname
 		newDoctorCmd(),
 		newHostsCmd(),
 		newSessionCmd(),
-		newJobCmd(),
 		newFsCmd(),
 		newAuditCmd(),
 		newVersionCmd(),

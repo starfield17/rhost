@@ -53,25 +53,4 @@ func TestSmokeLive(t *testing.T) {
 	if !strings.Contains(preserved.str(t, "stdout"), "/tmp|42") {
 		t.Fatalf("session state did not cross CLI processes: %s", preserved.Data)
 	}
-
-	started := c.mustJSON(t, "--json", "job", "start", host, "--command", "printf smoke-job; sleep 60")
-	jobID := started.str(t, "job_id")
-	if jobID == "" {
-		t.Fatal("job.start returned no job_id")
-	}
-	defer cleanupJob(t, c, host, jobID)
-	status := c.mustJSON(t, "--json", "job", "status", host, jobID)
-	var exitCode *int
-	status.field(t, "exit_code", &exitCode)
-	if status.str(t, "state") != "running" || exitCode != nil {
-		t.Fatalf("running job status contract: %s", status.Data)
-	}
-	logs := c.mustJSON(t, "--json", "job", "logs", host, jobID, "--since", "0")
-	if logs.str(t, "encoding") != "base64" || !strings.Contains(decodeLog(t, logs), "smoke-job") {
-		t.Fatalf("job log contract: %s", logs.Data)
-	}
-	stopped := c.mustJSON(t, "--json", "job", "stop", host, jobID)
-	if stopped.str(t, "state") != "stopped" {
-		t.Fatalf("job.stop state: %s", stopped.Data)
-	}
 }

@@ -28,7 +28,7 @@ import (
 //
 // Each tunnel gets its own socket, deliberately not the shared one: `tunnel close`
 // must be able to stop one forward without dropping the multiplexed connection
-// that exec, session and job traffic are using.
+// that exec and session traffic are using.
 type Tunnel struct {
 	TunnelID    string `json:"tunnel_id"`
 	ID          string `json:"id"` // compatibility alias for pre-v1.2 callers

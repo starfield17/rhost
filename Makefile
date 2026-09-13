@@ -19,7 +19,7 @@ BASE_LDFLAGS  := -X $(PKG).Commit=$(COMMIT) -X $(PKG).BuildDate=$(DATE)
 LDFLAGS       := -X $(PKG).Version=$(VERSION) $(BASE_LDFLAGS)
 DIST_LDFLAGS  := -X $(PKG).Version=$(ARTIFACT_VERSION) $(BASE_LDFLAGS)
 
-.PHONY: build dist test test-live-smoke test-live test-live-session test-live-jobs test-live-fs test-live-tools test-live-all vet fmt fmtcheck check portability contract install-test clean
+.PHONY: build dist test test-live-smoke test-live test-live-session test-live-fs test-live-tools test-live-all vet fmt fmtcheck check portability contract install-test clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/rhost
@@ -73,10 +73,6 @@ test-live:
 test-live-session:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
 	RHOST_TEST_LIVE=1 go test ./internal/app/ -run TestLiveSession -v -count=1 -parallel 3 -timeout 10m
-
-test-live-jobs:
-	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)
-	RHOST_TEST_LIVE=1 go test ./internal/app/ -run 'TestLiveJob' -v -count=1 -parallel 3 -timeout 20m
 
 test-live-fs:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" && exit 1)

@@ -36,12 +36,9 @@ em home "$HOME"
 ls="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)"
 [ -n "$ls" ] || ls="${SHELL:-unknown}"
 em login_shell "$ls"
-for c in bash tmux nohup setsid ps rsync sha256sum base64 stty flock python3 realpath; do
+for c in bash tmux setsid ps rsync sha256sum base64 stty flock python3 realpath; do
   if command -v "$c" >/dev/null 2>&1; then em "have_$c" yes; else em "have_$c" no; fi
 done
-# The job backend ties a job's pid to the process that wrote it through /proc;
-# without these two files a job could not be told apart from a reused pid.
-if [ -r /proc/self/stat ] && [ -r /proc/sys/kernel/random/boot_id ]; then em pid_identity yes; else em pid_identity no; fi
 rd="${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}"
 if mkdir -p "$rd" 2>/dev/null && [ -w "$rd" ]; then em state_dir_writable yes; else em state_dir_writable no; fi
 em state_dir "$rd"
@@ -66,10 +63,6 @@ func (a *App) Doctor(ctx context.Context, host string, timeout time.Duration) (D
 			caps[name] = v == "yes"
 		}
 	}
-	// Reported as a yes/no capability like the commands above, because the job
-	// backend refuses to start without it (internal/job/detached).
-	caps["pid_identity"] = kv["pid_identity"] == "yes"
-
 	return DoctorResult{
 		Host:             host,
 		Online:           true,

@@ -46,7 +46,6 @@ var liveCachePool chan string
 var liveHarness struct {
 	sync.Mutex
 	remoteDirs []string
-	jobIDs     []string
 	calls      int
 	total      time.Duration
 	max        time.Duration
@@ -83,9 +82,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// liveName returns a unique session/job name for this test so leftovers from
-// an earlier run cannot collide. It stays inside both the session and job
-// name character classes.
+// liveName returns a unique session name for this test so leftovers from an
+// earlier run cannot collide. It stays inside the session name character class.
 func liveName(prefix string) string {
 	return fmt.Sprintf("rlive-%s-%d-%d", prefix, time.Now().UnixNano(), liveNameSeq.Add(1))
 }
@@ -275,18 +273,11 @@ func registerLiveRemoteDir(dir string) {
 	liveHarness.remoteDirs = append(liveHarness.remoteDirs, dir)
 }
 
-func registerLiveJob(jobID string) {
-	liveHarness.Lock()
-	defer liveHarness.Unlock()
-	liveHarness.jobIDs = append(liveHarness.jobIDs, jobID)
-}
-
 func cleanupLiveResources() error {
 	liveHarness.Lock()
 	dirs := append([]string{}, liveHarness.remoteDirs...)
-	jobIDs := append([]string{}, liveHarness.jobIDs...)
 	liveHarness.Unlock()
-	if (len(dirs) == 0 && len(jobIDs) == 0) || liveBinDir == "" {
+	if len(dirs) == 0 || liveBinDir == "" {
 		return nil
 	}
 	cacheDir := ""
@@ -301,7 +292,7 @@ func cleanupLiveResources() error {
 		}
 		defer os.RemoveAll(cacheDir)
 	}
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 1)
 	if len(dirs) > 0 {
 		var removeDirs strings.Builder
 		removeDirs.WriteString("rm -rf --")
@@ -310,15 +301,6 @@ func cleanupLiveResources() error {
 			removeDirs.WriteString(shell.Quote(dir))
 		}
 		parts = append(parts, removeDirs.String())
-	}
-	if len(jobIDs) > 0 {
-		var removeJobs strings.Builder
-		removeJobs.WriteString(`state=${RHOST_REMOTE_STATE:-"$HOME/.local/state/rhost"}; rm -rf --`)
-		for _, jobID := range jobIDs {
-			removeJobs.WriteString(` "$state/jobs/"`)
-			removeJobs.WriteString(shell.Quote(jobID))
-		}
-		parts = append(parts, removeJobs.String())
 	}
 	cmd := exec.Command(filepath.Join(liveBinDir, "rhost"), "exec", os.Getenv("RHOST_TEST_HOST"), "--command", strings.Join(parts, "; "))
 	cmd.Env = append(os.Environ(), "RHOST_CACHE_DIR="+cacheDir)

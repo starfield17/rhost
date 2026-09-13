@@ -99,7 +99,7 @@ exists, not that anything is answering on the other end.`,
 		Use:   "close <id>",
 		Short: "Close one tunnel and its own master",
 		Long: `Close exactly one tunnel: its dedicated master is asked to exit and its
-record is removed. The shared connection used by exec, session and job traffic is
+record is removed. The shared connection used by exec and session traffic is
 untouched, and other tunnels keep running.`,
 		Args: exactNamedArgs("<id>"),
 		RunE: func(c *cobra.Command, args []string) error {
