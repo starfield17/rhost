@@ -201,7 +201,7 @@ func TestExecScriptProtocol(t *testing.T) {
 		"RHOST_EXIT=",
 		"RHOST_OUTPUT=",
 		"stty -echo",
-		"tmux paste-buffer",
+		"paste-buffer -d",
 		"grep -aqF",
 		"SECONDS=0",
 	} {
