@@ -77,6 +77,10 @@ jobs:
               exit 1
             fi
             version="${tag#v}"
+            if [ "$version" != "$(tr -d '\n' < VERSION)" ]; then
+              echo "::error::release tag must match VERSION and plugin.json; refusing to build"
+              exit 1
+            fi
           else
             version="${DISPATCH_VERSION#v}"
             [ -n "$version" ] || version="0.0.0-dev"

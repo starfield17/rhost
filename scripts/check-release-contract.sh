@@ -23,9 +23,21 @@ fail() {
 	exit 1
 }
 
-for required in Makefile .github/workflows/release.yml scripts/install.sh; do
+for required in VERSION plugin.json Makefile .github/workflows/release.yml scripts/install.sh; do
 	[ -f "$required" ] || fail "missing $required; run from a checkout of rhost"
 done
+
+# VERSION is the shared CLI/skill release identity. Rehearsal builds may override
+# the binary version, but a published tag must match the checked-in manifest.
+release_version="$(tr -d '\n' < VERSION)"
+printf '%s' "$release_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' \
+	|| fail "VERSION must contain MAJOR.MINOR.PATCH[-prerelease]"
+plugin_version="$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)",*$/\1/p' plugin.json)"
+[ "$plugin_version" = "$release_version" ] || fail "plugin.json version must match VERSION"
+grep -Fq 'VERSION ?= $(shell cat VERSION)' Makefile \
+	|| fail "Makefile must default to VERSION"
+grep -Fq 'if [ "$version" != "$(tr -d '\''\n'\'' < VERSION)" ]; then' .github/workflows/release.yml \
+	|| fail "release.yml must check the release tag against VERSION"
 
 expected_targets="darwin/amd64
 darwin/arm64

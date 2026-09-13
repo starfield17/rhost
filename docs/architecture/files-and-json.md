@@ -30,6 +30,25 @@ file requires the hash last returned by `fs read`. `fs patch` always requires
 a matching hash. A missing required hash returns `HASH_REQUIRED`; a stale hash
 returns `FILE_CONFLICT`. Replacement is locked, same-directory and atomic.
 
+## Batch maintenance boundary
+
+`fs batch` is serial CLI orchestration over existing put/get operations, not a
+new transfer guarantee. Its retained value is an ordered per-entry report in
+one invocation. OpenSSH multiplexing already serves independent invocations;
+batch does not add isolation, atomicity, rollback, or durable execution.
+
+Repository evidence consists of manifest validation tests, live transfer tests,
+and recovery guidance, not evidence of external usage. Retain the published
+manifest and aggregate semantics for compatibility; prefer put/get for new
+callers. Do not add concurrency, dependency graphs, rollback or a versioned
+workflow language without demonstrated requirements that existing operations
+cannot meet. Removal would require a major-version compatibility review.
+
+A completed run emits `ok:true`; inspect `data.failed` and each `data.items[]`
+entry. Any entry failure sets process status 255; subsequent entries still run.
+Invalid manifests fail before transfers begin. This differs deliberately from
+single-transfer success and must not be silently normalized.
+
 ## JSON envelope
 
 Every `--json` command emits one line:

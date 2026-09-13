@@ -24,9 +24,17 @@ func newExecCmd() *cobra.Command {
 		maxOutput int
 	)
 	cmd := &cobra.Command{
-		Use:   "exec <host> [--] <command...>",
-		Short: "Run a command on a remote host (stateless foreground)",
-		Long: `Run a command in a fresh remote execution context.
+		Use:    "exec <host> [--] <command...>",
+		Short:  "Compatibility foreground command; prefer rhost --host",
+		Hidden: true,
+		Long: `Compatibility surface for existing callers; no new execution features.
+For new calls use: rhost --host <host> -- '<command>'
+
+This form retains buffered output, no stdin forwarding, a default 60-second
+deadline and a 1 MiB capture limit per stream. --timeout 0 falls back to the
+configured default; it does not mean unlimited as it does in the direct form.
+
+Run a command in a fresh remote execution context.
 
 Each call is independent: no shell state, cwd, or environment persists between
 exec calls. The command words after the host are joined with spaces and run by a

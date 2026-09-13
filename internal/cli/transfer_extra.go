@@ -105,8 +105,10 @@ The manifest is a JSON array of
 entries, with "get" reversing the direction. An entry may also set "resume" or
 "checksum" to take the verified rsync route for that file alone.
 
-Entries run serially, so a shared destination tree stays consistent, and a failed
-entry does not stop the ones after it: check data.failed, not just the envelope.`,
+Entries run serially and a failed entry does not stop the ones after it:
+check data.failed and data.items[], not just the envelope. This is convenience
+orchestration, not a transaction: there is no isolation or rollback. Prefer
+put/get for new callers; this existing manifest surface is not being expanded.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			host := args[0]

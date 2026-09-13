@@ -12,6 +12,10 @@ daemon, or introducing another authentication system.
 rhost --host gpu --cwd '~/work/project' -- 'pytest -q'
 ```
 
+Direct execution requires remote `bash`, `setsid`, and a base64 decoder.
+Optional features need more: sessions use `tmux`/`flock`, text helpers use
+Python 3, and sync uses rsync. Use `rhost doctor <host> --json` for diagnosis.
+
 Foreground commands behave like commands: stdin goes in, stdout and stderr come
 back, and rhost exits with the remote command's status.
 
@@ -20,9 +24,6 @@ local coding agent
   |-- rhost edge --> edge Linux host
   `-- rhost gpu  --> GPU workstation
 ```
-
-Rhost Hands Off Shell Tasks: OpenSSH owns the connection, and the remote system
-owns the work.
 
 ## Install
 
@@ -45,9 +46,6 @@ cd rhost
 make build
 install -m 755 bin/rhost ~/.local/bin/rhost
 ```
-
-Package-manager distribution through a Homebrew tap and the Arch User
-Repository is planned, but is not published yet.
 
 ## Start with an ordinary command
 

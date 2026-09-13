@@ -20,6 +20,10 @@ rhost --host <host> -- 'cat result.txt | sort'   # sort is remote
 rhost --host <host> -- 'cat result.txt' | sort  # sort is local
 ```
 
+Direct execution needs remote `bash`, `setsid`, and a base64 decoder. Optional
+features have additional dependencies; use `rhost doctor <host> --json` to
+inspect them, never auto-install packages.
+
 Human mode streams stdout/stderr and forwards stdin. It has no default execution
 deadline. Add `--timeout` only when the step has a meaningful bound. Use `--json`
 when the result must be classified programmatically; branch on `error.code`, and

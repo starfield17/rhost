@@ -29,6 +29,22 @@ report the true byte counts.
 There is no default deadline on the primary direct command. `--timeout` adds
 one explicitly.
 
+## Compatibility surface
+
+`rhost exec` is retained for 1.x callers and hidden from primary help, not
+silently redirected to the direct path. It joins command argv with spaces,
+does not forward stdin, buffers both streams (1 MiB each by default), and has
+a 60-second default deadline. Nonpositive timeouts use the configured default.
+The direct path instead accepts one shell string and treats zero as no deadline.
+Both emit operation `exec` and share option validation and timeout cleanup;
+their wire protocols remain separate.
+
+No new capabilities belong on legacy `exec`. Fix correctness and security issues
+without changing its defaults or envelope. Removal requires a future major
+release and an explicit migration notice; no removal version is scheduled.
+New callers use the direct form. See the [CLI reference](../../skills/rhost/references/CLI.md)
+for migration caveats.
+
 ## Timeout and cancellation
 
 A deadline or signal stops local SSH and then attempts to kill the recorded

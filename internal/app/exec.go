@@ -1,11 +1,9 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/starfield17/rhost/internal/config"
@@ -76,18 +74,8 @@ func executionTimeout(timeout time.Duration, cleanupConfirmed bool) *errs.Error 
 // remote command's real status.
 func (a *App) Execute(ctx context.Context, opts ExecOptions) (ExecResult, *errs.Error) {
 	out := ExecResult{Host: opts.Host, ExitCode: -1}
-	if opts.MaxOutputBytes < 0 || opts.MaxOutputBytes > maxExecOutputBytes {
-		return out, errs.New(errs.ConfigInvalid,
-			"max output bytes must be between 0 and 67108864", false)
-	}
-
-	for k := range opts.Env {
-		if err := shell.ValidateEnvKey(k); err != nil {
-			return out, errs.Wrap(errs.ConfigInvalid, err.Error(), false, err)
-		}
-	}
-	if strings.TrimSpace(opts.Command) == "" {
-		return out, errs.New(errs.ConfigInvalid, "no command given", false)
+	if e := validateExecOptions(opts, false); e != nil {
+		return out, e
 	}
 
 	nonce, err := openssh.NewNonce()
@@ -133,15 +121,8 @@ func (a *App) Execute(ctx context.Context, opts ExecOptions) (ExecResult, *errs.
 		// missing pid file or a failed cleanup is equally consistent with the
 		// command still running, so rhost reports the uncertainty instead of
 		// claiming the command never started.
-		kctx, cancel := context.WithTimeout(context.Background(), killTimeout)
-		kres, kerr := a.SSH.Run(kctx, opts.Host, openssh.WrapScript(openssh.KillCommand(nonce)), killTimeout)
-		cancel()
-
-		if kerr == nil && !kres.TimedOut && bytes.Contains(kres.Stdout, []byte("killed:")) {
-			out.CleanupConfirmed = true
-			return out, executionTimeout(timeout, true)
-		}
-		return out, executionTimeout(timeout, false)
+		out.CleanupConfirmed = a.cleanupExec(opts.Host, nonce)
+		return out, executionTimeout(timeout, out.CleanupConfirmed)
 	}
 
 	body, code, ok := openssh.ParseMarker(res.Stdout, nonce)

@@ -10,9 +10,18 @@ rhost --host <host> --json --timeout 30s -- '<command>'
 
 The direct form accepts exactly one shell string after `--`. Human output
 streams and stdin is forwarded. JSON captures 1 MiB per stream by default;
-`--max-output-bytes 0` removes that capture limit. The compatibility
-`rhost exec <host> -- <command...>` form remains available with its historical
-60-second deadline.
+`--max-output-bytes 0` removes that capture limit.
+
+### Compatibility only: `exec`
+
+`rhost exec <host> -- <command...>` remains callable but is hidden from primary
+help. It joins argv with spaces, buffers output, does not forward stdin, and
+retains its 60-second default deadline and 1 MiB per-stream capture limit in
+both human and JSON modes. `--timeout 0` falls back to the configured default,
+not unlimited execution. No new capabilities are added to this surface.
+Migrate by passing one deliberately quoted shell string to the direct form;
+set `--timeout 60s` explicitly if the old deadline is required. Do not blindly
+convert argv into a shell string: review quoting and metacharacters.
 
 Combine related read-only checks into one command when latency matters:
 
@@ -109,6 +118,12 @@ parents unless `--parents` is supplied.
 Creating a new file needs no hash. Replacing an existing file and every patch
 require the SHA-256 returned by the last `fs read`. Directory deletion requires
 `--delete`; preview it with `--dry-run`.
+
+`fs batch <host> --manifest <file>` is retained for existing callers only.
+It serially runs put/get entries and reports `data.items[]`, `data.succeeded`
+and `data.failed`. A completed batch has `ok:true` even with failed entries
+(process status 255). It provides no rollback or isolation; prefer separate
+put/get invocations for new orchestration.
 
 ## Tunnels and audit
 
