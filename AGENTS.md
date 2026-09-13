@@ -41,7 +41,7 @@ model family there and prove the check by making it fail once before restoring.
 didn't make: report and ask, don't touch. No push, tag, force-push, or amend of a
 pushed commit without an explicit request.
 
-## 3. Do not touch `reffer/`
+## 3. Do not touch `reference/`
 
 Third-party reference source, git-ignored. Read for ideas; never edit, commit, or
 copy its product shape (see [Repository boundaries](docs/architecture/engineering.md#repository-boundaries)).
