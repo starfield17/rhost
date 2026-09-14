@@ -2,11 +2,13 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/starfield17/rhost/internal/errs"
+	"github.com/starfield17/rhost/internal/transport/openssh"
 )
 
 func TestExecutionTimeoutIsNeverBlindlyRetryable(t *testing.T) {
@@ -18,6 +20,30 @@ func TestExecutionTimeoutIsNeverBlindlyRetryable(t *testing.T) {
 		if e.Retryable {
 			t.Fatalf("cleanup=%v retryable=true", confirmed)
 		}
+	}
+}
+
+func TestCancellationAfterCompletionKeepsForegroundExitCode(t *testing.T) {
+	ssh := stubTool(t, "ssh", `
+remote=$(printf '%s' "$last" | sed 's/^exec setsid / /')
+eval "$remote"
+sleep 10
+`)
+	t.Setenv("RHOST_CACHE_DIR", t.TempDir())
+	a := &App{SSH: openssh.New(openssh.Config{
+		SSHBin: ssh, ControlPath: t.TempDir() + "/%C", BatchMode: true,
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	time.AfterFunc(time.Second, cancel)
+	res, aerr := a.ExecuteStream(ctx, StreamExecOptions{
+		ExecOptions: ExecOptions{Host: "example-host", Command: "printf done"},
+	})
+	if aerr == nil || aerr.Code != errs.RemoteCommandCancelled {
+		t.Fatalf("error = %v, want REMOTE_COMMAND_CANCELLED", aerr)
+	}
+	if !res.Cancelled || res.ExitCode != 0 || res.Stdout != "done" {
+		t.Fatalf("result = %+v", res)
 	}
 }
 
