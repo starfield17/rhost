@@ -42,13 +42,15 @@ one explicitly.
 
 A deadline or signal stops local SSH and then attempts to kill the recorded
 remote process group. Execution timeout always uses
-`REMOTE_COMMAND_TIMEOUT`:
+`REMOTE_COMMAND_TIMEOUT`. The v2 envelope reports cleanup separately:
 
-- `cleanup_confirmed:true`: the recorded process identity was matched and its
-  managed process group was confirmed empty; side effects and detached work are
-  outside that claim.
-- `cleanup_confirmed:false`: the remote state is uncertain;
-  `retryable:false`.
+- `data.cleanup.status == "confirmed_stopped"`: the recorded process identity
+  was matched and its managed process group was confirmed empty; side effects
+  and detached work are outside that claim.
+- `data.cleanup.status == "unconfirmed"`: the managed group was not proven
+  stopped. Both states remain `error.retryable:false`.
+- `data.cleanup.status == "not_attempted"`: no cleanup was warranted, including
+  when foreground completion had already been observed.
 
 Both timeout states are non-retryable until the caller checks the operation's
 actual effect. Missing completion evidence without a specific connection-stage
@@ -57,3 +59,7 @@ diagnosis is `REMOTE_EXECUTION_UNKNOWN`, not `SSH_UNREACHABLE`.
 `SSH_UNREACHABLE` is reserved for SSH connectivity and transport failures.
 Cancellation uses `REMOTE_COMMAND_CANCELLED`. Output sink failure uses
 `OUTPUT_WRITE_FAILED` and triggers the same cleanup attempt.
+
+The wrapper, cleanup command, doctor and session helpers resolve the same remote
+v4 state root: `${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost/v4}`. An explicit
+`RHOST_REMOTE_STATE` is already the complete root and is not suffixed again.

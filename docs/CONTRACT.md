@@ -11,11 +11,13 @@ retryability, resource ownership, or destructive operations.
   them. [v1](../archive/go-v3.1.0/schemas/result-v1.schema.json) remains immutable wire history;
   [v2](../schemas/result-v2.schema.json) defines the candidate's representation.
 - The owner reports real SSH verification of Go v3.1.0. That is baseline evidence,
-  not a claim that the extracted harness or Rust has passed live verification.
-- `make check` verifies the local implementation, schema, frozen corpus hashes and
-  Rust foundation. The extracted live corpus retains all 27 baseline test names.
-  A live result requires an explicit `RHOST_TEST_HOST`; absent a recorded run,
-  candidate remote behavior remains **pending**.
+  not evidence for the extracted harness. The Rust candidate's complete native
+  live suite passes against a real remote Linux host over SSH in this revision.
+- `make check` verifies the local implementation, schema, frozen corpus hashes,
+  Rust foundation, and the map from all 27 frozen live names to native Rust
+  evidence. The extracted live corpus remains an optional historical comparison.
+  A live result requires an explicit `RHOST_TEST_HOST`; the recorded full-suite
+  result used an explicit target and candidate binary.
 - Links to Go unit tests are implementation evidence, not independent candidate
   conformance. A mechanism-specific test is not a requirement to copy that mechanism.
 - Where Go and this ledger intentionally differ, the difference is listed below.
@@ -39,7 +41,7 @@ Source: [runtime](architecture/runtime.md), [product rules](ARCHITECTURE.md#prod
 | EXEC-005 | Missing completion evidence never becomes known success or an assumed connectivity failure. | `data.execution.status`, `error.code` | [TestConformanceExecUncertainty](../archive/conformance-v1/conformance/hermetic_test.go); [TestSchemaV2RejectsFalseEvidence](../archive/conformance-v1/conformance/schema_test.go) |
 | EXEC-006 | Timeout/cancellation with possible effects is non-retryable, including confirmed cleanup. | `error.retryable`, `data.cleanup.status` | [cleanup_is_not_permission_to_retry](../tests/domain.rs); [TestLiveExecDirectCancellation](../archive/conformance-v1/conformance/live_test.go) |
 | EXEC-007 | Cleanup confirms only the matched managed process group stopped, never that effects or detached work did not occur. | `data.cleanup.status` | [cleanup tests](../archive/go-v3.1.0/internal/app/exec_stream_test.go); [TestLiveExecTimeout](../archive/conformance-v1/conformance/live_test.go) |
-| EXEC-008 | Foreground completion and local interruption are independent: retain a known exit after timeout/cancellation or inherited-pipe failure. | `data.execution`, `error.code` | [completion_and_interruption_are_independent](../tests/domain.rs); [TestCompletedForegroundSurvivesInheritedBackgroundPipe](../archive/go-v3.1.0/internal/app/exec_stream_test.go) |
+| EXEC-008 | Foreground completion and local interruption are independent: retain a known exit after timeout/cancellation or inherited-pipe failure. | `data.execution`, `error.code` | [completion_and_interruption_are_independent](../tests/domain.rs); [native live exec races](../tests/live/exec.rs); [TestCompletedForegroundSurvivesInheritedBackgroundPipe](../archive/go-v3.1.0/internal/app/exec_stream_test.go) |
 | EXEC-009 | Bound JSON capture independently of live forwarding; counts describe source bytes. UTF-8 replacement must not alter counts. | `data.output.*` | [TestLiveTools](../archive/conformance-v1/conformance/live_tools_test.go); [invalid_utf8_does_not_corrupt_source_byte_evidence](../tests/domain.rs) |
 | EXEC-010 | Output delivery failure is non-retryable; never rerun the operation or restart a partial JSON document. | `error.code` when deliverable; process status and stderr otherwise | [TestConformanceOutputDeliveryFailure](../archive/conformance-v1/conformance/hermetic_test.go); [failed_sink_is_not_retried](../tests/domain.rs) |
 
@@ -64,7 +66,7 @@ Source: [persistent work](architecture/persistent-work.md).
 | ID | Required behavior | JSON path | Executable evidence |
 | --- | --- | --- | --- |
 | PERSIST-001 | Durable connections belong to OpenSSH; sessions to remote tmux/state; tunnels to dedicated masters and local records. No CLI-owned durable map or daemon. | `connection.status`, `session.list`, `tunnel.list` results | [TestLiveTransportReuse](../archive/conformance-v1/conformance/live_test.go); [TestLiveSession](../archive/conformance-v1/conformance/live_session_test.go); [TestLiveTunnelPersistence](../archive/conformance-v1/conformance/live_tools_test.go) |
-| PERSIST-002 | v4 does not adopt or delete v3 state. Upgrade requires explicitly closing old sessions/tunnels before switching; v4 uses a separate namespace. | — | **Pending** config and persistent adapters; [migration policy](RUST_MIGRATION.md#state-and-upgrade-policy) |
+| PERSIST-002 | v4 does not adopt or delete v3 state. Upgrade requires explicitly closing old sessions/tunnels before switching; v4 uses a separate namespace. An explicit `RHOST_REMOTE_STATE` is the complete remote v4 root used consistently by exec cleanup, doctor and sessions. | `config::v4_state_dir`, `RHOST_STATE_DIR/v4` (audit trail), `${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost/v4}` | **Implemented**; [migration policy](RUST_MIGRATION.md#state-and-upgrade-policy) |
 | SESSION-001 | Freeze create/list/exec/send/read/attach/recover/close. Do not introduce scheduling, windows or layout management. | `operation` | [v2 schema](../schemas/result-v2.schema.json); [TestConformanceCLI](../archive/conformance-v1/conformance/contract_test.go) |
 | SESSION-002 | Preserve cwd, environment, shell process and discovery across CLI exits. | `data.sessions[]` | [TestLiveSession](../archive/conformance-v1/conformance/live_session_test.go) |
 | SESSION-003 | Exec writes only when the idle managed shell owns the pane. A foreground REPL returns `SESSION_BUSY` without receiving command input. | `data.execution.status`, `error.code` | [TestLiveSessionPythonRecovery](../archive/conformance-v1/conformance/live_session_protocol_test.go); [TestLiveSessionBusyRefusesExec](../archive/conformance-v1/conformance/live_session_test.go) |
@@ -72,7 +74,7 @@ Source: [persistent work](architecture/persistent-work.md).
 | SESSION-005 | Send data is verbatim. Read cursors count raw bytes and do not omit/interleave observation intervals. | `data.content`, `data.from`, `data.next`, `data.more` | [TestLiveSessionSendRawInput](../archive/conformance-v1/conformance/live_session_test.go); [cursor/scan tests](../archive/go-v3.1.0/internal/session/tmux/tmux_test.go) |
 | SESSION-006 | Completion is invocation-bound. Missing, duplicate, malformed or contradictory evidence yields `SESSION_UNHEALTHY`, not empty success. | `data.execution`, `error.code` | [TestParseExecRejectsIncompleteOrForeignResults](../archive/go-v3.1.0/internal/session/tmux/tmux_test.go); [VerifiedCompletion](../src/domain/identity.rs) |
 | SESSION-007 | Canonical ID never becomes the caller's name. Unresolved identity is null in v2; caller reference remains separate. | `data.session_id`, `data.session_ref` | [TestLiveSession](../archive/conformance-v1/conformance/live_session_test.go); [busy_session_has_no_exit_and_no_stdout_alias](../tests/domain.rs) |
-| SESSION-008 | PTY output is merged terminal content, never independent stdout/stderr. | `data.output.kind == pty`, `data.output.content` | [Rust DTO schema validation](../tests/architecture/serialization_test.go); [live session tests](../archive/conformance-v1/conformance/live_session_test.go) |
+| SESSION-008 | PTY output is merged terminal content, never independent stdout/stderr. | `data.output.kind == pty`, `data.output.content` | [Rust DTO schema validation](../archive/conformance-v1/architecture/serialization_test.go); [live session tests](../archive/conformance-v1/conformance/live_session_test.go) |
 | SESSION-009 | Recover sends interrupt under the writer lock and requires a fresh shell prompt. Never type an exit command into a REPL. Preserved means usable managed shell, not merely surviving tmux. | `data.session_preserved`, `data.foreground` | [TestLiveSessionPythonRecovery](../archive/conformance-v1/conformance/live_session_protocol_test.go); [TestLiveSessionRecoveryExplicit](../archive/conformance-v1/conformance/live_tools_test.go) |
 | TUNNEL-001 | Alive means the forward exists, not application health. Close only the named dedicated master and its record. | `data.tunnel_id`, `data.tunnels[]` | [TestLiveTunnelPersistence](../archive/conformance-v1/conformance/live_tools_test.go); [tunnel lifecycle tests](../archive/go-v3.1.0/internal/transport/openssh/tunnel_lifecycle_test.go) |
 
@@ -92,7 +94,7 @@ Source: [files](architecture/files-and-json.md), [runtime](architecture/runtime.
 | FS-004 | Existing content replacement and patch require matching hash; replacement is locked, same-directory, atomic and preserves permissions. | `error.code`, `data.sha256` | [TestSmokeLive](../archive/conformance-v1/conformance/live_smoke_test.go); [FileWrite](../src/domain/files.rs); [remote helper suite](../archive/go-v3.1.0/internal/fileops/remote_test.py) |
 | FS-005 | Sync/mirror never delete without explicit delete; preserve dangerous-path refusal and timeout process cleanup. | `data.delete`, `data.changes`, `error.code` | [TestLiveFsSyncPlanAndApply](../archive/conformance-v1/conformance/live_fs_test.go); [fileops tests](../archive/go-v3.1.0/internal/fileops/sync_test.go) |
 | FS-006 | Batch is ordered serial put/get, not a transaction. Continue after entry failures; completed report has ok=true, failed entries make process status 255. | `data.items[]`, `data.failed` | [batch CLI tests](../archive/go-v3.1.0/internal/cli/tools_test.go) |
-| RELEASE-001 | Execute the exact four shipping artifacts natively and verify their checksums before publication. | `version` result | [release workflow](../.github/workflows/release.yml); [release contract check](../scripts/check-release-contract.sh) |
+| RELEASE-001 | Execute the exact four shipping artifacts natively and verify their checksums before publication. The local installer selects the same assets and verifies SHA-256 before replacement; plugin versions mirror Cargo, the sole binary version authority. | `version` result | [release workflow](../.github/workflows/release.yml); [release contract check](../scripts/check-release-contract.sh); [installer test](../scripts/test-install.sh) |
 
 ## Mechanisms deliberately not frozen
 
@@ -115,5 +117,7 @@ made to parse a Rust implementation's private marker protocol.
   timeout/cancellation. This describes foreground status, not successful delivery.
 - Wire v2 and new state namespaces do not imply a compatibility reader or any
   currently implemented remote Rust functionality.
+- The Go binary's Cobra-generated shell completion command is not part of the
+  agent-facing v2 operation set and is intentionally not reimplemented.
 
 The historical regression index is [history.json](../tests/fixtures/history.json).

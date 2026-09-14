@@ -1,0 +1,38 @@
+{
+  "name": "rhost",
+  "version": "4.0.0",
+  "description": "Operate SSH-reachable hosts through the installed rhost CLI.",
+  "author": {
+    "name": "starfield17",
+    "url": "https://github.com/starfield17"
+  },
+  "homepage": "https://github.com/starfield17/rhost",
+  "repository": "https://github.com/starfield17/rhost",
+  "license": "MIT",
+  "keywords": [
+    "remote-execution",
+    "ssh",
+    "coding-agents",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "rhost",
+    "shortDescription": "Run commands on SSH-reachable hosts",
+    "longDescription": "Use the installed rhost CLI for foreground execution, persistent tmux sessions, file operations, and OpenSSH tunnels.",
+    "developerName": "starfield17",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Remote execution",
+      "File operations",
+      "Persistent sessions",
+      "SSH tunnels"
+    ],
+    "websiteURL": "https://github.com/starfield17/rhost",
+    "defaultPrompt": [
+      "Inspect an SSH-reachable host with rhost.",
+      "Run this command remotely and classify the result.",
+      "Use rhost to transfer or edit a remote file safely."
+    ]
+  }
+}

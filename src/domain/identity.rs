@@ -105,6 +105,9 @@ impl InvocationToken {
         }
         Ok(Self(value))
     }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
     pub fn matches(&self, observed: &str) -> bool {
         self.0 == observed
     }

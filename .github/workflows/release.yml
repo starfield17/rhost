@@ -1,7 +1,9 @@
-name: Rust artifact rehearsal
-# Publishing remains disabled until remote conformance and live gates pass.
+name: release
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "v*"
 permissions:
   contents: read
 jobs:
@@ -21,19 +23,45 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Prove the rehearsal still matches the release contract
+        run: ./scripts/check-release-contract.sh
       - name: Build and execute exact native artifact
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
           cargo build --locked --release --bin rhost
           version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi
           mkdir -p dist
           artifact="dist/rhost_${version}_${PLATFORM}"
           cp target/release/rhost "$artifact"
-          "$artifact" version --json
+          reported=$("$artifact" version --json)
+          printf '%s\n' "$reported"
+          printf '%s' "$reported" |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["data"]["version"] == sys.argv[1], d' "$version"
           "$artifact" --help
-          shasum -a 256 "$artifact" > "$artifact.sha256"
+          asset_name=${artifact##*/}
+          (cd dist && shasum -a 256 "$asset_name" > "$asset_name.sha256")
+          (cd dist && shasum -a 256 -c "$asset_name.sha256")
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: rhost-${{ matrix.platform }}
           path: dist/*
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish the verified native artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          test "$(find dist -maxdepth 1 -type f -name 'rhost_*' | wc -l | tr -d ' ')" = 8
+          gh release create "v${version}" dist/* --verify-tag --title "rhost v${version}" --generate-notes

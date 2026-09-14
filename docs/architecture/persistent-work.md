@@ -9,8 +9,10 @@ rhost invocations.
 `session exec` only writes into an idle managed shell. If a REPL or debugger
 owns the pane it returns `SESSION_BUSY`; the agent drives that program with
 `session send/read` or interrupts it with `session recover`. The session surface
-is intentionally frozen at create/list/exec/send/read/attach/recover/close:
-it owns terminal state, not windows, layouts, process management, or scheduling.
+is intentionally frozen at create/list/exec/send/read/attach/recover/close: it
+owns terminal state, not windows, layouts, process management, or scheduling.
+Schema v2 recognizes `attach` but refuses it with `USAGE_ERROR`; agents use
+send/read rather than an unrepresentable attached terminal.
 
 `session send --data` is verbatim. It does not interpret backslash escapes.
 Use `--data 'python3 -i' --enter` to paste text and press Enter in one

@@ -1,53 +1,36 @@
+//! The only entry point: install interruption handling, parse, run, deliver.
+//!
+//! Nothing durable is owned here. Connections belong to OpenSSH's control
+//! socket and sessions to remote tmux, so this process may exit at any moment
+//! without taking state with it (AGENTS.md §4).
 #![forbid(unsafe_code)]
-use rhost::output;
-use std::io::{self, Write};
+use rhost::cli;
+use rhost::signals::Interrupt;
+use rhost::transport::openssh::{Client, Config};
+use std::io::Write;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let json = args
-        .iter()
-        .take_while(|a| a.as_str() != "--")
-        .any(|a| a == "--json" || a == "--json=true");
-    let operands: Vec<&str> = args
-        .iter()
-        .filter(|a| a.as_str() != "--json" && a.as_str() != "--json=true")
-        .map(String::as_str)
-        .collect();
-    let mut stdout = io::stdout().lock();
-    let (status, delivered) = match operands.as_slice() {
-        ["version"] | ["--version"] => (
-            0,
-            if json {
-                output::version().write(&mut stdout)
-            } else {
-                writeln!(
-                    stdout,
-                    "rhost {} (Rust migration skeleton)",
-                    env!("CARGO_PKG_VERSION")
-                )
-            },
-        ),
-        [] | ["--help"] | ["-h"] if !json => (
-            0,
-            writeln!(
-                stdout,
-                "rhost: Rust migration skeleton\nUsage: rhost version [--json]\nRemote operations are not implemented yet."
-            ),
-        ),
-        _ => {
-            let message = "Rust migration skeleton supports only version; use the Go binary for remote operations";
-            if json {
-                (255, output::usage(message).write(&mut stdout))
-            } else {
-                eprintln!("rhost: USAGE_ERROR: {message}");
-                (255, Ok(()))
-            }
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    // Handlers go up before anything can block: a CLI that starts a remote
+    // command it cannot be asked to stop is not one an agent can trust.
+    let interrupt = match Interrupt::install() {
+        Ok(interrupt) => interrupt,
+        Err(error) => {
+            let mut stderr = std::io::stderr().lock();
+            let _ = writeln!(
+                stderr,
+                "rhost: INTERNAL: could not install signal handlers: {error}"
+            );
+            return ExitCode::from(255);
         }
     };
-    if let Err(error) = delivered {
-        eprintln!("rhost: OUTPUT_WRITE_FAILED: {error}");
-        return ExitCode::from(255);
-    }
-    ExitCode::from(status)
+    let invocation = cli::parse_invocation(&argv);
+    let client = Client::new(Config::default());
+    let delivery = invocation.run(&client, &interrupt);
+    ExitCode::from(if delivery.delivery_failed {
+        255
+    } else {
+        delivery.status
+    })
 }

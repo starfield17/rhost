@@ -54,28 +54,27 @@ single-transfer success and must not be silently normalized.
 Every `--json` command emits one line:
 
 ```json
-{"schema_version":1,"operation":"exec","ok":true,"host":"gpu","data":{},"error":null}
+{"schema_version":2,"operation":"exec","ok":true,"host":"gpu","data":{"execution":{"status":"completed","exit_code":0},"cleanup":{"status":"not_attempted"},"output":{"kind":"streams","stdout":{"content":"","bytes":0,"truncated":false},"stderr":{"content":"","bytes":0,"truncated":false}},"duration_ms":1},"error":null}
 ```
 
 The top-level envelope is fixed. Operation data uses these canonical paths:
 
 | Operation | Identity | Output or collection |
 | --- | --- | --- |
-| exec | — | `data.stdout`, `data.stderr`, `data.exit_code` |
+| exec | — | `data.execution`, `data.cleanup`, `data.output.stdout`, `data.output.stderr` |
 | session create/list | `session_id` | `data.sessions[]` for list |
-| session exec | `data.session_id`, `data.session_ref` | `data.stdout` (PTY output), `data.output_kind == "pty"`, `data.exit_code` (integer or null) |
+| session exec | `data.session_id`, `data.session_ref` | `data.execution`, `data.output.kind == "pty"`, `data.output.content` |
 | session recover | `data.session_id`, `data.session_ref` | `data.session_preserved`, `data.foreground` when busy |
-| tunnel open/list | `data.tunnel_id` / `data.tunnels[].tunnel_id` | `id` remains an identical compatibility alias |
+| tunnel open/list | `data.tunnel_id` / `data.tunnels[].tunnel_id` | `data.status` / `data.tunnels[].status` |
 | session read | `data.session_id`, `data.session_ref` | `data.content`, `data.encoding == "utf-8"` |
 | hosts | — | `data.hosts[]`, discovery metadata |
 | audit | — | `data.entries[]` |
 
 Session exec accepts completion only with an invocation-specific token, the
-canonical ID resolved by the remote helper, and a valid exit status. Its
-`data.stdout` name is a compatibility field: because the
-command runs in a tmux PTY, it contains merged terminal output and cannot be
-split into stdout and stderr; `data.output_kind` is always `"pty"`. Unknown exit
-status is `null`, never zero; malformed helper results return
+canonical ID resolved by the remote helper, and a valid exit status. Because the
+command runs in a tmux PTY, `data.output.content` is merged terminal output and
+cannot be split into stdout and stderr; `data.output.kind` is always `"pty"`.
+Unknown execution omits an exit code rather than inventing zero; malformed helper results return
 `SESSION_UNHEALTHY`. Exec refuses a foreground REPL with
 `SESSION_BUSY`. Recover sends Ctrl-C under the same writer lock as exec/send and
 requires a fresh shell prompt; a REPL that catches the interrupt remains running,
@@ -84,7 +83,7 @@ Use explicit REPL input to exit it; recover never types an exit command.
 `session read` retains raw terminal content rather than removing apparent echoes.
 
 Incremental reads also carry `from`, `next` and `more`. Agents branch on
-`error.code`, never on `error.message`. The authoritative machine-readable
-contract is `archive/go-v3.1.0/schemas/result-v1.schema.json`. That schema is retained as a
-wire-history contract and includes operation variants emitted by earlier CLI
-majors; current command availability is defined by `rhost --help`.
+`error.code`, never on `error.message`. The authoritative Rust machine-readable
+contract is `schemas/result-v2.schema.json`. The frozen v1 schema remains wire
+history only; current command availability is defined by `rhost --help`.
+`session attach` is recognized but always returns a v2 `USAGE_ERROR`.

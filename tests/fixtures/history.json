@@ -40,7 +40,7 @@
     "contract": "EXEC-008",
     "mechanism_test": "archive/go-v3.1.0/internal/app/exec_stream_test.go:TestCompletedForegroundSurvivesInheritedBackgroundPipe",
     "conformance_test": null,
-    "gap": "Exact inherited-pipe/foreground-evidence scenario still needs a real-host candidate test; Rust outcome combination is covered by domain tests."
+    "gap": "Covered by the candidate's native live suite, tests/live/exec.rs:completed_foreground_survives_an_inherited_background_pipe, run by make test-live-all. The frozen harness links only Go test functions, so this row keeps no conformance_test pointer."
   },
   {
     "id": "HIST-PROC-003",
@@ -48,7 +48,7 @@
     "contract": "EXEC-008",
     "mechanism_test": "archive/go-v3.1.0/internal/app/exec_stream_test.go:TestCancellationAfterCompletionKeepsForegroundExitCode",
     "conformance_test": null,
-    "gap": "Exact completion/cancellation observation race requires a protocol-independent live test before transport parity."
+    "gap": "Covered by the candidate's native live suite, tests/live/exec.rs:deadline_after_completion_keeps_the_foreground_exit_code, run by make test-live-all: completion is real, and the caller's own deadline ends the run. A wall-clock-timed signal would be the racy test the friction log refuses. The frozen harness links only Go test functions, so this row keeps no conformance_test pointer."
   },
   {
     "id": "HIST-SSH-001",

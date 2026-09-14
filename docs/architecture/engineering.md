@@ -23,6 +23,7 @@ OpenSSH, tmux and remote processes.
 ## Verification
 
 ```bash
+make test-smoke
 make check
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-smoke
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live
@@ -30,18 +31,22 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-sess
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
 ```
 
-`make check` covers Rust formatting, clippy, unit tests, independent DTO schema validation, domain boundaries, portability and archive integrity.
-The Rust candidate remains a version-only migration skeleton; see
-[the migration guide](../RUST_MIGRATION.md). Live suites prove behavior across independent CLI processes on a real
+`make test-smoke` runs the complete local Rust black-box acceptance crate. Its
+external-tool defaults refuse access, so it needs no SSH service or configured
+host and cannot accidentally contact one. `make check` covers Rust formatting,
+clippy, unit tests, independent DTO schema validation, domain boundaries,
+portability, the structure budget, native-live compilation and coverage,
+the release contract check and archive integrity.
+The Rust candidate implements every schema-v2 operation except `session attach`,
+which the schema requires to be a usage error; see
+[the migration guide](../RUST_MIGRATION.md). Live suites are the gate that proves behavior across independent CLI processes on a real
 remote Linux host. `test-live-smoke` is the frequent, bounded check of the main
 exec, file and session workflows. The feature suites and `test-live-all`
-retain the exhaustive failure, persistence and transport cases. Independent
-live tests run with at most three tests in parallel. Each active test leases one
-of three persistent OpenSSH ControlMasters, so its CLI processes reuse a
-connection without competing with another test for channels on that connection.
-Intentionally isolated ControlPath cases remain serial. The harness prints CLI
-call count and timing totals so regressions are visible. Live targets disable
-Go's result cache so every invocation reaches the named host.
+retain the exhaustive failure, persistence and transport cases. The native full
+suite is serial for deterministic ownership and cleanup, validates every JSON
+answer against schema v2, and runs the exact binary named by `RHOST_BIN`.
+The frozen Go harness is an optional historical comparison under
+`test-legacy-live-*`; it is not required by the Rust release gate.
 
 Tracked examples and verification claims must remain host-independent.
 `scripts/check-portability.sh` enforces this.

@@ -30,7 +30,13 @@ enum SessionState {
 #[derive(Debug)]
 enum ResolvedOutcome {
     Completed(VerifiedCompletion),
-    Busy,
+    /// The pane is owned by a program instead of the managed shell. `foreground`
+    /// is what the helper observed holding it, when it named one: the caller's
+    /// next move is to drive or interrupt *that*, so the name is evidence rather
+    /// than a detail.
+    Busy {
+        foreground: Option<String>,
+    },
     WriterBusy,
     TimedOut {
         evidence: CompletionEvidence,
@@ -70,7 +76,16 @@ impl SessionExecOutcome {
         )
     }
     pub fn busy(id: SessionId, reference: SessionRef, output: PtyOutput) -> Self {
-        Self::resolved(id, reference, ResolvedOutcome::Busy, output)
+        Self::busy_in(id, reference, None, output)
+    }
+    /// The same refusal, naming what owns the pane.
+    pub fn busy_in(
+        id: SessionId,
+        reference: SessionRef,
+        foreground: Option<String>,
+        output: PtyOutput,
+    ) -> Self {
+        Self::resolved(id, reference, ResolvedOutcome::Busy { foreground }, output)
     }
     pub fn writer_busy(id: SessionId, reference: SessionRef, output: PtyOutput) -> Self {
         Self::resolved(id, reference, ResolvedOutcome::WriterBusy, output)
@@ -144,7 +159,7 @@ impl SessionExecOutcome {
             }
             SessionState::Resolved { outcome, .. } => match outcome {
                 ResolvedOutcome::Completed(_) => None,
-                ResolvedOutcome::Busy => Some(SessionFailure::Busy),
+                ResolvedOutcome::Busy { .. } => Some(SessionFailure::Busy),
                 ResolvedOutcome::WriterBusy => Some(SessionFailure::WriterBusy),
                 ResolvedOutcome::TimedOut { .. } => Some(SessionFailure::Timeout),
                 ResolvedOutcome::Unhealthy => Some(SessionFailure::Unhealthy),
@@ -153,6 +168,16 @@ impl SessionExecOutcome {
     }
     pub fn output(&self) -> &PtyOutput {
         &self.output
+    }
+    /// The pane's foreground command, when a busy refusal named it.
+    pub fn foreground(&self) -> Option<&str> {
+        match &self.state {
+            SessionState::Resolved {
+                outcome: ResolvedOutcome::Busy { foreground },
+                ..
+            } => foreground.as_deref(),
+            _ => None,
+        }
     }
     pub fn preserved(&self) -> bool {
         match &self.state {

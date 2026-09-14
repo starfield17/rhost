@@ -80,10 +80,11 @@ concepts in a generic adapter, no daemon until real usage justifies one
 ## 9. Verify before reporting
 
 ```bash
-make check                                                # Rust fmt + clippy + tests + portability + archive integrity
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live              # exec + doctor
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-session      # sessions
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all          # every live suite
+make test-smoke                                           # complete local Rust black-box suite; no network or Go
+make check                                                # Rust fmt + clippy + tests + portability + structure + release contract + archive integrity
+RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live              # native exec + doctor + transport
+RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-session      # native sessions
+RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all          # every native live suite, serial
 ```
 
 Name in your report exactly which suite you ran, and don't widen a test script's
@@ -94,12 +95,16 @@ or CI job's run-pattern to cover tests you weren't asked to run.
 - `docs/CONTRACT.md` is the semantic ledger; `schemas/result-v2.schema.json` is
   the Rust wire target. v1 remains the Go wire-history contract.
 - `archive/conformance-v1/conformance/` drives `RHOST_BIN`, imports no production packages, and
-  preserves the original live selectors. `make test-conformance` requires a
-  binary; live targets additionally require `RHOST_TEST_HOST`.
-- `src/domain/` is pure; `src/output/` maps domain values to v2. The Rust CLI is
-  currently a version-only skeleton. `docs/RUST_MIGRATION.md` names pending gates.
-- `make check` also runs Rust fmt/clippy/tests, independent DTO schema validation,
-  domain boundary checks and frozen corpus hashes. It needs Cargo.
+  preserves the original live selectors. It is available through
+  `make test-conformance` and `test-legacy-live-*`, but is not the Rust release
+  gate. Native live targets require both `RHOST_TEST_HOST` and `RHOST_BIN`.
+- `src/domain/` is pure; `src/output/` maps domain values to v2. The Rust binary
+  implements every v2 operation except `session attach`, which the schema makes a
+  usage error. `docs/RUST_MIGRATION.md` names pending gates.
+- `make check` also runs Rust fmt/clippy/tests, compiles and lints the feature-gated
+  native live crate, validates its frozen-corpus coverage map, and runs independent
+  DTO schema validation, domain boundary checks, the structure budget, the release
+  contract check and frozen corpus hashes. It needs Cargo, not Go.
 - Contract/tests cannot be weakened to make an implementation pass. Record a
   semantic conflict in `FRICTION.md`; resolve its acceptance change separately.
 
@@ -109,4 +114,6 @@ All Go source, modules, version metadata, installers and old release workflows
 are immutable under archive/. Cargo.toml is the sole active binary version
 authority. New implementation and acceptance tests must be Rust. Do not edit
 the archive manifest to bless changes. make check needs no Go toolchain.
-The current Rust binary is a version/help skeleton, not remote parity.
+The current Rust binary implements the v2 operations except `session attach`.
+Live suites are the required real-remote verification gate. A version tag builds
+and executes all four native release artifacts before the release job can publish.

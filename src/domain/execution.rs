@@ -54,13 +54,21 @@ pub enum ExecFailure {
     BeforeSubmission(PreExecFailure),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CapturedText {
     content: Vec<u8>,
     bytes: u64,
     truncated: bool,
 }
 impl CapturedText {
+    /// A capture known to hold nothing: used before any submission exists.
+    pub fn empty() -> Self {
+        Self {
+            content: Vec::new(),
+            bytes: 0,
+            truncated: false,
+        }
+    }
     /// Text construction for fixtures and already-decoded UTF-8 values.
     pub fn new(content: String, bytes: u64) -> Result<Self, DomainError> {
         Self::from_bytes(content.into_bytes(), bytes)
@@ -80,6 +88,19 @@ impl CapturedText {
     pub fn content(&self) -> Cow<'_, str> {
         String::from_utf8_lossy(&self.content)
     }
+    /// A capture whose text was *derived* from the raw bytes — terminal escapes
+    /// stripped, invalid UTF-8 replaced — rather than copied from them.
+    ///
+    /// The two lengths are then not comparable: a projection can be shorter or
+    /// longer than its source, so truncation is stated here instead of inferred
+    /// from a mismatch (SESSION-008).
+    pub fn projected(content: Vec<u8>, source_bytes: u64, truncated: bool) -> Self {
+        Self {
+            content,
+            bytes: source_bytes,
+            truncated,
+        }
+    }
     pub fn bytes(&self) -> u64 {
         self.bytes
     }
@@ -87,10 +108,19 @@ impl CapturedText {
         self.truncated
     }
 }
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessOutput {
     pub stdout: CapturedText,
     pub stderr: CapturedText,
+}
+
+impl ProcessOutput {
+    pub fn empty() -> Self {
+        Self {
+            stdout: CapturedText::empty(),
+            stderr: CapturedText::empty(),
+        }
+    }
 }
 
 /// Storage makes successful unknown execution unrepresentable.

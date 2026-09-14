@@ -40,19 +40,23 @@ fn archived_sources_and_versions_are_frozen() -> Result<(), Box<dyn std::error::
 }
 
 #[test]
-fn active_tree_has_no_go_version_authority() {
+fn active_tree_has_no_go_build_authority_and_plugin_versions_mirror_cargo() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    for name in [
-        "go.mod",
-        "go.sum",
-        "VERSION",
-        "plugin.json",
-        "internal",
-        "cmd",
-    ] {
+    for name in ["go.mod", "go.sum", "VERSION", "internal", "cmd"] {
         assert!(
             !root.join(name).exists(),
             "legacy entry point returned: {name}"
+        );
+    }
+    for name in ["plugin.json", ".codex-plugin/plugin.json"] {
+        let raw = fs::read(root.join(name))
+            .unwrap_or_else(|error| panic!("read distribution manifest {name}: {error}"));
+        let manifest: serde_json::Value = serde_json::from_slice(&raw)
+            .unwrap_or_else(|error| panic!("parse distribution manifest {name}: {error}"));
+        assert_eq!(
+            manifest.get("version").and_then(serde_json::Value::as_str),
+            Some(env!("CARGO_PKG_VERSION")),
+            "{name} is a checked mirror of Cargo.toml, not a build authority"
         );
     }
 }

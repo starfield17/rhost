@@ -31,8 +31,9 @@ scheduler already installed on the remote host and invoked explicitly through
 direct execution; rhost does not become that scheduler.
 
 Every agent-visible behavior also has a versioned JSON path. Callers classify
-adapter failures with `error.code`, completed commands with `data.exit_code`,
-and uncertain timeouts with `data.cleanup_confirmed`.
+adapter failures with `error.code`, completed commands with
+`data.execution.exit_code`, and cleanup evidence with `data.cleanup.status`.
+Unknown execution has no numeric exit code.
 
 The detailed contracts and their rationale live in
 [ARCHITECTURE.md](ARCHITECTURE.md).

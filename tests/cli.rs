@@ -15,7 +15,7 @@ fn binary_reports_its_own_version_and_schema() -> Result<(), Box<dyn std::error:
 }
 
 #[test]
-fn release_rehearsal_preserves_four_native_platforms_without_publication() {
+fn release_waits_for_four_native_platforms_before_publication() {
     let workflow = include_str!("../.github/workflows/release.yml");
     for platform in ["darwin_amd64", "darwin_arm64", "linux_amd64", "linux_arm64"] {
         assert!(workflow.contains(&format!("platform: {platform}")));
@@ -24,6 +24,9 @@ fn release_rehearsal_preserves_four_native_platforms_without_publication() {
     assert!(workflow.contains("\"$artifact\" version --json"));
     assert!(workflow.contains("\"$artifact\" --help"));
     assert!(workflow.contains("workflow_dispatch:"));
-    assert!(!workflow.contains("tags:"));
-    assert!(!workflow.contains("contents: write"));
+    assert!(workflow.contains("tags:"));
+    assert!(workflow.contains("needs: native"));
+    assert!(workflow.contains("if: startsWith(github.ref, 'refs/tags/v')"));
+    assert!(workflow.contains("contents: write"));
+    assert!(workflow.contains("gh release create \"v${version}\" dist/* --verify-tag"));
 }
