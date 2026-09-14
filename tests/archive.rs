@@ -1,6 +1,17 @@
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, fs, path::Path};
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let digest = Sha256::digest(bytes);
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
 fn collect(root: &Path, path: &Path, files: &mut BTreeMap<String, String>) -> std::io::Result<()> {
     for entry in fs::read_dir(path)? {
         let entry = entry?;
@@ -13,7 +24,7 @@ fn collect(root: &Path, path: &Path, files: &mut BTreeMap<String, String>) -> st
                 .map_err(std::io::Error::other)?
                 .to_string_lossy()
                 .replace('\\', "/");
-            files.insert(key, format!("{:x}", Sha256::digest(fs::read(path)?)));
+            files.insert(key, sha256_hex(&fs::read(path)?));
         }
     }
     Ok(())
