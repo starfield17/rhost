@@ -4,13 +4,23 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/transport/openssh"
 )
+
+type observedWriter struct {
+	once sync.Once
+	done chan struct{}
+}
+
+func (w *observedWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.done) })
+	return len(p), nil
+}
 
 func TestExecutionTimeoutIsNeverBlindlyRetryable(t *testing.T) {
 	for _, confirmed := range []bool{false, true} {
@@ -31,17 +41,15 @@ encoded=${encoded%% *}
 script=$(printf '%s' "$encoded" | base64 -d)
 nonce=$(printf '%s' "$script" | sed -n 's/.*rhost-\([0-9a-f][0-9a-f]*\)\.pid.*/\1/p' | head -1)
 printf '\000__RHOST_BEGIN_%s__\ndone\000__RHOST_DONE_%s__:0\n' "$nonce" "$nonce"
-: > "$RHOST_TEST_FOREGROUND_DONE"
 sleep 10
 `)
 	t.Setenv("RHOST_CACHE_DIR", t.TempDir())
-	donePath := t.TempDir() + "/foreground-done"
-	t.Setenv("RHOST_TEST_FOREGROUND_DONE", donePath)
 	a := &App{SSH: openssh.New(openssh.Config{
 		SSHBin: ssh, ControlPath: t.TempDir() + "/%C", BatchMode: true,
 	})}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	observed := &observedWriter{done: make(chan struct{})}
 	type outcome struct {
 		res ExecResult
 		err *errs.Error
@@ -50,18 +58,14 @@ sleep 10
 	go func() {
 		res, aerr := a.ExecuteStream(ctx, StreamExecOptions{
 			ExecOptions: ExecOptions{Host: "example-host", Command: "printf done"},
+			Stdout:      observed,
 		})
 		finished <- outcome{res: res, err: aerr}
 	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Stat(donePath); err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("fake SSH did not observe foreground completion")
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-observed.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("rhost did not observe foreground output")
 	}
 	cancel()
 	got := <-finished
