@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -47,6 +48,71 @@ func TestShellCommandInputGrammar(t *testing.T) {
 				t.Fatal("invalid input accepted")
 			}
 		})
+	}
+}
+
+func TestJSONStreamKeepsEnvelopeOnStdoutAndProgramInputOnStdin(t *testing.T) {
+	t.Cleanup(saveGlobals())
+	dir := t.TempDir()
+	ssh := filepath.Join(dir, "ssh")
+	if err := os.WriteFile(ssh, []byte(`#!/bin/sh
+for remote do :; done
+remote=$(printf '%s' "$remote" | sed 's/^exec setsid /exec /')
+eval "$remote"
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	program := filepath.Join(dir, "inspect script.sh")
+	if err := os.WriteFile(program, []byte("IFS= read -r line\nprintf 'out:%s' \"$line\"\nprintf 'err:%s' \"$line\" >&2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input, err := os.CreateTemp(dir, "stdin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := input.WriteString("value\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := input.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	diagnostics, err := os.CreateTemp(dir, "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer diagnostics.Close()
+	oldIn, oldErr := os.Stdin, os.Stderr
+	os.Stdin, os.Stderr = input, diagnostics
+	defer func() { os.Stdin, os.Stderr = oldIn, oldErr }()
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("RHOST_STATE_DIR", dir)
+	t.Setenv("RHOST_AUDIT", "0")
+	os.Args = []string{"rhost", "--json", "exec", "example-host", "--command-file", program, "--stream"}
+	code := 0
+	stdout := captureStdout(t, func() { code = Run() })
+	if _, err := diagnostics.Seek(0, 0); err != nil {
+		t.Fatal(err)
+	}
+	live, err := os.ReadFile(diagnostics.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 0 {
+		t.Fatalf("exit = %d stdout=%q stderr=%q", code, stdout, live)
+	}
+	var env struct {
+		OK   bool                            `json:"ok"`
+		Data struct{ Stdout, Stderr string } `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\n%s", err, stdout)
+	}
+	if !env.OK || env.Data.Stdout != "out:value" || env.Data.Stderr != "err:value" {
+		t.Fatalf("envelope = %+v", env)
+	}
+	if !bytes.Contains(live, []byte("out:value")) || !bytes.Contains(live, []byte("err:value")) {
+		t.Fatalf("live stderr = %q", live)
 	}
 }
 
