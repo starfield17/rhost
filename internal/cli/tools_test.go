@@ -41,7 +41,9 @@ func TestSessionExecAndReadJSONFieldNames(t *testing.T) {
 func TestSkillDocsCoverPublishedFlagsAndErrors(t *testing.T) {
 	read := func(rel string) string {
 		b, err := os.ReadFile(filepath.Join("..", "..", rel))
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		return string(b)
 	}
 	cliDoc := read("skills/rhost/references/CLI.md")
