@@ -135,8 +135,8 @@ func TestClassifyMissingMarker(t *testing.T) {
 }
 
 // TestClassifyDoesNotInventACode guards the fallback: an unrecognised ssh
-// diagnostic must surface as SSH_UNREACHABLE with its own text, not silently
-// become INTERNAL or an auth/host-key verdict.
+// diagnostic must preserve uncertainty and its own text, not silently become a
+// retryable transport verdict or an auth/host-key verdict.
 func TestClassifySSHUnknownDiagnosticIsExecutionUnknown(t *testing.T) {
 	got := classifyMissingMarker(openssh.Result{Stderr: []byte("some brand new ssh complaint"), ExitCode: 255})
 	if got.Code != errs.RemoteExecutionUnknown {
