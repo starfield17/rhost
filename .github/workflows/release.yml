@@ -29,8 +29,11 @@ jobs:
         env:
           PLATFORM: ${{ matrix.platform }}
         run: |
-          cargo build --locked --release --bin rhost
           version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml)
+          commit=$(git rev-parse --short HEAD)
+          build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          RHOST_BUILD_COMMIT="$commit" RHOST_BUILD_DATE="$build_date" \
+            cargo build --locked --release --bin rhost
           if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi
           mkdir -p dist
           artifact="dist/rhost_${version}_${PLATFORM}"
@@ -39,6 +42,8 @@ jobs:
           printf '%s\n' "$reported"
           printf '%s' "$reported" |
             python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["data"]["version"] == sys.argv[1], d' "$version"
+          printf '%s' "$reported" |
+            python3 -c 'import json,re,sys; d=json.load(sys.stdin); assert d["data"]["commit"] == sys.argv[1], d; assert re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", d["data"]["build_date"]), d' "$commit"
           "$artifact" --help
           asset_name=${artifact##*/}
           (cd dist && shasum -a 256 "$asset_name" > "$asset_name.sha256")

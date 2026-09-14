@@ -104,7 +104,9 @@ failed or ignored native live tests.
    cross-compilation, no write near the frozen archive, and every action pinned
    to a commit. Manual dispatch remains a non-publishing rehearsal. A matching
    version tag publishes all eight files only after every native matrix job
-   succeeds.
+   succeeds. Each artifact's `version` result also names the commit and UTC build
+   time it was built from, and the contract check fails when that assertion
+   leaves the workflow.
 
 Each subsystem needs failing acceptance evidence before implementation. Never
 change contracts or weaken tests merely to accommodate candidate behavior.

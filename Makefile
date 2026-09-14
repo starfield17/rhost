@@ -1,9 +1,15 @@
 export RHOST_BIN
 export RHOST_BIN_ROOT := $(CURDIR)
 export RHOST_REPO_ROOT := $(CURDIR)
+
+# Build provenance. `version` names what the binary was built from (CONTRACT.md
+# RELEASE-001 "version result"); override COMMIT=/DATE= to pin it, which is what
+# a reproducible build does.
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 .PHONY: build build-rust check rust-check test test-smoke fmt portability structure live-suite release-contract agent-package install-test build-reference test-conformance
 build:
-	cargo build --locked --bin rhost
+	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --bin rhost
 build-rust: build
 fmt:
 	cargo fmt

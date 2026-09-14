@@ -126,6 +126,8 @@ done
 require_once "artifact name" 'artifact="dist/rhost_${version}_${PLATFORM}"'
 require_once "artifact executes version --json" '"$artifact" version --json'
 require_once "artifact version matches the manifest" 'assert d["data"]["version"] == sys.argv[1]'
+require_once "artifact commit matches the checkout" 'assert d["data"]["commit"] == sys.argv[1]'
+require_once "artifact build date is a UTC timestamp" 're.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"'
 require_once "artifact executes --help" '"$artifact" --help'
 require_once "artifact basename selected" 'asset_name=${artifact##*/}'
 require_once "basename checksum written" 'shasum -a 256 "$asset_name" > "$asset_name.sha256"'
