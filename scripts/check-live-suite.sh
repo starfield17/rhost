@@ -8,8 +8,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 sed -n '/^[^#]/s/[[:space:]].*$//p' "$map" | sort -u > "$tmp/mapped"
-rg -o '^func (TestLive[A-Za-z0-9_]+|TestSmokeLive)' \
-  archive/conformance-v1/conformance -g '*.go' \
+find archive/conformance-v1/conformance -type f -name '*.go' \
+  -exec grep -hEo '^func (TestLive[A-Za-z0-9_]+|TestSmokeLive)' {} + \
   | sed 's/.*func //' | sort -u > "$tmp/frozen"
 
 if ! diff -u "$tmp/frozen" "$tmp/mapped"; then
@@ -19,13 +19,17 @@ fi
 
 while IFS=$'\t' read -r legacy rust; do
   case "$legacy" in ''|'#'*) continue ;; esac
-  if ! rg -q "fn ${rust}\\b" tests/live tests/archive.rs tests/acceptance; then
+  if ! find tests/live tests/archive.rs tests/acceptance -type f \
+    -exec grep -lF "fn ${rust}(" {} + | grep -q .; then
     echo "$legacy maps to missing Rust test $rust" >&2
     exit 1
   fi
 done < "$map"
 
-if rg -n '#\[ignore' tests/live_exec.rs tests/live; then
+ignored=$(find tests/live_exec.rs tests/live -type f \
+  -exec grep -nHF '#[ignore' {} + || true)
+if [ -n "$ignored" ]; then
+  printf '%s\n' "$ignored"
   echo "native live tests must be feature-gated as a suite, not individually ignored" >&2
   exit 1
 fi

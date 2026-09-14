@@ -159,6 +159,13 @@ require_once "all artifacts downloaded together" "          merge-multiple: true
 require_once "tag matches Cargo version" '          if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi'
 require_once "eight release files present" "          test \"\$(find dist -maxdepth 1 -type f -name 'rhost_*' | wc -l | tr -d ' ')\" = 8"
 require_once "GitHub release publication" '          gh release create "v${version}" dist/* --verify-tag --title "rhost v${version}" --generate-notes'
+
+publish_job=$(awk '/^  publish:/ { inside = 1 } inside { print }' "$workflow")
+publish_checkouts=$(printf '%s\n' "$publish_job" |
+	grep -cE '^[[:space:]]*-[[:space:]]+uses: actions/checkout@[0-9a-f]{40}$' || true)
+if [ "$publish_checkouts" -ne 1 ]; then
+	report "the publish job must check out the tagged repository exactly once"
+fi
 refuse "a second publisher" 'action-gh-release|actions/create-release|cargo publish|git tag |git push|docker push|npm publish'
 refuse "an unrelated write permission" 'id-token: write|packages: write'
 refuse "a cross-compiler" '\-\-target|qemu|cross build|\bzig\b'

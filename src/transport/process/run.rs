@@ -103,15 +103,15 @@ fn pump<R: Read>(mut pipe: R, sender: SyncSender<Chunk>) {
 }
 
 /// Stops the child and, when the run owns a process group, everything that
-/// inherited its pipes. The group signal goes through the POSIX shell's own
-/// `kill` builtin: it is the one process-signalling interface every target
-/// platform has, and it is needed only on this path. If it cannot run, the
-/// per-process kill below still stops the tool itself.
+/// inherited its pipes. The external `kill` syntax below is shared by the BSD
+/// and GNU implementations; shell builtins disagree about `--` before a
+/// negative process-group id. If it cannot run, the per-process kill below
+/// still stops the tool itself.
 fn stop(child: &mut std::process::Child, group: bool) {
     if group {
-        let _ = Command::new("sh")
-            .arg("-c")
-            .arg(format!("kill -KILL -- -{}", child.id()))
+        let _ = Command::new("kill")
+            .arg("-KILL")
+            .arg(format!("-{}", child.id()))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
