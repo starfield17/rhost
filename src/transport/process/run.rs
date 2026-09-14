@@ -111,6 +111,7 @@ fn stop(child: &mut std::process::Child, group: bool) {
     if group {
         let _ = Command::new("kill")
             .arg("-KILL")
+            .arg("--")
             .arg(format!("-{}", child.id()))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
