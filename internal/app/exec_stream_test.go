@@ -26,8 +26,11 @@ func TestExecutionTimeoutIsNeverBlindlyRetryable(t *testing.T) {
 
 func TestCancellationAfterCompletionKeepsForegroundExitCode(t *testing.T) {
 	ssh := stubTool(t, "ssh", `
-remote=$(printf '%s' "$last" | sed 's/^exec setsid / /')
-eval "$remote"
+encoded=${last#*printf %s }
+encoded=${encoded%% *}
+script=$(printf '%s' "$encoded" | base64 -d)
+nonce=$(printf '%s' "$script" | sed -n 's/.*rhost-\([0-9a-f][0-9a-f]*\)\.pid.*/\1/p' | head -1)
+printf '\000__RHOST_BEGIN_%s__\ndone\000__RHOST_DONE_%s__:0\n' "$nonce" "$nonce"
 : > "$RHOST_TEST_FOREGROUND_DONE"
 sleep 10
 `)
@@ -73,8 +76,11 @@ sleep 10
 
 func TestCompletedForegroundSurvivesInheritedBackgroundPipe(t *testing.T) {
 	ssh := stubTool(t, "ssh", `
-remote=$(printf '%s' "$last" | sed 's/^exec setsid / /')
-eval "$remote"
+encoded=${last#*printf %s }
+encoded=${encoded%% *}
+script=$(printf '%s' "$encoded" | base64 -d)
+nonce=$(printf '%s' "$script" | sed -n 's/.*rhost-\([0-9a-f][0-9a-f]*\)\.pid.*/\1/p' | head -1)
+printf '\000__RHOST_BEGIN_%s__\ndone\000__RHOST_DONE_%s__:0\n' "$nonce" "$nonce"
 sleep 10 &
 exit 0
 `)
