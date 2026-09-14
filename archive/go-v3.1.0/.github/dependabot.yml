@@ -1,5 +1,5 @@
 # Every action in the workflows is pinned to a commit SHA, so this is what moves
-# the pins and Cargo dependency graph: one grouped pull request per ecosystem per week,
+# the pins and Go module graph: one grouped pull request per ecosystem per week,
 # reviewed like any other change.
 version: 2
 updates:
@@ -11,11 +11,11 @@ updates:
     groups:
       actions:
         patterns: ["*"]
-  - package-ecosystem: cargo
+  - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
-      rust-crates:
+      go-modules:
         patterns: ["*"]

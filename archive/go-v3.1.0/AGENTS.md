@@ -25,7 +25,7 @@ A real target belongs in your shell history, in untracked scratch (`local/`, you
 own `~/.ssh/config`), or in the environment at run time — the only supported way:
 
 ```bash
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all   # never a hardcoded default
+RHOST_TEST_HOST=<user>@<host> make test-live-all   # never a hardcoded default
 ```
 
 Anything needing a target reads it from the environment and fails with a clear
@@ -50,7 +50,7 @@ copy its product shape (see [Repository boundaries](docs/architecture/engineerin
 
 Anything promised to survive a CLI invocation must be owned outside the CLI
 process: connections by OpenSSH ControlMaster and sessions by remote tmux and
-remote state. The CLI owns nothing durable; no local map may
+remote state. The CLI owns nothing durable; no local Go map may
 be the only copy of persistent state, and no hidden `rhost` server.
 
 ## 5. OpenSSH owns auth and host keys
@@ -80,33 +80,11 @@ concepts in a generic adapter, no daemon until real usage justifies one
 ## 9. Verify before reporting
 
 ```bash
-make check                                                # Rust fmt + clippy + tests + portability + archive integrity
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live              # exec + doctor
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-session      # sessions
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all          # every live suite
+make check                                                # gofmt + vet + tests + portability + release contract
+RHOST_TEST_HOST=<user>@<host> make test-live              # exec + doctor
+RHOST_TEST_HOST=<user>@<host> make test-live-session      # sessions
+RHOST_TEST_HOST=<user>@<host> make test-live-all          # every live suite
 ```
 
 Name in your report exactly which suite you ran, and don't widen a test script's
 or CI job's run-pattern to cover tests you weren't asked to run.
-
-## 10. Rust migration map and gates
-
-- `docs/CONTRACT.md` is the semantic ledger; `schemas/result-v2.schema.json` is
-  the Rust wire target. v1 remains the Go wire-history contract.
-- `archive/conformance-v1/conformance/` drives `RHOST_BIN`, imports no production packages, and
-  preserves the original live selectors. `make test-conformance` requires a
-  binary; live targets additionally require `RHOST_TEST_HOST`.
-- `src/domain/` is pure; `src/output/` maps domain values to v2. The Rust CLI is
-  currently a version-only skeleton. `docs/RUST_MIGRATION.md` names pending gates.
-- `make check` also runs Rust fmt/clippy/tests, independent DTO schema validation,
-  domain boundary checks and frozen corpus hashes. It needs Cargo.
-- Contract/tests cannot be weakened to make an implementation pass. Record a
-  semantic conflict in `FRICTION.md`; resolve its acceptance change separately.
-
-## Frozen legacy boundary
-
-All Go source, modules, version metadata, installers and old release workflows
-are immutable under archive/. Cargo.toml is the sole active binary version
-authority. New implementation and acceptance tests must be Rust. Do not edit
-the archive manifest to bless changes. make check needs no Go toolchain.
-The current Rust binary is a version/help skeleton, not remote parity.

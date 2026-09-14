@@ -7,7 +7,7 @@ so aliases, users, ports, proxy jumps, keys and host-key policy come from
 OpenSSH configuration.
 
 A private ControlPath namespace lets independent rhost invocations reuse an
-OpenSSH ControlMaster. Persistence lives in OpenSSH, not in CLI memory. rhost
+OpenSSH ControlMaster. Persistence lives in OpenSSH, not in Go memory. rhost
 never disables host-key checking and never stores credentials.
 
 `connection status` and `connection reset` expose that shared master's control

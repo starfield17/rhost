@@ -1,0 +1,74 @@
+[
+  {
+    "id": "HIST-SESSION-001",
+    "origin": "2a3cbca",
+    "contract": "SESSION-005",
+    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestExecScriptScansEveryByte",
+    "conformance_test": "archive/conformance-v1/conformance/live_session_test.go:TestLiveSessionBoundaryIsReliable"
+  },
+  {
+    "id": "HIST-SESSION-002",
+    "origin": "dd39146",
+    "contract": "SESSION-004",
+    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestSendScriptCanPasteThenPressEnter",
+    "conformance_test": "archive/conformance-v1/conformance/live_session_test.go:TestLiveSessionSendRawInput"
+  },
+  {
+    "id": "HIST-SESSION-003",
+    "origin": "0f9098e",
+    "contract": "SESSION-003",
+    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestExecScriptRefusesWhenPaneIsBusy",
+    "conformance_test": "archive/conformance-v1/conformance/live_session_protocol_test.go:TestLiveSessionPythonRecovery"
+  },
+  {
+    "id": "HIST-SESSION-004",
+    "origin": "3907906",
+    "contract": "SESSION-006",
+    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestParseExecRejectsIncompleteOrForeignResults",
+    "conformance_test": "archive/conformance-v1/conformance/live_session_protocol_test.go:TestLiveSessionConcurrentInputIsolation"
+  },
+  {
+    "id": "HIST-PROC-001",
+    "origin": "f8e78ef",
+    "contract": "FS-005",
+    "mechanism_test": "archive/go-v3.1.0/internal/app/fs_test.go:TestFsMapsToolFailures",
+    "conformance_test": "archive/conformance-v1/conformance/hermetic_test.go:TestConformanceTransferDescendantTimeout"
+  },
+  {
+    "id": "HIST-PROC-002",
+    "origin": "912441a",
+    "contract": "EXEC-008",
+    "mechanism_test": "archive/go-v3.1.0/internal/app/exec_stream_test.go:TestCompletedForegroundSurvivesInheritedBackgroundPipe",
+    "conformance_test": null,
+    "gap": "Exact inherited-pipe/foreground-evidence scenario still needs a real-host candidate test; Rust outcome combination is covered by domain tests."
+  },
+  {
+    "id": "HIST-PROC-003",
+    "origin": "5fe05a3",
+    "contract": "EXEC-008",
+    "mechanism_test": "archive/go-v3.1.0/internal/app/exec_stream_test.go:TestCancellationAfterCompletionKeepsForegroundExitCode",
+    "conformance_test": null,
+    "gap": "Exact completion/cancellation observation race requires a protocol-independent live test before transport parity."
+  },
+  {
+    "id": "HIST-SSH-001",
+    "origin": "20e547a",
+    "contract": "SSH-002",
+    "mechanism_test": "archive/go-v3.1.0/internal/transport/openssh/client_test.go:TestConnectionStatusAndReset",
+    "conformance_test": "archive/conformance-v1/conformance/hermetic_test.go:TestConformanceConnectionStatusReset"
+  },
+  {
+    "id": "HIST-IDENTITY-001",
+    "origin": "60e94a8",
+    "contract": "SESSION-007",
+    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestResolvedSessionHelpersReturnCanonicalID",
+    "conformance_test": "archive/conformance-v1/conformance/live_session_test.go:TestLiveSession"
+  },
+  {
+    "id": "HIST-FS-001",
+    "origin": "c740b3b",
+    "contract": "FS-004",
+    "mechanism_test": "archive/go-v3.1.0/internal/fileops/remote_helper_test.go:TestEmbeddedRemoteHelperSuite",
+    "conformance_test": "archive/conformance-v1/conformance/live_smoke_test.go:TestSmokeLive"
+  }
+]

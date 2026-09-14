@@ -2,7 +2,7 @@
 # check-portability.sh — enforce AGENTS.md §1: no local-environment specifics in
 # tracked repository content.
 #
-# Scans tracked and untracked non-ignored files for specific laptop/board models, private IP addresses,
+# Scans tracked files for specific laptop/board models, private IP addresses,
 # real-looking SSH logins, and author home paths. Documentation legitimately uses
 # placeholder host names (`gpu`, `user@example-host`, `/home/dev/...`) and generic
 # platform classes (`Linux`, `WSL2`, `darwin/arm64`); those are not matched.
@@ -38,7 +38,7 @@ patterns_hard='mac''book|mac[ _-]''book|think''pad|think''centre|lat''itude|insp
 patterns_path='/home/[A-Za-z0-9._-]+/|/Users/[A-Za-z0-9._-]+/|[A-Za-z]:[\\/]Users[\\/]'
 allowlist='/home/(dev|user|you|username|name|<user>)/|/Users/(dev|user|you|username|name|<user>)/|[A-Za-z]:\\Users\\<user>\\'
 
-files=$(git ls-files --cached --others --exclude-standard | sort -u | grep -v '^AGENTS\.md$' || true)
+files=$(git ls-files | grep -v '^AGENTS\.md$' || true)
 if [ -z "$files" ]; then
 	echo "check-portability: no tracked files found" >&2
 	exit 2
@@ -82,4 +82,4 @@ EOF
 	exit 1
 fi
 
-echo "check-portability: OK ($count repository files, no local-environment specifics)"
+echo "check-portability: OK ($count tracked files, no local-environment specifics)"

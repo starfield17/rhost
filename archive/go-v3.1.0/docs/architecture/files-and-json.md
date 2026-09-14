@@ -85,6 +85,6 @@ Use explicit REPL input to exit it; recover never types an exit command.
 
 Incremental reads also carry `from`, `next` and `more`. Agents branch on
 `error.code`, never on `error.message`. The authoritative machine-readable
-contract is `archive/go-v3.1.0/schemas/result-v1.schema.json`. That schema is retained as a
+contract is `schemas/result-v1.schema.json`. That schema is retained as a
 wire-history contract and includes operation variants emitted by earlier CLI
 majors; current command availability is defined by `rhost --help`.

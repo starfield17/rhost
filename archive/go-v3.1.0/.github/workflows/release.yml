@@ -1,0 +1,257 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # A rehearsal with the same pipeline and none of the consequences: dispatch a
+  # build, the four native runs and the attestation before a tag exists. A
+  # dispatched run cannot publish — the publish job requires a tag push.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to bake into the rehearsal artifacts (leading v optional)."
+        required: false
+        type: string
+        default: "0.0.0-dev"
+
+permissions:
+  contents: read
+
+# One release per tag, and a publish in flight is never cancelled: a half-uploaded
+# release is repaired by re-running the workflow, not by racing it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # A tag is not evidence that the code works (AGENTS.md §7/§9): everything the
+  # repository calls a gate runs here first, on both local platforms, on the
+  # tagged commit.
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Check (gofmt + vet + unit tests + portability + release contract, AGENTS.md §9)
+        run: make check
+
+  # One Go cross-compile produces every artifact. The runners below never rebuild
+  # them: they download and execute exactly these bytes, which is what makes a
+  # passing smoke run a statement about the published file.
+  build:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # signing the provenance attestation
+      attestations: write
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Derive the version and commit to bake in
+        id: release
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            tag="${GITHUB_REF_NAME}"
+            if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::error::tag ${tag} is not vMAJOR.MINOR.PATCH[-prerelease]; refusing to build it"
+              exit 1
+            fi
+            version="${tag#v}"
+            if [ "$version" != "$(tr -d '\n' < VERSION)" ]; then
+              echo "::error::release tag must match VERSION and plugin.json; refusing to build"
+              exit 1
+            fi
+          else
+            version="${DISPATCH_VERSION#v}"
+            [ -n "$version" ] || version="0.0.0-dev"
+            if ! printf '%s' "$version" | grep -Eq '^[0-9A-Za-z._-]+$'; then
+              echo "::error::version ${version} must be a plain version string"
+              exit 1
+            fi
+          fi
+          {
+            echo "version=${version}"
+            echo "commit=$(git rev-parse --short HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build the four shipping artifacts
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: make dist VERSION="$VERSION"
+
+      - name: Upload the artifacts under test
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Attest the build provenance of the artifacts
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+
+  # Every artifact is executed on the platform and architecture it claims. This
+  # is the step that turns "it cross-compiled" into "it ran" (AGENTS.md §7): the
+  # binary reports its own version, commit and JSON envelope, and the checksum
+  # file published beside it is re-verified against the bytes here.
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+          - runner: macos-15
+            goos: darwin
+            goarch: arm64
+          - runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Download the artifacts under test
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+
+      - name: Run this platform's artifact
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          set -euo pipefail
+          asset="rhost_${VERSION}_${GOOS}_${GOARCH}"
+          binary="dist/${asset}"
+          test -f "$binary" || { echo "missing artifact: $binary" >&2; exit 1; }
+          chmod +x "$binary"
+
+          # The published checksum must describe these bytes.
+          ( cd dist && shasum -a 256 -c "${asset}.sha256" )
+
+          # version --json is the identity of the binary: the version the release
+          # claims, the commit it was built from, and the envelope agents parse.
+          ./"$binary" version --json > version.json
+          jq -e --arg version "$VERSION" --arg commit "$COMMIT" '
+            .ok == true
+            and .schema_version == 1
+            and .operation == "version"
+            and .data.version == $version
+            and .data.commit == $commit
+            and (.data.build_date | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$"))
+          ' version.json > /dev/null
+
+          ./"$binary" --help > /dev/null
+
+          # The human surface is not the only one that has to work on a machine
+          # that has nothing configured: no SSH config, no remote host.
+          empty_home="$(mktemp -d)"
+          HOME="$empty_home" ./"$binary" hosts --json > hosts.json
+          jq -e '.ok == true and (.data.hosts | length) == 0' hosts.json > /dev/null
+
+          # A binary that runs here has already proven its platform; this says
+          # which architecture that was in the log, and catches a runner whose
+          # label no longer means what the matrix says.
+          case "${GOARCH}" in
+            amd64) expected_machines="x86_64 amd64" ;;
+            arm64) expected_machines="arm64 aarch64" ;;
+            *) echo "unknown GOARCH: ${GOARCH}" >&2; exit 1 ;;
+          esac
+          machine="$(uname -m)"
+          case " ${expected_machines} " in
+            *" ${machine} "*) ;;
+            *)
+              echo "runner reports ${machine}, expected one of: ${expected_machines}" >&2
+              exit 1
+              ;;
+          esac
+          echo "ran ${asset} natively on ${machine}"
+
+  # Publishing is the only step that needs write access, and it is the only step
+  # a dispatched run skips.
+  publish:
+    needs: [build, smoke]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download the verified artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+
+      - name: Refuse to publish anything but the four binaries and their checksums
+        shell: bash
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The expected names are recomputed from the Makefile's target list, not
+          # read back from the artifact: a missing, extra or renamed file is a
+          # failed release, not a release with fewer files.
+          expected=()
+          for target in $(sed -n 's/^RELEASE_TARGETS *:=[[:space:]]*//p' Makefile); do
+            goos="${target%%/*}"
+            goarch="${target##*/}"
+            asset="rhost_${VERSION}_${goos}_${goarch}"
+            for file in "$asset" "$asset.sha256"; do
+              test -s "dist/$file" || { echo "missing or empty asset: $file" >&2; exit 1; }
+              expected+=("$file")
+            done
+            ( cd dist && shasum -a 256 -c "$asset.sha256" > /dev/null )
+          done
+          printf '%s\n' "${expected[@]}" | sort > "$RUNNER_TEMP/expected"
+          ( cd dist && ls -1 ) | sort > "$RUNNER_TEMP/actual"
+          if ! diff -u "$RUNNER_TEMP/expected" "$RUNNER_TEMP/actual"; then
+            echo "the artifact set is not exactly the four binaries and their checksums" >&2
+            exit 1
+          fi
+          echo "publishing ${#expected[@]} assets for v${VERSION}"
+
+      - name: Create or update the GitHub release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: dist/*
+          # Re-running the workflow after a partial upload replaces the assets
+          # instead of failing or duplicating them.
+          overwrite_files: true
+          generate_release_notes: true
+          # A hyphenated tag is a semver prerelease, and it is marked as one:
+          # `install.sh` falls back to the newest release when no stable one
+          # exists, so "alpha" is a statement about maturity, not a hidden flag.
+          prerelease: ${{ contains(github.ref_name, '-') }}

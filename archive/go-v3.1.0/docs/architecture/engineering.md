@@ -10,10 +10,10 @@ never environment maps, file contents or `session send --data` payloads.
 
 ## Repository boundaries
 
-Frozen Go packages under `archive/go-v3.1.0/internal/` own distinct capabilities: CLI parsing and
+Go packages under `internal/` own distinct capabilities: CLI parsing and
 rendering, application policy, OpenSSH transport, remote session protocol,
 and file operations. Remote scripts are generated or embedded by their owning
-package. `reference/` is read-only reference material and is not part of the
+package. `reffer/` is read-only reference material and is not part of the
 product.
 
 Durable state must remain outside the CLI process. A local daemon or remote
@@ -24,15 +24,14 @@ OpenSSH, tmux and remote processes.
 
 ```bash
 make check
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-smoke
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-session
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
+RHOST_TEST_HOST=<user>@<host> make test-live-smoke
+RHOST_TEST_HOST=<user>@<host> make test-live
+RHOST_TEST_HOST=<user>@<host> make test-live-session
+RHOST_TEST_HOST=<user>@<host> make test-live-all
 ```
 
-`make check` covers Rust formatting, clippy, unit tests, independent DTO schema validation, domain boundaries, portability and archive integrity.
-The Rust candidate remains a version-only migration skeleton; see
-[the migration guide](../RUST_MIGRATION.md). Live suites prove behavior across independent CLI processes on a real
+`make check` covers formatting, vet, unit tests, portability and the release
+contract. Live suites prove behavior across independent CLI processes on a real
 remote Linux host. `test-live-smoke` is the frequent, bounded check of the main
 exec, file and session workflows. The feature suites and `test-live-all`
 retain the exhaustive failure, persistence and transport cases. Independent
