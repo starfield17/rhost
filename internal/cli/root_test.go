@@ -360,6 +360,17 @@ func TestRemovedCommandsAreUsageErrors(t *testing.T) {
 	}
 }
 
+func TestVersionFlagMatchesVersionCommand(t *testing.T) {
+	t.Cleanup(saveGlobals())
+	os.Args = []string{"rhost", "--json", "version"}
+	command := captureStdout(t, func() { _ = Run() })
+	os.Args = []string{"rhost", "--json", "--version"}
+	flag := captureStdout(t, func() { _ = Run() })
+	if flag != command {
+		t.Fatalf("--version differs from version:\nflag %s\ncommand %s", flag, command)
+	}
+}
+
 func TestSessionAttachRejectsJSONBeforeSSH(t *testing.T) {
 	t.Cleanup(saveGlobals())
 	os.Args = []string{"rhost", "--json", "session", "attach", "example-host", "dev"}

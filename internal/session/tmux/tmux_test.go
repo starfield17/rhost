@@ -150,6 +150,30 @@ func TestCreateScriptProtocol(t *testing.T) {
 	}
 }
 
+func TestResolvedSessionHelpersReturnCanonicalID(t *testing.T) {
+	for name, script := range map[string]string{
+		"exec": ExecScript("dev", "true", time.Second, "token"),
+		"read": ReadScript("dev", 0, 0),
+		"recover": RecoverScript("dev", time.Second),
+	} {
+		if !strings.Contains(script, "RHOST_ID=") {
+			t.Errorf("%s helper does not return resolved ID", name)
+		}
+	}
+}
+
+func TestCreateScriptValidatesRequestedCwdBeforeCreating(t *testing.T) {
+	for _, cwd := range []string{"~", "/home/<user>/project"} {
+		s := CreateScript(NewMeta("s_abc", "dev", cwd, "bash"), "bash --noprofile --norc -i")
+		if !strings.Contains(s, "RHOST_ERR=invalidcwd") {
+			t.Errorf("cwd %q is not validated before create:\n%s", cwd, s)
+		}
+		if cwd == "~" && !strings.Contains(s, "CWD=\"$HOME\"") {
+			t.Errorf("literal ~ is not resolved through remote HOME:\n%s", s)
+		}
+	}
+}
+
 // TestCreateScriptNotReadyCleansUp pins the failure-path fix: a session that
 // never becomes ready must kill its freshly created tmux session and remove its
 // state dir, or it becomes an orphan invisible to `session list`.

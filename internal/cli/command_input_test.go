@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +20,10 @@ func TestShellCommandInputGrammar(t *testing.T) {
 	}{
 		{name: "exec long", build: newExecCmd, args: []string{"example-host", "--command", "printf '%s' '--json'"}, ok: true},
 		{name: "exec short and interspersed", build: newExecCmd, args: []string{"example-host", "-c", "pwd", "--cwd", "/var/log"}, ok: true},
+		{name: "exec command file", build: newExecCmd, args: []string{"example-host", "--command-file", "inspect.sh"}, ok: true},
+		{name: "conflicting sources", build: newExecCmd, args: []string{"example-host", "--command", "true", "--command-file", "inspect.sh"}},
+		{name: "stdin command file", build: newExecCmd, args: []string{"example-host", "--command-file", "-"}},
+		{name: "stream requires json", build: newExecCmd, args: []string{"example-host", "--command", "true", "--stream"}},
 		{name: "session flags after command", build: newSessionExecCmd, args: []string{"example-host", "dev", "--command", "x=42", "--timeout", "1s"}, ok: true},
 		{name: "missing command", build: newExecCmd, args: []string{"example-host"}},
 		{name: "empty command", build: newExecCmd, args: []string{"example-host", "--command", ""}},
@@ -42,6 +47,38 @@ func TestShellCommandInputGrammar(t *testing.T) {
 				t.Fatal("invalid input accepted")
 			}
 		})
+	}
+}
+
+func TestReadCommandFileValidation(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, data []byte) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	valid := write("with spaces.sh", []byte("printf '%s\\n' \"$HOME\"\ncat <<'EOF'\nhello\nEOF\n"))
+	if got, err := readCommandFile(valid); err != nil || !bytes.Contains([]byte(got), []byte("<<'EOF'")) {
+		t.Fatalf("valid file = %q err=%v", got, err)
+	}
+	for _, tc := range []struct {
+		name string
+		data []byte
+	}{
+		{"empty", nil},
+		{"nul", []byte("true\x00false")},
+		{"large", bytes.Repeat([]byte("x"), 64*1024+1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := readCommandFile(write(tc.name, tc.data)); err == nil {
+				t.Fatal("invalid file accepted")
+			}
+		})
+	}
+	if _, err := readCommandFile(dir); err == nil {
+		t.Fatal("directory accepted")
 	}
 }
 

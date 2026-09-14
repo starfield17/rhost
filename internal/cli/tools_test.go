@@ -14,12 +14,13 @@ import (
 
 func TestSessionExecAndReadJSONFieldNames(t *testing.T) {
 	zero := 0
-	execRaw, err := json.Marshal(sessionExecData(app.SessionExecResult{SessionID: "s_1", Output: "ready", ExitCode: &zero}))
+	execRaw, err := json.Marshal(sessionExecData(app.SessionExecResult{SessionID: "s_1", SessionRef: "dev", Output: "ready", ExitCode: &zero}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(execRaw), `"stdout":"ready"`) ||
-		!strings.Contains(string(execRaw), `"output_kind":"pty"`) || strings.Contains(string(execRaw), `"output":`) {
+		!strings.Contains(string(execRaw), `"output_kind":"pty"`) ||
+		!strings.Contains(string(execRaw), `"session_ref":"dev"`) || strings.Contains(string(execRaw), `"output":`) {
 		t.Fatalf("session exec JSON = %s", execRaw)
 	}
 	unknownRaw, err := json.Marshal(sessionExecData(app.SessionExecResult{SessionID: "s_1"}))
@@ -33,6 +34,33 @@ func TestSessionExecAndReadJSONFieldNames(t *testing.T) {
 	for _, field := range []string{`"content":"ready"`, `"encoding":"utf-8"`} {
 		if !strings.Contains(string(readRaw), field) {
 			t.Fatalf("session read JSON = %s", readRaw)
+		}
+	}
+}
+
+func TestSkillDocsCoverPublishedFlagsAndErrors(t *testing.T) {
+	read := func(rel string) string {
+		b, err := os.ReadFile(filepath.Join("..", "..", rel))
+		if err != nil { t.Fatal(err) }
+		return string(b)
+	}
+	cliDoc := read("skills/rhost/references/CLI.md")
+	for _, want := range []string{
+		"exec --command-file", "exec --fresh", "exec --stream", "doctor --fresh",
+		"fs put --checksum", "fs get --checksum", "fs sync --checksum", "fs mirror --checksum",
+		"fs put --resume", "fs get --resume", "fs sync --exclude", "fs mirror --exclude",
+		"fs read --lines", "fs read --start", "fs read --max-bytes",
+		"fs write --mode", "fs write --max-bytes", "fs patch --max-bytes",
+		"session create --shell",
+	} {
+		if !strings.Contains(cliDoc, want) {
+			t.Errorf("CLI.md missing %q", want)
+		}
+	}
+	recovery := read("skills/rhost/references/RECOVERY.md")
+	for _, code := range errs.Codes() {
+		if !strings.Contains(recovery, "`"+code+"`") {
+			t.Errorf("RECOVERY.md missing error code %s", code)
 		}
 	}
 }

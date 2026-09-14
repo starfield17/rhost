@@ -2,6 +2,8 @@ package openssh
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -55,7 +57,7 @@ func TestNewFillsZeroValues(t *testing.T) {
 // TestOptionsIsolatesTheControlMasterNamespace documents the persistence
 // invariant: reuse lives in OpenSSH's socket directory, not in this process.
 func TestOptions(t *testing.T) {
-	joined := strings.Join(New(DefaultConfig()).options(), " ")
+	joined := strings.Join(New(DefaultConfig()).options(false), " ")
 	for _, want := range []string{
 		"-o ControlMaster=auto",
 		"-o ControlPersist=15m",
@@ -71,6 +73,72 @@ func TestOptions(t *testing.T) {
 		if strings.Contains(joined, banned) {
 			t.Errorf("options must never disable host-key checking: %s", banned)
 		}
+	}
+}
+
+func TestFreshOptionsDisableAllMultiplexing(t *testing.T) {
+	joined := strings.Join(New(DefaultConfig()).options(true), " ")
+	for _, want := range []string{"ControlMaster=no", "ControlPersist=no", "ControlPath=none"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("fresh options missing %q in %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "ControlMaster=auto") {
+		t.Fatalf("fresh options still allow reuse: %s", joined)
+	}
+}
+
+func TestConnectionStatusAndReset(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls")
+	ssh := filepath.Join(dir, "ssh")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$RHOST_TEST_CALLS"
+case "$*" in
+  *"-O check"*) echo 'Master running (pid=4321)' >&2; exit 0 ;;
+  *"-O stop"*) echo 'Stop listening request sent.' >&2; exit 0 ;;
+esac
+exit 2
+`
+	if err := os.WriteFile(ssh, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RHOST_TEST_CALLS", logPath)
+	c := New(Config{SSHBin: ssh, ControlPath: filepath.Join(dir, "%C")})
+	status := c.ConnectionStatus(context.Background(), "example-host")
+	if status.MasterStatus != MasterAlive || status.MasterPID != 4321 {
+		t.Fatalf("status = %+v", status)
+	}
+	reset, err := c.ResetConnection(context.Background(), "example-host")
+	if err != nil || !reset.Stopped {
+		t.Fatalf("reset = %+v err=%v", reset, err)
+	}
+	calls, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(calls), "-O stop") {
+		t.Fatalf("calls = %q err=%v", calls, err)
+	}
+}
+
+func TestConnectionStatusDistinguishesAbsentAndUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		name, diagnostic string
+		want             MasterStatus
+	}{
+		{"absent", "Control socket connect(/tmp/rhost): No such file or directory", MasterAbsent},
+		{"permission", "Control socket connect(/tmp/rhost): Permission denied", MasterUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			ssh := filepath.Join(dir, "ssh")
+			script := "#!/bin/sh\necho '" + tc.diagnostic + "' >&2\nexit 255\n"
+			if err := os.WriteFile(ssh, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			c := New(Config{SSHBin: ssh, ControlPath: filepath.Join(dir, "%C")})
+			if got := c.ConnectionStatus(context.Background(), "example-host"); got.MasterStatus != tc.want {
+				t.Fatalf("status = %+v, want %s", got, tc.want)
+			}
+		})
 	}
 }
 

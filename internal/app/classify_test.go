@@ -72,16 +72,16 @@ func TestClassifyMissingMarker(t *testing.T) {
 			name:        "connection reset",
 			stderr:      "Read from remote host build.example.internal: Connection reset by peer",
 			exitCode:    255,
-			wantCode:    errs.SSHUnreachable,
-			wantRetry:   true,
+			wantCode:    errs.RemoteExecutionUnknown,
+			wantRetry:   false,
 			wantMessage: "Connection reset",
 		},
 		{
 			name:        "timeout during banner",
 			stderr:      "Connection timed out during banner exchange",
 			exitCode:    255,
-			wantCode:    errs.SSHUnreachable,
-			wantRetry:   true,
+			wantCode:    errs.RemoteExecutionUnknown,
+			wantRetry:   false,
 			wantMessage: "connection timed out",
 		},
 		{
@@ -90,8 +90,8 @@ func TestClassifyMissingMarker(t *testing.T) {
 			name:        "silent ssh failure points at the verbosity switch",
 			stderr:      "",
 			exitCode:    255,
-			wantCode:    errs.SSHUnreachable,
-			wantRetry:   true,
+			wantCode:    errs.RemoteExecutionUnknown,
+			wantRetry:   false,
 			wantMessage: "RHOST_SSH_LOG_LEVEL=VERBOSE",
 		},
 		{
@@ -137,13 +137,20 @@ func TestClassifyMissingMarker(t *testing.T) {
 // TestClassifyDoesNotInventACode guards the fallback: an unrecognised ssh
 // diagnostic must surface as SSH_UNREACHABLE with its own text, not silently
 // become INTERNAL or an auth/host-key verdict.
-func TestClassifySSHUnknownDiagnosticIsUnreachable(t *testing.T) {
+func TestClassifySSHUnknownDiagnosticIsExecutionUnknown(t *testing.T) {
 	got := classifyMissingMarker(openssh.Result{Stderr: []byte("some brand new ssh complaint"), ExitCode: 255})
-	if got.Code != errs.SSHUnreachable {
-		t.Errorf("Code = %s, want %s", got.Code, errs.SSHUnreachable)
+	if got.Code != errs.RemoteExecutionUnknown {
+		t.Errorf("Code = %s, want %s", got.Code, errs.RemoteExecutionUnknown)
 	}
 	if got.Message != "some brand new ssh complaint" {
 		t.Errorf("Message = %q, want the first stderr line verbatim", got.Message)
+	}
+}
+
+func TestClassifyRemotePermissionDeniedIsNotSSHAuth(t *testing.T) {
+	got := classifyMissingMarker(openssh.Result{Stderr: []byte("mkdir: Permission denied"), ExitCode: 1})
+	if got.Code != errs.RemoteExecutionUnknown || got.Retryable {
+		t.Fatalf("classification = %s retryable=%v", got.Code, got.Retryable)
 	}
 }
 

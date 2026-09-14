@@ -94,6 +94,18 @@ func TestKillCommandReferencesNonce(t *testing.T) {
 	}
 }
 
+func TestKillCommandConfirmsIdentityAndGroupDeath(t *testing.T) {
+	c := KillCommand("xyz")
+	for _, want := range []string{"lstart", "pgid", "sid", "cleanup-confirmed"} {
+		if !strings.Contains(c, want) {
+			t.Errorf("KillCommand does not verify %q: %s", want, c)
+		}
+	}
+	if strings.Contains(c, "echo killed:") {
+		t.Errorf("KillCommand still treats signal delivery as proof: %s", c)
+	}
+}
+
 // TestKillCommandChecksBothPidLocations guards the state-dir-unwritable path:
 // BuildScript records the pid under ${TMPDIR:-/tmp} when the state dir is not
 // writable, so the killer must look there too or the remote process leaks.
