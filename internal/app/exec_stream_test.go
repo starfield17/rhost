@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -27,18 +28,41 @@ func TestCancellationAfterCompletionKeepsForegroundExitCode(t *testing.T) {
 	ssh := stubTool(t, "ssh", `
 remote=$(printf '%s' "$last" | sed 's/^exec setsid / /')
 eval "$remote"
+: > "$RHOST_TEST_FOREGROUND_DONE"
 sleep 10
 `)
 	t.Setenv("RHOST_CACHE_DIR", t.TempDir())
+	donePath := t.TempDir() + "/foreground-done"
+	t.Setenv("RHOST_TEST_FOREGROUND_DONE", donePath)
 	a := &App{SSH: openssh.New(openssh.Config{
 		SSHBin: ssh, ControlPath: t.TempDir() + "/%C", BatchMode: true,
 	})}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	time.AfterFunc(time.Second, cancel)
-	res, aerr := a.ExecuteStream(ctx, StreamExecOptions{
-		ExecOptions: ExecOptions{Host: "example-host", Command: "printf done"},
-	})
+	type outcome struct {
+		res ExecResult
+		err *errs.Error
+	}
+	finished := make(chan outcome, 1)
+	go func() {
+		res, aerr := a.ExecuteStream(ctx, StreamExecOptions{
+			ExecOptions: ExecOptions{Host: "example-host", Command: "printf done"},
+		})
+		finished <- outcome{res: res, err: aerr}
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(donePath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("fake SSH did not observe foreground completion")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	got := <-finished
+	res, aerr := got.res, got.err
 	if aerr == nil || aerr.Code != errs.RemoteCommandCancelled {
 		t.Fatalf("error = %v, want REMOTE_COMMAND_CANCELLED", aerr)
 	}
