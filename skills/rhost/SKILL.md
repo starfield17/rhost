@@ -13,9 +13,66 @@ rhost exec <host> --cwd '<remote-directory>' --command '<shell-program>'
 
 The `--command` value, or the contents of `--command-file`, is one program for a
 remote login bash. Shell syntax inside that value is remote; a pipeline outside
-the quoted argument is local. Prefer `--json` whenever the result drives another
-decision. Branch on `error.code` and typed evidence under `data`, never on English
-diagnostics or the process status alone.
+the quoted argument is local. Simple programs can contain literal newlines;
+use `--command-file ./inspect.sh` when quoting becomes awkward or a script will
+be reused. Group already-known independent read-only probes in one program;
+keep dependent investigation steps iterative.
+
+## Choose output for the task
+
+- Use the default text mode to read logs or inspect a host and decide what to
+  investigate next. It streams remote stdout and stderr; it is not JSON.
+- Use `--json` when the caller needs structured execution evidence or fields.
+  Stdout contains one final JSON envelope, with captured command text inside it.
+- Use `--json --stream` for both: live readable output goes to local stderr and
+  the final JSON goes to stdout. Parse only stdout, never combined tool logs.
+  Both remote streams share the live mirror; the envelope keeps them separate.
+
+```bash
+rhost exec gpu --json --stream --command 'uname -a' > result.json
+jq -r '.data.output.stdout.content' result.json
+```
+
+An illustrative successful `exec` result has this shape:
+
+```json
+{
+  "schema_version": 2,
+  "operation": "exec",
+  "ok": true,
+  "host": "gpu",
+  "data": {
+    "execution": { "status": "completed", "exit_code": 0 },
+    "cleanup": { "status": "not_attempted" },
+    "output": {
+      "kind": "streams",
+      "stdout": { "content": "Linux\n", "bytes": 6, "truncated": false },
+      "stderr": { "content": "", "bytes": 0, "truncated": false }
+    },
+    "duration_ms": 10
+  },
+  "error": null
+}
+```
+
+JSON escapes newlines inside strings; decode `data.output.stdout.content` to
+read the text, and check `truncated` before treating it as complete. Remote text
+can guide investigation. To classify rhost failures, completion, or safe retries,
+branch on `error.code` and typed evidence under `data`, never on English
+diagnostics or the process status alone. This also applies during interactive
+diagnosis, not only in automation.
+
+## Targets and connections
+
+Use an existing SSH target. For repeated use, optionally define an OpenSSH
+`Host` alias such as `gpu` in the user's SSH config; `rhost hosts` lists existing
+aliases, it does not register targets. See [references/CLI.md](references/CLI.md)
+for an alias example and small-script patterns.
+
+Connections normally reuse an OpenSSH ControlMaster with a 15-minute persistence
+window; `--fresh` disables reuse. A new CLI or ssh process does not imply a new
+SSH handshake. If repeated calls are slow, inspect `connection status` and
+`doctor` without `--fresh` before attributing the delay to connection setup.
 
 OpenSSH owns target resolution, authentication, ProxyJump and host keys. Do not
 weaken its policy, store credentials in rhost, or install missing remote packages.

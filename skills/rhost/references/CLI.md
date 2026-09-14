@@ -35,6 +35,38 @@ For `exec`, read:
 - `data.cleanup.status`: `not_attempted`, `confirmed_stopped`, or `unconfirmed`;
 - `data.cancel_signal` when local SIGINT or SIGTERM ended the invocation.
 
+### Small scripts and exploration
+
+`--command` accepts literal newlines. For simple quoting, a short set of
+independent read-only probes can be one program:
+
+```bash
+rhost exec gpu --command '
+uname -a
+getconf _NPROCESSORS_ONLN
+df -h
+'
+```
+
+Each probe above runs even if an earlier one fails; the shell exit status is
+that of the last command. Use explicit checks when later work depends on an
+earlier result. Do not combine steps whose next command requires interpreting
+the previous output.
+
+When nesting quotes or adding branches becomes awkward, write an ordinary local
+script such as `inspect.sh` and pass its path:
+
+```bash
+rhost exec gpu --json --stream --command-file ./inspect.sh > result.json
+jq -r '.data.output.stdout.content' result.json
+```
+
+The file supplies program text while stdin remains available to the remote
+program. `--command-file -` and process substitution are not supported: this
+operand must be a regular local file. No persistent session is needed just to
+run a script. JSON string escaping is decoded by `jq -r`; pretty-printing the
+envelope alone does not turn captured text into multiple readable lines.
+
 ## Hosts and diagnosis
 
 ```bash
@@ -48,6 +80,25 @@ rhost connection reset <host> --json
 0` uses its default 60-second probe budget. `connection reset` stops a shared
 master accepting new channels; already accepted channels continue. `--fresh`
 uses no shared ControlMaster state.
+
+For a frequently used target, an optional entry in `~/.ssh/config` avoids
+repeating the login and hostname:
+
+```sshconfig
+Host gpu
+    HostName example-host
+    User user
+```
+
+Then use `rhost exec gpu --command 'uname -a'`. `hosts` enumerates existing SSH
+configuration aliases; an empty list does not prevent using `user@example-host`
+directly. rhost does not maintain a separate alias registry.
+
+Ordinary calls use OpenSSH `ControlMaster=auto` and `ControlPersist=15m`.
+To investigate slow repeated calls, inspect `connection status` and run
+`doctor <host> --json` to obtain reuse evidence. Reserve `doctor --fresh` for
+testing an independent connection. Elapsed time alone cannot distinguish a
+new handshake from remote login-shell startup or command execution costs.
 
 Useful paths include `data.hosts[]`, `data.complete`, `data.warnings[]`,
 `data.capabilities`, `data.state_dir`, `data.connection.master_status`,
