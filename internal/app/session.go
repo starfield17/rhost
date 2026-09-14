@@ -25,13 +25,14 @@ type SessionInfo struct {
 	CreatedAt   string `json:"created_at"`
 	InitialCwd  string `json:"initial_cwd,omitempty"`
 	Shell       string `json:"shell"`
-	Status      string `json:"status"` // alive | dead
+	Status      string `json:"status"` // alive | dead | unknown
 }
 
 // SessionExecResult is the outcome of running a command in a session.
 type SessionExecResult struct {
-	SessionID string
-	Output    string
+	SessionID  string
+	SessionRef string
+	Output     string
 	// ExitCode is nil unless this invocation produced token-bound completion
 	// evidence. A protocol failure must never acquire a default successful code.
 	ExitCode *int
@@ -46,17 +47,19 @@ type SessionExecResult struct {
 // fresh prompt. Foreground is present when another program still owns the pane.
 type SessionRecoverResult struct {
 	SessionID        string
+	SessionRef       string
 	Foreground       string
 	SessionPreserved bool
 }
 
 // SessionReadResult is an incremental read of a session's output log.
 type SessionReadResult struct {
-	SessionID string
-	From      int
-	Next      int
-	HasMore   bool
-	Data      string
+	SessionID  string
+	SessionRef string
+	From       int
+	Next       int
+	HasMore    bool
+	Data       string
 }
 
 var sessionNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
@@ -114,7 +117,7 @@ func mapHelperErr(code string) *errs.Error {
 	case "sessiondied":
 		return errs.New(errs.SessionNotFound, "session shell exited (the command likely ran `exit`)", false)
 	case "timeout":
-		return errs.New(errs.RemoteCommandTimeout, "command exceeded timeout in session", true)
+		return errs.New(errs.RemoteCommandTimeout, "command exceeded timeout in session", false)
 	case "locked":
 		return errs.New(errs.SessionUnhealthy, "session is busy (another writer holds the lock)", true)
 	case "inputfailed":
@@ -134,6 +137,8 @@ func mapHelperErr(code string) *errs.Error {
 		return errs.New(errs.RemoteDependencyMissing, "remote host is missing flock (util-linux)", false)
 	case "nameinuse":
 		return errs.New(errs.ConfigInvalid, "session name is already in use", false)
+	case "invalidcwd":
+		return errs.New(errs.ConfigInvalid, "initial working directory is not accessible", false)
 	case "newfailed":
 		return errs.New(errs.SessionUnhealthy, "could not create the tmux session", true)
 	case "protocol":
@@ -164,15 +169,15 @@ func (a *App) SessionCreate(ctx context.Context, host, name, cwd, shellName stri
 	if shellName != "bash" {
 		return SessionInfo{}, errs.New(errs.ConfigInvalid, "only --shell bash is supported", false)
 	}
+	if name != "" && !sessionNameRe.MatchString(name) {
+		return SessionInfo{}, errs.New(errs.ConfigInvalid, "invalid session name (use letters, digits, _ . -)", false)
+	}
 	id, err := newSessionID()
 	if err != nil {
 		return SessionInfo{}, errs.Wrap(errs.Internal, "could not generate session id", false, err)
 	}
 	if name == "" {
 		name = id
-	}
-	if !sessionNameRe.MatchString(name) {
-		return SessionInfo{}, errs.New(errs.ConfigInvalid, "invalid session name (use letters, digits, _ . -)", false)
 	}
 
 	meta := tmux.NewMeta(id, name, cwd, shellName)
@@ -184,7 +189,7 @@ func (a *App) SessionCreate(ctx context.Context, host, name, cwd, shellName stri
 	}
 	res, aerr := a.runHelper(ctx, host, script, timeout)
 	if aerr != nil {
-		return SessionInfo{}, aerr
+		return toSessionInfo(meta, "unknown"), aerr
 	}
 	stdout := string(res.Stdout)
 	if strings.Contains(stdout, "RHOST_ERR=") {
@@ -223,20 +228,20 @@ func sessionsFromList(stdout string) ([]SessionInfo, *errs.Error) {
 // SessionExec runs a command in a session and returns its output and status.
 func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, timeout time.Duration) (SessionExecResult, *errs.Error) {
 	if strings.TrimSpace(command) == "" {
-		return SessionExecResult{}, errs.New(errs.ConfigInvalid, "no command given", false)
+		return SessionExecResult{SessionRef: nameOrID}, errs.New(errs.ConfigInvalid, "no command given", false)
 	}
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
 	token, err := newSessionToken()
 	if err != nil {
-		return SessionExecResult{SessionID: nameOrID},
+		return SessionExecResult{SessionRef: nameOrID},
 			errs.Wrap(errs.Internal, "could not generate session command token", false, err)
 	}
 	script := tmux.ExecScript(nameOrID, command, timeout, token)
 	res, aerr := a.runHelper(ctx, host, script, sessionHelperTimeout(timeout))
 	if aerr != nil {
-		return SessionExecResult{}, aerr
+		return SessionExecResult{SessionRef: nameOrID}, aerr
 	}
 	oc := tmux.ParseExec(string(res.Stdout), token)
 	if oc.Err != "" {
@@ -244,14 +249,16 @@ func (a *App) SessionExec(ctx context.Context, host, nameOrID, command string, t
 		// to a prompt, so `session_preserved` is the helper's answer, not a guess
 		// made from the exit status of the CLI that gave up.
 		return SessionExecResult{
-			SessionID:        nameOrID,
+			SessionID:        oc.SessionID,
+			SessionRef:       nameOrID,
 			TimedOut:         oc.Err == "timeout",
 			SessionPreserved: oc.Recovered,
 		}, mapSessionExecErr(oc)
 	}
 	code := oc.ExitCode
 	return SessionExecResult{
-		SessionID:        nameOrID,
+		SessionID:        oc.SessionID,
+		SessionRef:       nameOrID,
 		SessionPreserved: true,
 		Output:           shell.StripANSI(oc.Output),
 		ExitCode:         &code,
@@ -264,12 +271,13 @@ func (a *App) SessionRecover(ctx context.Context, host, nameOrID string, timeout
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	result := SessionRecoverResult{SessionID: nameOrID}
+	result := SessionRecoverResult{SessionRef: nameOrID}
 	res, aerr := a.runHelper(ctx, host, tmux.RecoverScript(nameOrID, timeout), sessionHelperTimeout(timeout))
 	if aerr != nil {
 		return result, aerr
 	}
 	stdout := string(res.Stdout)
+	result.SessionID = extractField(stdout, "RHOST_ID=")
 	if code := extractField(stdout, "RHOST_ERR="); code != "" {
 		result.Foreground = extractField(stdout, "RHOST_FG=")
 		if code == "busy" {
@@ -277,7 +285,7 @@ func (a *App) SessionRecover(ctx context.Context, host, nameOrID string, timeout
 		}
 		return result, mapHelperErr(code)
 	}
-	if !strings.Contains(stdout, "RHOST_OK=recovered") {
+	if result.SessionID == "" || !strings.Contains(stdout, "RHOST_OK=recovered") {
 		return result, mapHelperErr("protocol")
 	}
 	result.SessionPreserved = true
@@ -332,22 +340,23 @@ func (a *App) SessionSend(ctx context.Context, host, nameOrID, data, key string,
 func (a *App) SessionRead(ctx context.Context, host, nameOrID string, since int, timeout time.Duration) (SessionReadResult, *errs.Error) {
 	res, aerr := a.runHelper(ctx, host, tmux.ReadScript(nameOrID, since, 0), timeout)
 	if aerr != nil {
-		return SessionReadResult{}, aerr
+		return SessionReadResult{SessionRef: nameOrID}, aerr
 	}
 	ro := tmux.ParseRead(string(res.Stdout))
 	if ro.Error != "" {
-		return SessionReadResult{}, mapHelperErr(ro.Error)
+		return SessionReadResult{SessionID: ro.SessionID, SessionRef: nameOrID}, mapHelperErr(ro.Error)
 	}
 	// A hard cut at the read byte limit can land mid-rune. Hold the partial
 	// trailing bytes back and let the next read re-deliver them, so JSON never
 	// carries a replacement character produced by rhost's own boundary.
 	data, next := trimPartialRead(ro.Data, ro.Next, ro.Size)
 	return SessionReadResult{
-		SessionID: nameOrID,
-		From:      ro.From,
-		Next:      next,
-		HasMore:   next < ro.Size,
-		Data:      shell.StripANSI(string(data)),
+		SessionID:  ro.SessionID,
+		SessionRef: nameOrID,
+		From:       ro.From,
+		Next:       next,
+		HasMore:    next < ro.Size,
+		Data:       shell.StripANSI(string(data)),
 	}, nil
 }
 

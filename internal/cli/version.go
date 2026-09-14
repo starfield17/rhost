@@ -24,23 +24,27 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			info := versionInfo{
-				Version:       buildinfo.Version,
-				Commit:        buildinfo.Commit,
-				BuildDate:     buildinfo.BuildDate,
-				GoVersion:     runtime.Version(),
-				SchemaVersion: output.SchemaVersion,
-			}
-			if jsonFlag {
-				writeEnvelope(output.Success("version", "", info))
-				return nil
-			}
-			fmt.Printf("rhost %s\n", info.Version)
-			fmt.Printf("commit:         %s\n", info.Commit)
-			fmt.Printf("build date:     %s\n", info.BuildDate)
-			fmt.Printf("go version:     %s\n", info.GoVersion)
-			fmt.Printf("schema version: %d\n", info.SchemaVersion)
+			renderVersion()
 			return nil
 		},
 	}
+}
+
+func renderVersion() {
+	info := versionInfo{
+		Version:       buildinfo.Version,
+		Commit:        buildinfo.Commit,
+		BuildDate:     buildinfo.BuildDate,
+		GoVersion:     runtime.Version(),
+		SchemaVersion: output.SchemaVersion,
+	}
+	if jsonFlag {
+		writeEnvelope(output.Success("version", "", info))
+		return
+	}
+	fmt.Printf("rhost %s\n", info.Version)
+	fmt.Printf("commit:         %s\n", info.Commit)
+	fmt.Printf("build date:     %s\n", info.BuildDate)
+	fmt.Printf("go version:     %s\n", info.GoVersion)
+	fmt.Printf("schema version: %d\n", info.SchemaVersion)
 }

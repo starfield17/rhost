@@ -9,9 +9,13 @@ pretending a failed local call proves the remote side stopped.
 
 Connection and authentication:
 
-- `SSH_UNREACHABLE` — retryable. If the message says OpenSSH gave no diagnostic,
-  its reason was suppressed at the default log level: re-run once with
-  `RHOST_SSH_LOG_LEVEL=VERBOSE` to see it.
+- `SSH_UNREACHABLE` — evidence of a connection-stage transport failure. A retry
+  may establish transport, but it never establishes that a side effect is safe
+  to replay.
+- `SSH_CONTROL_FAILED` — checking or stopping the shared OpenSSH master failed.
+  Treat its state as unknown; do not delete a socket or claim it was closed.
+- `REMOTE_EXECUTION_UNKNOWN` — completion evidence is missing and the failure is
+  not proven to be pre-execution. It is not retryable; inspect remote state.
 - `SSH_AUTH_FAILED` — a key or agent problem on this machine. Fix it here; blind
   retries cannot.
 - `HOST_KEY_FAILED` — the host key changed. Investigate (rebuild? wrong host?),
@@ -30,8 +34,9 @@ Time:
 
 - `REMOTE_COMMAND_TIMEOUT` — the deadline passed. For `exec`, check
   `data.cleanup_confirmed`: when true the remote process group was observed and
-  killed and `error.retryable` may be true; when false the command may still be
-  running and `error.retryable` is false. Check state before another side
+  stopped, but this does not undo side effects or cover a process that detached
+  from the managed group. The error remains non-retryable. When false the
+  command may still be running. Check state before another side
   effect. For a session, check `data.session_preserved`: false means something
   still holds the pane (`session read` to see what, `session recover` to
   interrupt it). If work
@@ -101,6 +106,8 @@ Input and adapter:
 - `USAGE_ERROR` — the command line itself was invalid (missing host, unknown
   flag). Fix the invocation; never retryable.
 - `INTERNAL` — adapter bug. Report it with the JSON envelope attached.
+- `JOB_NOT_FOUND` / `JOB_STATE_UNKNOWN` — historical v1 wire codes retained for
+  stored envelopes. The current CLI has no job commands.
 
 ## Recipes
 
@@ -120,8 +127,10 @@ to a scheduler already installed on the remote host, then use that scheduler's
 own status, log, cancellation, and retention interfaces. rhost does not choose,
 install, or unify schedulers.
 
-**Everything fails with "no diagnostic".** Re-run one command with
-`RHOST_SSH_LOG_LEVEL=VERBOSE`; rhost keeps OpenSSH quiet by default.
+**Every shared-connection surface fails while plain SSH works.** Run
+`connection status`, verify the host with `doctor --fresh`, then use
+`connection reset`. Finally inspect the result of the earlier operation; do not
+replay it as a connection test. `unknown` is not the same as absent.
 
 **You need to know what rhost did earlier.** `rhost audit --json` reads the local
 trail (bounded operation metadata, never environment maps or file contents). It

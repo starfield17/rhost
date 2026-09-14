@@ -88,7 +88,8 @@ func buildScript(spec ExecSpec, separator string) string {
 	b.WriteString(`RHOST_RD="` + state + "\"\n")
 	b.WriteString("mkdir -p \"$RHOST_RD/run\" 2>/dev/null && RHOST_PD=\"$RHOST_RD/run\" || RHOST_PD=\"${TMPDIR:-/tmp}\"\n")
 	b.WriteString("RHOST_PF=\"$RHOST_PD/rhost-" + spec.Nonce + ".pid\"\n")
-	b.WriteString("printf '%s' \"$$\" > \"$RHOST_PF\" 2>/dev/null || RHOST_PF=\"\"\n")
+	b.WriteString("RHOST_PS=$(ps -o lstart= -p \"$$\" 2>/dev/null)\n")
+	b.WriteString("[ -n \"$RHOST_PS\" ] && printf '%s\\n%s\\n' \"$$\" \"$RHOST_PS\" > \"$RHOST_PF\" 2>/dev/null || RHOST_PF=\"\"\n")
 	b.WriteString("trap 'rm -f \"$RHOST_PF\"' EXIT\n")
 
 	if spec.Cwd != "" {
@@ -182,9 +183,14 @@ func KillCommand(nonce string) string {
 	name := "rhost-" + nonce + ".pid"
 	return `f1="${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost}/run/` + name + `"; ` +
 		`f2="${TMPDIR:-/tmp}/` + name + `"; ` +
-		`p=$(cat "$f1" 2>/dev/null); ` +
-		`[ -n "$p" ] || p=$(cat "$f2" 2>/dev/null); ` +
-		`if [ -n "$p" ]; then ` +
-		`kill -TERM -"$p" 2>/dev/null; sleep 0.3; kill -KILL -"$p" 2>/dev/null; ` +
-		`rm -f "$f1" "$f2"; echo killed:$p; else echo no-pid; fi`
+		`pf="$f1"; [ -f "$pf" ] || pf="$f2"; ` +
+		`{ IFS= read -r p; IFS= read -r started; } < "$pf" 2>/dev/null || { echo cleanup-unknown; exit 0; }; ` +
+		`case "$p" in ''|*[!0-9]*) echo cleanup-unknown; exit 0;; esac; ` +
+		`now=$(ps -o lstart= -p "$p" 2>/dev/null); pg=$(ps -o pgid= -p "$p" 2>/dev/null | tr -d ' '); sid=$(ps -o sid= -p "$p" 2>/dev/null | tr -d ' '); ` +
+		`[ -n "$started" ] && [ "$now" = "$started" ] && [ "$pg" = "$p" ] && [ "$sid" = "$p" ] || { echo cleanup-unknown; exit 0; }; ` +
+		`kill -TERM -"$p" 2>/dev/null || { echo cleanup-unknown; exit 0; }; ` +
+		`i=0; while [ "$i" -lt 10 ] && ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx "$p"; do sleep 0.1; i=$((i+1)); done; ` +
+		`if ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx "$p"; then kill -KILL -"$p" 2>/dev/null || { echo cleanup-unknown; exit 0; }; fi; ` +
+		`i=0; while [ "$i" -lt 10 ] && ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx "$p"; do sleep 0.1; i=$((i+1)); done; ` +
+		`if ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx "$p"; then echo cleanup-unknown; else rm -f "$f1" "$f2"; echo cleanup-confirmed; fi`
 }

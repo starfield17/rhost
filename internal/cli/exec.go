@@ -19,33 +19,50 @@ func newExecCmd() *cobra.Command {
 		timeout   time.Duration
 		envs      []string
 		maxOutput int
+		fresh     bool
+		stream    bool
 	)
 	command := &shellCommandValue{}
+	commandFile := &commandFileValue{}
 	cmd := &cobra.Command{
-		Use:   "exec <host> --command <shell-program>",
+		Use:   "exec <host> (--command <shell-program> | --command-file <local-file>)",
 		Short: "Run a shell program on a remote host",
 		Long: `Run one exact shell program in a fresh remote execution context.
 
 Each call is independent: no shell state, cwd, or environment persists between
-exec calls. The --command value runs under a remote login bash, so pipes,
+exec calls. The --command value or --command-file contents run under a remote login bash, so pipes,
 redirections, variables and compound shell syntax work:
 
   rhost exec gpu --command 'pytest -q'
   rhost exec gpu --command 'echo hi | wc -l'
+  rhost exec gpu --command-file ./inspect.sh
 
 Human mode streams stdout and stderr and forwards stdin. There is no default
 execution deadline. The process status mirrors the remote command; adapter
-failures use 255 and timeouts use 124.`,
-		Args: command.validate("<host>"),
+failures use 255 and timeouts use 124. Use --json --stream to mirror live output
+to stderr while stdout remains the final JSON document.`,
+		Args: validateExecInput(command, commandFile, &stream),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDirectExec(cmd, args[0], command.value, cwd, envs, timeout, maxOutput)
+			program := command.value
+			if commandFile.set {
+				var err error
+				program, err = readCommandFile(commandFile.value)
+				if err != nil {
+					emitFailure("exec", args[0], configErr(err))
+					return nil
+				}
+			}
+			return runDirectExec(cmd, args[0], program, cwd, envs, timeout, maxOutput, fresh, stream)
 		},
 	}
 	bindShellCommand(cmd, command)
+	bindCommandFile(cmd, commandFile)
 	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory on the remote host")
 	cmd.Flags().IntVar(&maxOutput, "max-output-bytes", 0, "captured bytes per stream (0 = unlimited; JSON defaults to 1 MiB)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "execution deadline; 0 waits until completion")
 	cmd.Flags().StringArrayVar(&envs, "env", nil, "environment variable KEY=VALUE (repeatable)")
+	cmd.Flags().BoolVar(&fresh, "fresh", false, "use an independent SSH connection")
+	cmd.Flags().BoolVar(&stream, "stream", false, "forward output to stderr while retaining the final JSON result")
 	return cmd
 }
 

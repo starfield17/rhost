@@ -71,10 +71,16 @@ The `--command` value is one complete remote shell program. Pipelines,
 redirects, variables, and compound syntax inside that value run in a fresh
 remote login-bash context. Shell syntax outside the value remains local. Local
 flags may appear before or after `--command`; use `-c` as its short form.
+For a complex local script, use `--command-file ./script.sh`; stdin then remains
+available to that program. Add `--fresh` when diagnosis requires an independent
+SSH connection. `connection status/reset` exposes and recovers the ordinary
+shared OpenSSH master without affecting dedicated tunnels.
 
 Human mode streams output and has no default deadline or output cap. Add
 `--timeout 30s` when a command has a meaningful bound. Use `--json` when the
 caller needs a versioned result envelope rather than terminal output.
+Add `--stream` with JSON to mirror live command output to stderr while keeping
+stdout as one final envelope.
 
 ## Why not just SSH?
 
@@ -174,6 +180,10 @@ A remote program can return the same numeric values. In ambiguous cases inspect
 The process-status table does not describe the JSON sentinel: an exec
 `data.exit_code` of `-1` means rhost did not observe a remote command status.
 Use `error.code`, `data.timed_out`, and `data.cancelled` to classify that result.
+Session exec/read/recover return the remotely resolved canonical `session_id`
+and preserve the caller's input in `session_ref`. Missing completion evidence is
+reported conservatively as `REMOTE_EXECUTION_UNKNOWN`; confirmed process-group
+cleanup does not by itself make a side effect safe to replay.
 
 ## Use as an agent skill
 

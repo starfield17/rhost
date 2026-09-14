@@ -142,6 +142,14 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	b.WriteString(tmuxPreflight)
 	b.WriteString("command -v flock >/dev/null 2>&1 || { echo RHOST_ERR=noflock; exit 0; }\n")
 	b.WriteString(nameOfFunc)
+	if meta.InitialCwd != "" {
+		if meta.InitialCwd == "~" {
+			b.WriteString("CWD=\"$HOME\"\n")
+		} else {
+			p("CWD=%s\n", shell.PathQuote(meta.InitialCwd))
+		}
+		b.WriteString("[ -d \"$CWD\" ] && (cd -- \"$CWD\") 2>/dev/null || { echo RHOST_ERR=invalidcwd; exit 0; }\n")
+	}
 	b.WriteString("mkdir -p \"$BASE/sessions\" && chmod 700 \"$BASE/sessions\" 2>/dev/null || { echo RHOST_ERR=newfailed; exit 0; }\n")
 	b.WriteString("exec 8> \"$BASE/sessions/.create.lock\"\n")
 	b.WriteString("flock -w 30 8 || { echo RHOST_ERR=locked; exit 0; }\n")
@@ -164,7 +172,7 @@ func CreateScript(meta Meta, paneShellCmd string) string {
 	b.WriteString("trap 'exit 1' HUP INT TERM\n")
 	p("tmux kill-session -t %s 2>/dev/null\n", tmux)
 	if meta.InitialCwd != "" {
-		p("tmux new-session -d -s %s -x 220 -y 50 -c %s %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.PathQuote(meta.InitialCwd), shell.Quote(paneShellCmd))
+		p("tmux new-session -d -s %s -x 220 -y 50 -c \"$CWD\" %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.Quote(paneShellCmd))
 	} else {
 		p("tmux new-session -d -s %s -x 220 -y 50 %s || { echo RHOST_ERR=newfailed; exit 0; }\n", tmux, shell.Quote(paneShellCmd))
 	}
@@ -258,6 +266,7 @@ func ExecScript(nameOrID, command string, timeout time.Duration, token string) s
 	b.WriteString(basePreamble)
 	b.WriteString(resolveFunc)
 	p("RHOST_RESOLVE %s || { echo RHOST_ERR=nosession; exit 0; }\n", shell.Quote(nameOrID))
+	b.WriteString("echo \"RHOST_ID=$RHOST_ID\"\n")
 	b.WriteString(tmuxPreflight)
 	b.WriteString(flockPreflight)
 	b.WriteString("DIR=\"$RHOST_DIR\"; LOG=\"$DIR/pty.log\"; LOCK=\"$DIR/lock\"; TMUX=\"$RHOST_TMUX\"\n")
@@ -404,6 +413,7 @@ func RecoverScript(nameOrID string, timeout time.Duration) string {
 	b.WriteString(basePreamble)
 	b.WriteString(resolveFunc)
 	p("RHOST_RESOLVE %s || { echo RHOST_ERR=nosession; exit 0; }\n", shell.Quote(nameOrID))
+	b.WriteString("echo \"RHOST_ID=$RHOST_ID\"\n")
 	b.WriteString(tmuxPreflight)
 	b.WriteString(flockPreflight)
 	b.WriteString("DIR=\"$RHOST_DIR\"; LOG=\"${RHOST_DIR%/}/pty.log\"; LOCK=\"$DIR/lock\"; TMUX=\"$RHOST_TMUX\"\n")
@@ -448,6 +458,7 @@ func ReadScript(nameOrID string, since int, maxBytes int) string {
 	b.WriteString(basePreamble)
 	b.WriteString(resolveFunc)
 	p("RHOST_RESOLVE %s || { echo RHOST_ERR=nosession; exit 0; }\n", shell.Quote(nameOrID))
+	b.WriteString("echo \"RHOST_ID=$RHOST_ID\"\n")
 	b.WriteString("DIR=\"$RHOST_DIR\"; LOG=\"$DIR/pty.log\"\n")
 	b.WriteString("LOG=$(printf '%s' \"$LOG\" | sed 's#/$##')\n")
 	b.WriteString("size=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n")

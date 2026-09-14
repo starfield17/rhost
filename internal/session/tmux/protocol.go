@@ -42,9 +42,10 @@ func ParseList(stdout string) []ListEntry {
 
 // ExecOutcome is the parsed result of ExecScript.
 type ExecOutcome struct {
-	Output   string
-	ExitCode int
-	Err      string // non-empty for a helper-level problem (timeout, nosession, …)
+	SessionID string
+	Output    string
+	ExitCode  int
+	Err       string // non-empty for a helper-level problem (timeout, nosession, …)
 	// Foreground is the pane's foreground command when the helper refused with
 	// "busy". It names what is holding the terminal, so the answer can say so.
 	Foreground string
@@ -60,6 +61,7 @@ func ParseExec(stdout, expectedToken string) ExecOutcome {
 	out := ExecOutcome{ExitCode: -1}
 	if err := fieldLine(stdout, "RHOST_ERR="); err != "" {
 		out.Err = err
+		out.SessionID = fieldLine(stdout, "RHOST_ID=")
 		out.Foreground = fieldLine(stdout, "RHOST_FG=")
 		out.Recovered = fieldLine(stdout, "RHOST_RECOVERED=") == "1"
 		return out
@@ -73,13 +75,19 @@ func ParseExec(stdout, expectedToken string) ExecOutcome {
 			exits = append(exits, strings.TrimPrefix(line, "RHOST_EXIT="))
 		case strings.HasPrefix(line, "RHOST_OUTPUT="):
 			outputs = append(outputs, strings.TrimPrefix(line, "RHOST_OUTPUT="))
+		case strings.HasPrefix(line, "RHOST_ID="):
+			if out.SessionID != "" {
+				out.Err = "protocol"
+				return out
+			}
+			out.SessionID = strings.TrimPrefix(line, "RHOST_ID=")
 		case line == "":
 		default:
 			out.Err = "protocol"
 			return out
 		}
 	}
-	if expectedToken == "" || len(tokens) != 1 || tokens[0] != expectedToken || len(exits) != 1 || len(outputs) != 1 {
+	if expectedToken == "" || out.SessionID == "" || len(tokens) != 1 || tokens[0] != expectedToken || len(exits) != 1 || len(outputs) != 1 {
 		out.Err = "protocol"
 		return out
 	}
@@ -100,11 +108,12 @@ func ParseExec(stdout, expectedToken string) ExecOutcome {
 
 // ReadOutcome is the parsed result of ReadScript.
 type ReadOutcome struct {
-	From  int
-	Next  int
-	Size  int
-	Data  []byte
-	Error string
+	SessionID string
+	From      int
+	Next      int
+	Size      int
+	Data      []byte
+	Error     string
 }
 
 // ParseRead parses ReadScript output.
@@ -112,12 +121,19 @@ func ParseRead(stdout string) ReadOutcome {
 	out := ReadOutcome{}
 	if err := fieldLine(stdout, "RHOST_ERR="); err != "" {
 		out.Error = err
+		out.SessionID = fieldLine(stdout, "RHOST_ID=")
 		return out
 	}
 	seen := map[string]bool{}
 	var b64buf strings.Builder
 	for _, line := range strings.Split(stdout, "\n") {
 		switch {
+		case strings.HasPrefix(line, "RHOST_ID="):
+			if out.SessionID != "" {
+				out.Error = "protocol"
+				return out
+			}
+			out.SessionID = strings.TrimPrefix(line, "RHOST_ID=")
 		case strings.HasPrefix(line, "RHOST_FROM="):
 			if !parseReadField(line, "RHOST_FROM=", &out.From, seen) {
 				out.Error = "protocol"
@@ -140,7 +156,7 @@ func ParseRead(stdout string) ReadOutcome {
 			b64buf.WriteString(strings.TrimSpace(line))
 		}
 	}
-	if !seen["RHOST_FROM="] || !seen["RHOST_NEXT="] || !seen["RHOST_SIZE="] {
+	if out.SessionID == "" || !seen["RHOST_FROM="] || !seen["RHOST_NEXT="] || !seen["RHOST_SIZE="] {
 		out.Error = "protocol"
 		return out
 	}

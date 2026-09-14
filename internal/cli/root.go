@@ -25,7 +25,8 @@ var (
 	// the remote command's status while still returning through cobra.
 	exitCode int
 	// jsonFlag is bound to the root persistent --json flag.
-	jsonFlag bool
+	jsonFlag    bool
+	versionFlag bool
 )
 
 // Run builds and executes the command tree, returning the process exit code.
@@ -101,14 +102,19 @@ func newRootCmd() *cobra.Command {
 		Short: "Run ordinary commands on an SSH-reachable host",
 		Long: `rhost runs an ordinary shell command in a remote execution context.
 
-Use rhost exec TARGET --command 'program' for the normal path. rhost orchestrates your
+Use rhost exec TARGET --command 'program' or --command-file PATH for the normal path. rhost orchestrates your
 existing OpenSSH configuration and never duplicates authentication or host-key
 policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname.`,
 	}
 	root.PersistentFlags().BoolVar(&jsonFlag, "json", false, "emit machine-readable JSON on stdout")
+	root.Flags().BoolVar(&versionFlag, "version", false, "print version information")
 	root.RunE = func(c *cobra.Command, args []string) error {
 		if len(args) != 0 {
-			return fmt.Errorf("direct execution requires: rhost exec <host> --command <string>")
+			return fmt.Errorf("direct execution requires: rhost exec <host> (--command <string> | --command-file <path>)")
+		}
+		if versionFlag {
+			renderVersion()
+			return nil
 		}
 		if jsonFlag {
 			emitFailure("usage", "", errs.New(errs.UsageError, "rhost needs a subcommand", false))
@@ -118,6 +124,7 @@ policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname
 	}
 	root.AddCommand(
 		newExecCmd(),
+		newConnectionCmd(),
 		newTunnelCmd(),
 		newDoctorCmd(),
 		newHostsCmd(),
@@ -129,7 +136,7 @@ policy. A target is an alias from ~/.ssh/config, a user@host, or a bare hostname
 	return root
 }
 
-func runDirectExec(cmd *cobra.Command, host, command, cwd string, envs []string, timeout time.Duration, maxOutput int) error {
+func runDirectExec(cmd *cobra.Command, host, command, cwd string, envs []string, timeout time.Duration, maxOutput int, fresh, stream bool) error {
 	if timeout < 0 || maxOutput < 0 || maxOutput > maxCLIOutputBytes {
 		emitFailure("exec", host, errs.New(errs.ConfigInvalid,
 			"--timeout must be non-negative and --max-output-bytes between 0 and 67108864", false))
@@ -172,11 +179,14 @@ func runDirectExec(cmd *cobra.Command, host, command, cwd string, envs []string,
 	var stdout, stderr io.Writer = os.Stdout, os.Stderr
 	if jsonFlag {
 		stdout, stderr = nil, nil
+		if stream {
+			stdout, stderr = os.Stderr, os.Stderr
+		}
 	}
 	audit := startAudit("exec", host)
 	res, aerr := app.NewDefault().ExecuteStream(ctx, app.StreamExecOptions{
 		ExecOptions: app.ExecOptions{Host: host, Command: command, Cwd: cwd, Env: env,
-			Timeout: timeout, MaxOutputBytes: maxOutput},
+			Timeout: timeout, MaxOutputBytes: maxOutput, Fresh: fresh},
 		Stdin: os.Stdin, Stdout: stdout, Stderr: stderr,
 	})
 	if n := sig.Load(); n != 0 {
@@ -192,6 +202,12 @@ func runDirectExec(cmd *cobra.Command, host, command, cwd string, envs []string,
 			writeEnvelope(output.Failure("exec", host, execData(res), aerr))
 		} else {
 			fmt.Fprintf(os.Stderr, "rhost: %s: %s\n", aerr.Code, aerr.Message)
+			fmt.Fprintf(os.Stderr, "exit_code=%d timed_out=%t cancelled=%t cleanup_confirmed=%t",
+				res.ExitCode, res.TimedOut, res.Cancelled, res.CleanupConfirmed)
+			if res.CancelSignal != "" {
+				fmt.Fprintf(os.Stderr, " cancel_signal=%s", res.CancelSignal)
+			}
+			fmt.Fprintln(os.Stderr)
 		}
 		if aerr.Code == errs.RemoteCommandCancelled {
 			if res.CancelSignal == "SIGINT" {

@@ -47,6 +47,7 @@ func (a *App) ExecuteStream(ctx context.Context, opts StreamExecOptions) (ExecRe
 	stdout.cancel, stderr.cancel = cancelRun, cancelRun
 	res, runErr := a.SSH.RunPipe(runCtx, opts.Host, openssh.WrapScript(script), openssh.PipeOptions{
 		Timeout: opts.Timeout, Stdin: opts.Stdin, Stdout: stdout, Stderr: stderr,
+		Fresh: opts.Fresh,
 	})
 	out.Duration = res.Duration
 	out.Stderr, out.StderrBytes, out.StderrTruncated = stderr.result()
@@ -54,13 +55,25 @@ func (a *App) ExecuteStream(ctx context.Context, opts StreamExecOptions) (ExecRe
 	out.Stdout, out.StdoutBytes, out.StdoutTruncated = stdout.result()
 
 	if writeErr := firstStreamError(stdout.err(), stderr.err()); writeErr != nil {
-		cleanup := a.cleanupExec(opts.Host, nonce)
+		cleanup := a.cleanupExec(opts.Host, nonce, opts.Fresh)
 		out.CleanupConfirmed = cleanup
 		return out, errs.Wrap(errs.OutputWriteFailed, "writing command output: "+writeErr.Error(), false, writeErr)
 	}
+	if res.Cancelled && complete {
+		out.Cancelled = true
+		out.ExitCode = code
+		return out, errs.New(errs.RemoteCommandCancelled,
+			"local call was cancelled after the foreground program completed", false)
+	}
+	if res.TimedOut && complete {
+		out.TimedOut = true
+		out.ExitCode = code
+		return out, errs.New(errs.RemoteCommandTimeout,
+			"execution deadline passed after the foreground program completed; background work may still hold the channel", false)
+	}
 	if res.TimedOut || res.Cancelled {
 		out.TimedOut, out.Cancelled = res.TimedOut, res.Cancelled
-		out.CleanupConfirmed = a.cleanupExec(opts.Host, nonce)
+		out.CleanupConfirmed = a.cleanupExec(opts.Host, nonce, opts.Fresh)
 		if res.Cancelled {
 			return out, errs.New(errs.RemoteCommandCancelled, "command cancelled", false)
 		}
@@ -68,6 +81,14 @@ func (a *App) ExecuteStream(ctx context.Context, opts StreamExecOptions) (ExecRe
 			return out, executionTimeout(opts.Timeout, true)
 		}
 		return out, executionTimeout(opts.Timeout, false)
+	}
+	if complete && runErr != nil {
+		// A completed foreground program can be followed by a local WaitDelay when
+		// background work inherited an SSH pipe. The token-bound status remains
+		// valid; it describes only that foreground program, never the background
+		// work it launched.
+		out.ExitCode = code
+		return out, nil
 	}
 	if runErr != nil {
 		if errors.Is(runErr, config.ErrUnsafeLocalState) {
@@ -103,11 +124,14 @@ func validateExecOptions(opts ExecOptions, allowNoCapture bool) *errs.Error {
 	return nil
 }
 
-func (a *App) cleanupExec(host, nonce string) bool {
+func (a *App) cleanupExec(host, nonce string, fresh bool) bool {
 	kctx, cancel := context.WithTimeout(context.Background(), killTimeout)
 	defer cancel()
-	res, err := a.SSH.Run(kctx, host, openssh.WrapScript(openssh.KillCommand(nonce)), killTimeout)
-	return err == nil && !res.TimedOut && bytes.Contains(res.Stdout, []byte("killed:"))
+	res, err := a.SSH.RunWith(kctx, host, openssh.WrapScript(openssh.KillCommand(nonce)), openssh.RunOptions{
+		Timeout: killTimeout,
+		Fresh:   fresh,
+	})
+	return err == nil && !res.TimedOut && bytes.Contains(res.Stdout, []byte("cleanup-confirmed"))
 }
 
 type countedStream struct {

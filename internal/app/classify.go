@@ -27,7 +27,7 @@ func classifyMissingMarker(res openssh.Result) *errs.Error {
 			lineMatching(stderr, "command not found"), false)
 	}
 
-	if e := classifySSH(stderr); e != nil {
+	if e := classifySSH(stderr, res.ExitCode); e != nil {
 		return e
 	}
 
@@ -40,17 +40,17 @@ func classifyMissingMarker(res openssh.Result) *errs.Error {
 		// ssh said nothing, which happens for real failures: at LogLevel=ERROR
 		// OpenSSH suppresses its own connection diagnostics. Point at the switch
 		// that makes the cause visible instead of reporting a bare "no diagnostic".
-		return errs.Wrap(errs.SSHUnreachable,
+		return errs.Wrap(errs.RemoteExecutionUnknown,
 			fmt.Sprintf("ssh failed with exit status %d and no diagnostic; "+
 				"re-run with RHOST_SSH_LOG_LEVEL=VERBOSE to see OpenSSH's reason", res.ExitCode),
-			true, nil)
+			false, nil)
 	}
-	return errs.Wrap(errs.SSHUnreachable, msg, true, nil)
+	return errs.Wrap(errs.RemoteExecutionUnknown, msg, false, nil)
 }
 
 // classifySSH maps OpenSSH's own stderr diagnostics onto taxonomy codes. This
 // never disables host-key checking; it only makes failures machine-readable.
-func classifySSH(stderr string) *errs.Error {
+func classifySSH(stderr string, exitCode int) *errs.Error {
 	s := stderr
 	switch {
 	case strings.Contains(s, "ControlPath too long"),
@@ -60,8 +60,10 @@ func classifySSH(stderr string) *errs.Error {
 		return errs.Wrap(errs.ConfigInvalid, firstLine(s), false, nil)
 	case strings.Contains(s, "Host key verification failed"):
 		return errs.New(errs.HostKeyFailed, "host key verification failed", false)
-	case strings.Contains(s, "Permission denied"),
-		strings.Contains(s, "no supported authentication methods"):
+	case exitCode == 255 && (strings.Contains(s, "Permission denied (publickey") ||
+		strings.Contains(s, "Permission denied (password") ||
+		strings.Contains(s, "Permission denied (keyboard-interactive") ||
+		strings.Contains(s, "no supported authentication methods")):
 		return errs.Wrap(errs.SSHAuthFailed, firstLine(stderr), false, nil)
 	case strings.Contains(s, "Could not resolve hostname"),
 		strings.Contains(s, "Name or service not known"):
@@ -73,10 +75,6 @@ func classifySSH(stderr string) *errs.Error {
 		return errs.Wrap(errs.SSHUnreachable, "connection timed out", true, nil)
 	case strings.Contains(s, "No route to host"):
 		return errs.Wrap(errs.SSHUnreachable, "no route to host", true, nil)
-	case strings.Contains(s, "Connection closed"),
-		strings.Contains(s, "Connection reset"),
-		strings.Contains(s, "Broken pipe"):
-		return errs.Wrap(errs.SSHUnreachable, firstLine(stderr), true, nil)
 	}
 	return nil
 }

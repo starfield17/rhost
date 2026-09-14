@@ -153,7 +153,7 @@ func (c *Client) OpenTunnel(ctx context.Context, host, kind, listen, destination
 		"-o", "ServerAliveInterval=15",
 		"-o", "ServerAliveCountMax=3",
 	}
-	args = append(args, c.options()...)
+	args = append(args, c.options(false)...)
 	args = append(args, "-fNT", flag, spec, "--", host)
 
 	runner, cancel := context.WithTimeout(ctx, 30*time.Second)

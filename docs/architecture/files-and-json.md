@@ -63,15 +63,16 @@ The top-level envelope is fixed. Operation data uses these canonical paths:
 | --- | --- | --- |
 | exec | — | `data.stdout`, `data.stderr`, `data.exit_code` |
 | session create/list | `session_id` | `data.sessions[]` for list |
-| session exec | `data.session_id` | `data.stdout` (PTY output), `data.output_kind == "pty"`, `data.exit_code` (integer or null) |
-| session recover | `data.session_id` | `data.session_preserved`, `data.foreground` when busy |
+| session exec | `data.session_id`, `data.session_ref` | `data.stdout` (PTY output), `data.output_kind == "pty"`, `data.exit_code` (integer or null) |
+| session recover | `data.session_id`, `data.session_ref` | `data.session_preserved`, `data.foreground` when busy |
 | tunnel open/list | `data.tunnel_id` / `data.tunnels[].tunnel_id` | `id` remains an identical compatibility alias |
-| session read | `data.session_id` | `data.content`, `data.encoding == "utf-8"` |
+| session read | `data.session_id`, `data.session_ref` | `data.content`, `data.encoding == "utf-8"` |
 | hosts | — | `data.hosts[]`, discovery metadata |
 | audit | — | `data.entries[]` |
 
-Session exec accepts completion only with an invocation-specific token and a
-valid exit status. Its `data.stdout` name is a compatibility field: because the
+Session exec accepts completion only with an invocation-specific token, the
+canonical ID resolved by the remote helper, and a valid exit status. Its
+`data.stdout` name is a compatibility field: because the
 command runs in a tmux PTY, it contains merged terminal output and cannot be
 split into stdout and stderr; `data.output_kind` is always `"pty"`. Unknown exit
 status is `null`, never zero; malformed helper results return

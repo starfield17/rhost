@@ -17,7 +17,7 @@ Use `--data 'python3 -i' --enter` to paste text and press Enter in one
 operation. Incremental reads use byte cursors and return UTF-8 content.
 
 The tmux helper is an internal line protocol. Successful `session exec` responses
-carry exactly one `RHOST_TOKEN`, `RHOST_EXIT`, and base64-encoded `RHOST_OUTPUT`;
+carry one resolved `RHOST_ID`, exactly one `RHOST_TOKEN`, `RHOST_EXIT`, and base64-encoded `RHOST_OUTPUT`;
 `session read` responses carry exactly one non-negative `RHOST_FROM`, `RHOST_NEXT`,
 and `RHOST_SIZE` followed by base64 content. Missing, duplicate, malformed, or
 inconsistent fields are protocol failures and become `SESSION_UNHEALTHY`; they
@@ -35,6 +35,12 @@ scheduler. The caller invokes that scheduler explicitly through `rhost exec`
 and uses its native status, log, cancellation, and retention interfaces. rhost
 does not install, select, or emulate a scheduler, and sessions are not a generic
 job-management substitute.
+
+If a caller deliberately starts unmanaged background work, the entire background
+group must redirect stdin, stdout and stderr away from SSH and record its own
+log, process identity and completion status. A vanished process without a
+completion record is unknown; matching a process name is not proof of success.
+Silence or a harness interruption does not prove that remote work is stuck.
 
 ## Tunnels
 

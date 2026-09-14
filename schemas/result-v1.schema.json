@@ -66,10 +66,12 @@
                 "REMOTE_COMMAND_CANCELLED",
                 "REMOTE_COMMAND_TIMEOUT",
                 "REMOTE_DEPENDENCY_MISSING",
+                "REMOTE_EXECUTION_UNKNOWN",
                 "SESSION_BUSY",
                 "SESSION_NOT_FOUND",
                 "SESSION_UNHEALTHY",
                 "SSH_AUTH_FAILED",
+                "SSH_CONTROL_FAILED",
                 "SSH_UNREACHABLE",
                 "SYNC_REJECTED",
                 "TRANSFER_FAILED",
@@ -141,6 +143,10 @@
         "session_id": {
           "type": "string"
         },
+        "session_ref": {
+          "type": "string",
+          "description": "The session name or ID supplied by the caller. Optional for compatibility with earlier v1 records."
+        },
         "stdout": {
           "type": "string",
           "description": "Captured terminal output from the session PTY; stdout and stderr are not separable."
@@ -178,6 +184,10 @@
         "session_id": {
           "type": "string"
         },
+        "session_ref": {
+          "type": "string",
+          "description": "The session name or ID supplied by the caller. Optional for compatibility with earlier v1 records."
+        },
         "content": {
           "type": "string"
         },
@@ -208,12 +218,28 @@
         "session_id": {
           "type": "string"
         },
+        "session_ref": {
+          "type": "string",
+          "description": "The session name or ID supplied by the caller. Optional for compatibility with earlier v1 records."
+        },
         "session_preserved": {
           "type": "boolean"
         },
         "foreground": {
           "type": "string"
         }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "required": ["master_status", "control_path"],
+      "additionalProperties": false,
+      "properties": {
+        "master_status": { "enum": ["alive", "absent", "unknown"] },
+        "control_path": { "type": "string" },
+        "master_pid": { "type": "integer", "minimum": 1 },
+        "diagnostic": { "type": "string" },
+        "stopped": { "type": "boolean" }
       }
     },
     "tunnel": {

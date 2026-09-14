@@ -21,11 +21,13 @@ const (
 	ConfigInvalid           Code = "CONFIG_INVALID"
 	HostUnknown             Code = "HOST_UNKNOWN"
 	SSHUnreachable          Code = "SSH_UNREACHABLE"
+	SSHControlFailed        Code = "SSH_CONTROL_FAILED"
 	SSHAuthFailed           Code = "SSH_AUTH_FAILED"
 	HostKeyFailed           Code = "HOST_KEY_FAILED"
 	RemoteDependencyMissing Code = "REMOTE_DEPENDENCY_MISSING"
 	RemoteCommandTimeout    Code = "REMOTE_COMMAND_TIMEOUT"
 	RemoteCommandCancelled  Code = "REMOTE_COMMAND_CANCELLED"
+	RemoteExecutionUnknown  Code = "REMOTE_EXECUTION_UNKNOWN"
 	OutputWriteFailed       Code = "OUTPUT_WRITE_FAILED"
 	// SessionBusy is the answer to `session exec` on a pane whose foreground is
 	// not the managed shell: a REPL or debugger owns the terminal, so a pasted
@@ -63,8 +65,9 @@ const (
 // wire from another machine does not get to create one (AGENTS.md §6). The
 // schema test compares this list with schemas/result-v1.schema.json.
 var allCodes = []Code{
-	UsageError, ConfigInvalid, HostUnknown, SSHUnreachable, SSHAuthFailed,
+	UsageError, ConfigInvalid, HostUnknown, SSHUnreachable, SSHControlFailed, SSHAuthFailed,
 	HostKeyFailed, RemoteDependencyMissing, RemoteCommandTimeout, RemoteCommandCancelled,
+	RemoteExecutionUnknown,
 	OutputWriteFailed, SessionBusy,
 	SessionNotFound, SessionUnhealthy, JobNotFound, JobStateUnknown, TransferFailed, SyncRejected,
 	UnsupportedRemoteOS, Internal, FileConflict, HashRequired, FileTooLarge, InvalidText,

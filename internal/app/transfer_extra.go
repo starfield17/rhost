@@ -119,7 +119,7 @@ func (a *App) remoteFileOf(ctx context.Context, host, remote, base string, timeo
 			"resolving the remote destination exceeded its timeout", true)
 	}
 	if res.ExitCode == 255 {
-		if e := classifySSH(string(res.Stderr)); e != nil {
+		if e := classifySSH(string(res.Stderr), res.ExitCode); e != nil {
 			return "", e
 		}
 	}

@@ -15,7 +15,7 @@ func (c *Client) RunInteractive(ctx context.Context, target, remoteCmd string) e
 	if err := config.EnsureControlDir(); err != nil {
 		return err
 	}
-	args := append(c.options(), "-t", "--", target, remoteCmd)
+	args := append(c.options(false), "-t", "--", target, remoteCmd)
 	cmd := exec.CommandContext(ctx, c.cfg.SSHBin, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

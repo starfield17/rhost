@@ -56,7 +56,12 @@ func newSessionCreateCmd() *cobra.Command {
 			info, aerr := a.SessionCreate(cmd.Context(), host, name, cwd, shell, timeout)
 			if aerr != nil {
 				audit.fail(aerr)
-				emitFailure("session.create", host, aerr)
+				if jsonFlag && info.SessionID != "" {
+					writeEnvelope(output.Failure("session.create", host, info, aerr))
+					exitCode = adapterExitCode(aerr)
+				} else {
+					emitFailure("session.create", host, aerr)
+				}
 				return nil
 			}
 			audit.succeed(cwd, "", nil)
@@ -169,6 +174,7 @@ func newSessionExecCmd() *cobra.Command {
 // when the command did not finish.
 type sessionExecView struct {
 	SessionID        string `json:"session_id"`
+	SessionRef       string `json:"session_ref"`
 	Stdout           string `json:"stdout"`
 	OutputKind       string `json:"output_kind"`
 	ExitCode         *int   `json:"exit_code"`
@@ -179,6 +185,7 @@ type sessionExecView struct {
 func sessionExecData(res app.SessionExecResult) sessionExecView {
 	return sessionExecView{
 		SessionID:        res.SessionID,
+		SessionRef:       res.SessionRef,
 		Stdout:           res.Output,
 		OutputKind:       "pty",
 		ExitCode:         res.ExitCode,
@@ -258,7 +265,7 @@ func newSessionReadCmd() *cobra.Command {
 
 func sessionReadData(res app.SessionReadResult) map[string]interface{} {
 	return map[string]interface{}{
-		"session_id": res.SessionID, "from": res.From, "next": res.Next,
+		"session_id": res.SessionID, "session_ref": res.SessionRef, "from": res.From, "next": res.Next,
 		"content": res.Data, "encoding": "utf-8", "more": res.HasMore,
 	}
 }

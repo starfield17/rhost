@@ -11,7 +11,8 @@ Use the command you would run locally and add only the remote execution context:
 rhost exec <host> --cwd '<remote-directory>' --command '<shell program>'
 ```
 
-The `--command` value runs in a fresh remote login-bash context. Pipes,
+The `--command` value, or the contents of `--command-file`, runs in a new remote
+login-bash context. Pipes,
 redirections, variables, and compound syntax inside that value are remote.
 Pipes outside the quoted value are local:
 
@@ -36,8 +37,9 @@ result has an unambiguous exit and retry decision.
 
 ## Rules
 
-- Pass exactly one non-empty shell program with `--command`. Quote it as one
-  local argument; `-c` is the equivalent short form.
+- Pass exactly one non-empty shell program with `--command` or
+  `--command-file`. Quote command text as one local argument; `-c` is the
+  equivalent short form. A command file is still command text, not a secret.
 - Treat `--cwd` as a remote path. Quote a leading `~` so the local shell does not
   expand it.
 - For every remote path argument, write `'~/path'`, not `"'~/path'"`: shell
@@ -45,9 +47,9 @@ result has an unambiguous exit and retry decision.
 - Do not place secrets in command text. It is visible to the remote process list,
   shell history, and rhost's bounded local audit summary.
 - Do not weaken OpenSSH host-key or authentication policy. Diagnose failures with
-  `rhost doctor <host> --json` when needed.
-- Never retry a timed-out, cancelled, or disconnected side effect until
-  `cleanup_confirmed` or a separate remote check establishes its state.
+  `rhost connection status <host> --json` and `rhost doctor <host> --fresh --json`.
+- Never retry a timed-out, cancelled, disconnected, or unknown side effect based
+  on `cleanup_confirmed` alone. Check the operation's actual remote result first.
 - Run remote search and observation with existing remote commands such as `rg`,
   `find`, `ps`, `df`, or platform tools.
 
@@ -59,7 +61,7 @@ result has an unambiguous exit and retry decision.
 | bytes must cross between local and remote filesystems | `rhost fs` |
 | text replacement needs a hash precondition and atomic write | `rhost fs read/write/patch` |
 | port forward must survive the creating invocation | `rhost tunnel` |
-| SSH or dependency diagnosis | `rhost doctor` |
+| SSH or dependency diagnosis | `rhost connection` and `rhost doctor` |
 
 For a long command that only needs to stop blocking the current agent, run the
 ordinary `rhost exec` invocation with the agent runtime's background-execution

@@ -20,8 +20,8 @@ Two consequences worth stating plainly:
 
 **Do not put a secret on a command line.** Command text is visible to `ps` on the
 remote host and is written into the local audit log (truncated, but present). Use
-the remote environment, a file that already holds the secret, or the mechanism
-the tool itself provides.
+the remote environment, a file that already holds the secret, stdin supplied by
+a trusted interactive harness, or the mechanism the tool itself provides.
 
 ```bash
 # no: the token is in the audit log, the process table, and your shell history
@@ -31,8 +31,10 @@ rhost exec <host> --command 'curl -H "Authorization: Bearer <token>" https://api
 rhost exec <host> --command 'curl -H "Authorization: Bearer $GITHUB_TOKEN" https://api.example'
 ```
 
-`session send --data` records the *key* or the fact that data was sent, never the
-injected bytes. `fs` operations record paths, not contents. Environment variables
+`session send --data` omits the payload from rhost's audit record, but the value
+still travels in local process arguments and an encoded remote helper command;
+that omission is not a secrecy guarantee. `--command-file` is likewise command
+text and not a secret container. `fs` operations record paths, not contents. Environment variables
 passed with `--env` are an interface for configuration, not for secrets: they
 travel through the remote process environment and are visible there.
 
@@ -79,6 +81,40 @@ Host-key verification is OpenSSH's, and rhost never weakens it. If a host key
 changed, find out why before connecting again. `RHOST_SSH_LOG_LEVEL=VERBOSE`
 raises OpenSSH's own log level for one command when a connection failure has no
 diagnostic; it does not change any security setting.
+
+## Privilege and system changes
+
+The local shell and the remote SSH account are different hosts, identities and
+permission domains. A quote ending too early can run the remaining pipeline or
+mutation locally; rhost cannot intercept syntax the local shell already split.
+Use `--command-file` for complex programs and inspect the complete local argv
+before destructive work. A local pipeline status is not the remote program's
+status unless the rhost invocation itself is the status being checked.
+
+`sudo` timestamp reuse depends on the host's sudoers policy, TTY, parent process
+and timeout. It is not guaranteed across exec calls or sessions. Probe explicitly
+with `sudo -n true`, and resolve commands in the intended privilege context, for
+example `sudo -n sh -c 'command -v <tool>'`; a command in the user's PATH may be
+absent from root or a service environment. Do not mix script text and a sudo
+password on the same stdin stream. If no safe credential source exists, leave
+authentication to the user or harness interaction rather than placing a password
+in arguments, files, audit data or environment flags.
+
+`doctor` intentionally probes only the dependencies rhost itself needs. It does
+not try sudo, infer package-manager policy, or test privileged command lookup.
+When a trusted harness can supply interactive input, the remote program may read
+it with a command such as `sudo -S -p '' -v`; keep the credential itself out of
+the command text, audit trail, environment flags and reusable script files.
+
+Before changing system packages, login shells, or access dependencies: confirm
+the effective privilege context and dependency ownership; preview removals and
+their dependent packages; preserve a recovery connection; apply the change;
+then verify through an independent new SSH connection. Do not remove an access
+dependency based only on a still-alive multiplexed channel.
+
+For software inventory, record four facts separately: command resolution path,
+the file's package/source ownership, installed version, and candidate version.
+Mark missing evidence unknown; do not join unrelated output lines by position.
 
 ## The local audit trail
 

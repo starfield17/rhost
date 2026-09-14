@@ -10,18 +10,26 @@ import (
 
 // DoctorResult is the capability snapshot produced by Doctor.
 type DoctorResult struct {
-	Host             string          `json:"host"`
-	Online           bool            `json:"online"`
-	OS               string          `json:"os"`
-	Kernel           string          `json:"kernel"`
-	Arch             string          `json:"arch"`
-	User             string          `json:"user"`
-	Home             string          `json:"home"`
-	LoginShell       string          `json:"login_shell"`
-	StateDir         string          `json:"state_dir"`
-	StateDirWritable bool            `json:"state_dir_writable"`
-	WSL              bool            `json:"wsl"`
-	Capabilities     map[string]bool `json:"capabilities"`
+	Host             string           `json:"host"`
+	Online           bool             `json:"online"`
+	OS               string           `json:"os"`
+	Kernel           string           `json:"kernel"`
+	Arch             string           `json:"arch"`
+	User             string           `json:"user"`
+	Home             string           `json:"home"`
+	LoginShell       string           `json:"login_shell"`
+	StateDir         string           `json:"state_dir"`
+	StateDirWritable bool             `json:"state_dir_writable"`
+	WSL              bool             `json:"wsl"`
+	Capabilities     map[string]bool  `json:"capabilities"`
+	Connection       ConnectionResult `json:"connection"`
+	ConnectionReused *bool            `json:"connection_reused"`
+}
+
+type DoctorOptions struct {
+	Host    string
+	Timeout time.Duration
+	Fresh   bool
 }
 
 // doctorProbe is a read-only POSIX script that prints `key=value` lines. It runs
@@ -46,14 +54,28 @@ if grep -qi microsoft /proc/version 2>/dev/null; then em wsl yes; else em wsl no
 `
 
 // Doctor probes a host's capabilities without assuming them.
-func (a *App) Doctor(ctx context.Context, host string, timeout time.Duration) (DoctorResult, *errs.Error) {
+func (a *App) Doctor(ctx context.Context, opts DoctorOptions) (DoctorResult, *errs.Error) {
+	connection := a.ConnectionStatus(ctx, opts.Host)
 	res, aerr := a.Execute(ctx, ExecOptions{
-		Host:    host,
+		Host:    opts.Host,
 		Command: doctorProbe,
-		Timeout: timeout,
+		Timeout: opts.Timeout,
+		Fresh:   opts.Fresh,
 	})
+	base := DoctorResult{Host: opts.Host, Online: false, Connection: connection}
+	reused := false
+	reusedKnown := opts.Fresh || connection.MasterStatus == "absent"
+	if !opts.Fresh && connection.MasterStatus == "alive" && connection.MasterPID != 0 {
+		after := a.ConnectionStatus(ctx, opts.Host)
+		if after.MasterStatus == "alive" && after.MasterPID == connection.MasterPID {
+			reused, reusedKnown = true, true
+		}
+	}
+	if reusedKnown {
+		base.ConnectionReused = &reused
+	}
 	if aerr != nil {
-		return DoctorResult{Host: host, Online: false}, aerr
+		return base, aerr
 	}
 
 	kv := parseKV(res.Stdout)
@@ -63,20 +85,18 @@ func (a *App) Doctor(ctx context.Context, host string, timeout time.Duration) (D
 			caps[name] = v == "yes"
 		}
 	}
-	return DoctorResult{
-		Host:             host,
-		Online:           true,
-		OS:               kv["os"],
-		Kernel:           kv["kernel"],
-		Arch:             kv["arch"],
-		User:             kv["user"],
-		Home:             kv["home"],
-		LoginShell:       kv["login_shell"],
-		StateDir:         kv["state_dir"],
-		StateDirWritable: kv["state_dir_writable"] == "yes",
-		WSL:              kv["wsl"] == "yes",
-		Capabilities:     caps,
-	}, nil
+	base.Online = true
+	base.OS = kv["os"]
+	base.Kernel = kv["kernel"]
+	base.Arch = kv["arch"]
+	base.User = kv["user"]
+	base.Home = kv["home"]
+	base.LoginShell = kv["login_shell"]
+	base.StateDir = kv["state_dir"]
+	base.StateDirWritable = kv["state_dir_writable"] == "yes"
+	base.WSL = kv["wsl"] == "yes"
+	base.Capabilities = caps
+	return base, nil
 }
 
 // parseKV parses `key=value` lines, splitting on the first '='.

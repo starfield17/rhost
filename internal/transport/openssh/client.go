@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/starfield17/rhost/internal/config"
@@ -88,6 +90,25 @@ type Result struct {
 	StderrBytes int64
 }
 
+type MasterStatus string
+
+const (
+	MasterAlive   MasterStatus = "alive"
+	MasterAbsent  MasterStatus = "absent"
+	MasterUnknown MasterStatus = "unknown"
+)
+
+// ConnectionStatus is evidence returned by OpenSSH's multiplexing control
+// protocol. ControlPath is the template passed to OpenSSH; MasterPID is present
+// only when OpenSSH reported it explicitly.
+type ConnectionStatus struct {
+	MasterStatus MasterStatus `json:"master_status"`
+	ControlPath  string       `json:"control_path"`
+	MasterPID    int          `json:"master_pid,omitempty"`
+	Diagnostic   string       `json:"diagnostic,omitempty"`
+	Stopped      bool         `json:"stopped,omitempty"`
+}
+
 // PipeOptions runs ssh with caller-owned streams. A zero timeout means no
 // execution deadline; cancellation still comes from ctx.
 type PipeOptions struct {
@@ -95,6 +116,7 @@ type PipeOptions struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	Fresh   bool
 }
 
 // options returns the shared OpenSSH options. ControlMaster=auto +
@@ -106,13 +128,17 @@ type PipeOptions struct {
 // which is why fileops.SyncArgs needs them and reports whether they could travel.
 // No caller may build its own ssh argument list from scratch: rhost's transport
 // reuse depends on these options being the only ones (AGENTS.md §5).
-func (c *Client) SSHOptions() []string { return c.options() }
+func (c *Client) SSHOptions() []string { return c.options(false) }
 
-func (c *Client) options() []string {
+func (c *Client) options(fresh bool) []string {
+	master, persist, path := "auto", c.cfg.ControlPersist, c.cfg.ControlPath
+	if fresh {
+		master, persist, path = "no", "no", "none"
+	}
 	opts := []string{
-		"-o", "ControlMaster=auto",
-		"-o", "ControlPersist=" + c.cfg.ControlPersist,
-		"-o", "ControlPath=" + c.cfg.ControlPath,
+		"-o", "ControlMaster=" + master,
+		"-o", "ControlPersist=" + persist,
+		"-o", "ControlPath=" + path,
 		"-o", "LogLevel=" + c.cfg.LogLevel,
 		"-o", "ConnectTimeout=" + strconv.Itoa(int(c.cfg.ConnectTimeout.Seconds())),
 	}
@@ -134,6 +160,8 @@ type RunOptions struct {
 	// Stdin is written to ssh's stdin, so the remote command can read it. Most
 	// rhost commands leave it nil, which gives the remote process EOF at once.
 	Stdin []byte
+	// Fresh disables ControlMaster, ControlPersist and ControlPath for this call.
+	Fresh bool
 }
 
 // Run executes remoteCmd on target. remoteCmd is passed verbatim as a single
@@ -151,19 +179,82 @@ func (c *Client) Run(ctx context.Context, target, remoteCmd string, timeout time
 // claim their transfer used a persistent connection merely because the argv
 // carried a ControlPath option.
 func (c *Client) MasterAlive(ctx context.Context, target string) bool {
-	if err := config.EnsureControlDir(); err != nil {
-		return false
-	}
+	return c.ConnectionStatus(ctx, target).MasterStatus == MasterAlive
+}
+
+var masterPIDRE = regexp.MustCompile(`(?i)master running \(pid=([0-9]+)\)`)
+
+// ConnectionStatus checks the shared master without starting a remote shell or
+// creating a new connection.
+func (c *Client) ConnectionStatus(ctx context.Context, target string) ConnectionStatus {
+	out := ConnectionStatus{MasterStatus: MasterUnknown, ControlPath: c.cfg.ControlPath}
 	check, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	args := append(c.options(), "-O", "check", "--", target)
-	return exec.CommandContext(check, c.cfg.SSHBin, args...).Run() == nil
+	args := append(c.options(false), "-O", "check", "--", target)
+	cmd := exec.CommandContext(check, c.cfg.SSHBin, args...)
+	var combined bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &combined, &combined
+	err := cmd.Run()
+	diagnostic := strings.TrimSpace(combined.String())
+	out.Diagnostic = diagnostic
+	if err == nil {
+		out.MasterStatus = MasterAlive
+		if m := masterPIDRE.FindStringSubmatch(diagnostic); len(m) == 2 {
+			out.MasterPID, _ = strconv.Atoi(m[1])
+		}
+		return out
+	}
+	if check.Err() != nil {
+		out.Diagnostic = check.Err().Error()
+		return out
+	}
+	if diagnostic == "" {
+		out.Diagnostic = err.Error()
+	}
+	lower := strings.ToLower(diagnostic)
+	if strings.Contains(lower, "no such file or directory") ||
+		strings.Contains(lower, "no control master") ||
+		strings.Contains(lower, "control socket connect") && strings.Contains(lower, "connection refused") {
+		out.MasterStatus = MasterAbsent
+	}
+	return out
+}
+
+// ResetConnection asks an alive shared master to stop accepting new requests.
+// It deliberately uses "stop", not "exit", so accepted channels continue.
+func (c *Client) ResetConnection(ctx context.Context, target string) (ConnectionStatus, error) {
+	status := c.ConnectionStatus(ctx, target)
+	if status.MasterStatus == MasterAbsent {
+		return status, nil
+	}
+	if status.MasterStatus == MasterUnknown {
+		return status, errors.New(status.Diagnostic)
+	}
+	stop, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	args := append(c.options(false), "-O", "stop", "--", target)
+	cmd := exec.CommandContext(stop, c.cfg.SSHBin, args...)
+	var combined bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &combined, &combined
+	if err := cmd.Run(); err != nil {
+		status.MasterStatus = MasterUnknown
+		status.Diagnostic = strings.TrimSpace(combined.String())
+		if stop.Err() != nil {
+			status.Diagnostic = stop.Err().Error()
+		}
+		return status, err
+	}
+	status.Stopped = true
+	status.Diagnostic = strings.TrimSpace(combined.String())
+	return status, nil
 }
 
 // RunWith is Run with an output budget and an optional stdin payload.
 func (c *Client) RunWith(ctx context.Context, target, remoteCmd string, opts RunOptions) (Result, error) {
-	if err := config.EnsureControlDir(); err != nil {
-		return Result{}, err
+	if !opts.Fresh {
+		if err := config.EnsureControlDir(); err != nil {
+			return Result{}, err
+		}
 	}
 
 	timeout := opts.Timeout
@@ -173,7 +264,7 @@ func (c *Client) RunWith(ctx context.Context, target, remoteCmd string, opts Run
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	args := append(c.options(), "-T", "--", target, remoteCmd)
+	args := append(c.options(opts.Fresh), "-T", "--", target, remoteCmd)
 	cmd := exec.CommandContext(cctx, c.cfg.SSHBin, args...)
 	// A cap is honoured as "keep the first N bytes *and* the last few", so the
 	// caller's own cut to N lands inside the prefix rather than gluing the tail of
@@ -223,8 +314,10 @@ func (c *Client) RunWith(ctx context.Context, target, remoteCmd string, opts Run
 // transport. It is used by the command-line-shaped execution path, where bytes
 // must be observable before the remote process exits.
 func (c *Client) RunPipe(ctx context.Context, target, remoteCmd string, opts PipeOptions) (Result, error) {
-	if err := config.EnsureControlDir(); err != nil {
-		return Result{}, err
+	if !opts.Fresh {
+		if err := config.EnsureControlDir(); err != nil {
+			return Result{}, err
+		}
 	}
 	cctx := ctx
 	cancel := func() {}
@@ -233,7 +326,7 @@ func (c *Client) RunPipe(ctx context.Context, target, remoteCmd string, opts Pip
 	}
 	defer cancel()
 
-	args := append(c.options(), "-T", "--", target, remoteCmd)
+	args := append(c.options(opts.Fresh), "-T", "--", target, remoteCmd)
 	cmd := exec.CommandContext(cctx, c.cfg.SSHBin, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = opts.Stdin, opts.Stdout, opts.Stderr
 	cmd.WaitDelay = 2 * time.Second

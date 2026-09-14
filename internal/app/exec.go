@@ -35,6 +35,7 @@ type ExecOptions struct {
 	// JSON*. 0 means unbounded, which is what `exec` used to do always; the
 	// command itself is never truncated, only what rhost carries back.
 	MaxOutputBytes int
+	Fresh          bool
 }
 
 // ExecResult is the outcome of a foreground execution.
@@ -61,7 +62,8 @@ type ExecResult struct {
 
 func executionTimeout(timeout time.Duration, cleanupConfirmed bool) *errs.Error {
 	if cleanupConfirmed {
-		return errs.New(errs.RemoteCommandTimeout, fmt.Sprintf("command exceeded timeout %s", timeout), true)
+		return errs.New(errs.RemoteCommandTimeout,
+			fmt.Sprintf("command exceeded timeout %s; its managed process group was confirmed stopped, but side effects may remain", timeout), false)
 	}
 	return errs.New(errs.RemoteCommandTimeout,
 		"execution deadline exceeded; remote cleanup could not be confirmed, so the command may still be running", false)
@@ -99,6 +101,7 @@ func (a *App) Execute(ctx context.Context, opts ExecOptions) (ExecResult, *errs.
 		Timeout:        timeout,
 		MaxOutputBytes: opts.MaxOutputBytes,
 		Stdin:          opts.Stdin,
+		Fresh:          opts.Fresh,
 	})
 	if runErr != nil {
 		if errors.Is(runErr, config.ErrUnsafeLocalState) {
@@ -121,7 +124,7 @@ func (a *App) Execute(ctx context.Context, opts ExecOptions) (ExecResult, *errs.
 		// missing pid file or a failed cleanup is equally consistent with the
 		// command still running, so rhost reports the uncertainty instead of
 		// claiming the command never started.
-		out.CleanupConfirmed = a.cleanupExec(opts.Host, nonce)
+		out.CleanupConfirmed = a.cleanupExec(opts.Host, nonce, opts.Fresh)
 		return out, executionTimeout(timeout, out.CleanupConfirmed)
 	}
 

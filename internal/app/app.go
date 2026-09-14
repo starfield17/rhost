@@ -4,11 +4,28 @@
 package app
 
 import (
+	"context"
 	"time"
 
+	"github.com/starfield17/rhost/internal/errs"
 	"github.com/starfield17/rhost/internal/fileops"
 	"github.com/starfield17/rhost/internal/transport/openssh"
 )
+
+type ConnectionResult = openssh.ConnectionStatus
+
+func (a *App) ConnectionStatus(ctx context.Context, host string) ConnectionResult {
+	return a.SSH.ConnectionStatus(ctx, host)
+}
+
+func (a *App) ConnectionReset(ctx context.Context, host string) (ConnectionResult, *errs.Error) {
+	res, err := a.SSH.ResetConnection(ctx, host)
+	if err != nil {
+		return res, errs.Wrap(errs.SSHControlFailed,
+			"could not stop the shared SSH master: "+res.Diagnostic, false, err)
+	}
+	return res, nil
+}
 
 // App bundles the dependencies shared by all use-cases.
 type App struct {

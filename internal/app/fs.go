@@ -145,7 +145,7 @@ func scpReusesTransport(sshOpts []string) bool {
 // nothing it can act on; the code stays stable either way.
 func mapTransferErr(res fileops.Result, stderrPrefix string) *errs.Error {
 	if res.TimedOut {
-		return errs.New(errs.RemoteCommandTimeout, "transfer exceeded its timeout", true)
+		return errs.New(errs.RemoteCommandTimeout, "transfer exceeded its timeout; remote transfer state is unknown", false)
 	}
 	// The first line only: scp and rsync put their one real complaint first, and a
 	// transfer tool can also dribble a carriage-return progress bar into stderr.
@@ -428,10 +428,10 @@ func (a *App) remoteHasRsync(ctx context.Context, host string) *errs.Error {
 		return nil
 	}
 	if res.ExitCode == 255 {
-		if e := classifySSH(string(res.Stderr)); e != nil {
+		if e := classifySSH(string(res.Stderr), res.ExitCode); e != nil {
 			return e
 		}
-		return errs.New(errs.SSHUnreachable, "could not probe rsync: "+firstLine(string(res.Stderr)), true)
+		return errs.New(errs.RemoteExecutionUnknown, "could not probe rsync: "+firstLine(string(res.Stderr)), false)
 	}
 	return errs.New(errs.RemoteDependencyMissing,
 		"the remote host has no rsync, which fs sync needs; fs put and fs get work without it", false)

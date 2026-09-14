@@ -46,7 +46,8 @@ it is doing — or ` + "`session close`" + `, not another blind command.`,
 			audit := startAudit("session.recover", host)
 			res, aerr := a.SessionRecover(c.Context(), host, session, timeout)
 			data := map[string]interface{}{
-				"session_id":        session,
+				"session_id":        res.SessionID,
+				"session_ref":       res.SessionRef,
 				"session_preserved": res.SessionPreserved,
 			}
 			if res.Foreground != "" {
