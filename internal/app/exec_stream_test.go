@@ -47,6 +47,28 @@ sleep 10
 	}
 }
 
+func TestCompletedForegroundSurvivesInheritedBackgroundPipe(t *testing.T) {
+	ssh := stubTool(t, "ssh", `
+remote=$(printf '%s' "$last" | sed 's/^exec setsid / /')
+eval "$remote"
+sleep 10 &
+exit 0
+`)
+	t.Setenv("RHOST_CACHE_DIR", t.TempDir())
+	a := &App{SSH: openssh.New(openssh.Config{
+		SSHBin: ssh, ControlPath: t.TempDir() + "/%C", BatchMode: true,
+	})}
+	res, aerr := a.ExecuteStream(context.Background(), StreamExecOptions{
+		ExecOptions: ExecOptions{Host: "example-host", Command: "printf done"},
+	})
+	if aerr != nil {
+		t.Fatalf("completed foreground became adapter failure: %s: %v", aerr.Code, aerr)
+	}
+	if res.ExitCode != 0 || res.Stdout != "done" {
+		t.Fatalf("result = %+v", res)
+	}
+}
+
 func TestProtocolStreamForwardsIncrementallyAndHidesMarkers(t *testing.T) {
 	const nonce = "0123456789abcdef0123456789abcdef"
 	var dst bytes.Buffer
