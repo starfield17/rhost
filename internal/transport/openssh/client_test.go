@@ -138,7 +138,31 @@ func TestConnectionStatusDistinguishesAbsentAndUnknown(t *testing.T) {
 			if got := c.ConnectionStatus(context.Background(), "example-host"); got.MasterStatus != tc.want {
 				t.Fatalf("status = %+v, want %s", got, tc.want)
 			}
+			if tc.want == MasterUnknown {
+				if _, err := c.ResetConnection(context.Background(), "example-host"); err == nil {
+					t.Fatal("reset treated an unknown master as stopped")
+				}
+			}
 		})
+	}
+}
+
+func TestFreshRunSkipsSharedControlDirectory(t *testing.T) {
+	dir := t.TempDir()
+	blocked := filepath.Join(dir, "not-a-directory")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RHOST_CACHE_DIR", blocked)
+	c := New(Config{SSHBin: "/usr/bin/true"})
+	if status := c.ConnectionStatus(context.Background(), "example-host"); status.MasterStatus != MasterAlive {
+		t.Fatalf("status check touched shared control state: %+v", status)
+	}
+	if _, err := c.RunWith(context.Background(), "example-host", "true", RunOptions{Fresh: true}); err != nil {
+		t.Fatalf("fresh run touched shared control state: %v", err)
+	}
+	if _, err := c.RunWith(context.Background(), "example-host", "true", RunOptions{}); err == nil {
+		t.Fatal("shared run unexpectedly ignored its unsafe control directory")
 	}
 }
 
