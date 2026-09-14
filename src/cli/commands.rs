@@ -7,16 +7,23 @@
 use super::grammar::{
     PLAIN_FLAGS, doctor_flags, exec_flags, flags, help_or_error, parse, parse_duration, usage_error,
 };
-use super::{Command, CommandText, Exec, Scope};
+use super::usage::leaf_or_group;
+use super::{Command, CommandText, Exec, Help, Scope};
 
 /// `hosts` and `version` take no operands and no flags beyond `--json`/`--help`.
-pub(crate) fn simple_command(argv: &[String], command: Command, path: &str, json: bool) -> Command {
+pub(crate) fn simple_command(
+    argv: &[String],
+    command: Command,
+    path: &str,
+    help: Help,
+    json: bool,
+) -> Command {
     let parsed = match parse(argv, PLAIN_FLAGS) {
         Ok(parsed) => parsed,
         Err(message) => return usage_error(Scope::Root, message),
     };
     if parsed.bool_flag("help") {
-        return help_or_error(Scope::Root, json);
+        return help_or_error(Scope::Root, help, json);
     }
     if !parsed.operands.is_empty() || parsed.dash {
         return usage_error(
@@ -35,15 +42,23 @@ pub(crate) fn connection_command(argv: &[String], json: bool) -> Command {
         Ok(parsed) => parsed,
         Err(message) => return usage_error(Scope::Connection, message),
     };
-    if parsed.bool_flag("help") {
-        return help_or_error(Scope::Connection, json);
-    }
     let Some(leaf) = parsed.operand(0).map(str::to_string) else {
-        return usage_error(
-            Scope::Connection,
-            "rhost connection needs a subcommand".to_string(),
-        );
+        return if parsed.bool_flag("help") {
+            help_or_error(Scope::Connection, Help::Group(Scope::Connection), json)
+        } else {
+            usage_error(
+                Scope::Connection,
+                "rhost connection needs a subcommand".to_string(),
+            )
+        };
     };
+    if parsed.bool_flag("help") {
+        return help_or_error(
+            Scope::Connection,
+            leaf_or_group(Scope::Connection, &leaf),
+            json,
+        );
+    }
     let command: fn(String) -> Command = match leaf.as_str() {
         "status" => |host| Command::ConnectionStatus { host },
         "reset" => |host| Command::ConnectionReset { host },
@@ -78,7 +93,7 @@ pub(crate) fn doctor_command(argv: &[String], json: bool) -> Command {
         Err(message) => return usage_error(Scope::Root, message),
     };
     if parsed.bool_flag("help") {
-        return help_or_error(Scope::Root, json);
+        return help_or_error(Scope::Root, Help::Doctor, json);
     }
     if parsed.operands.len() != 1 {
         return usage_error(
@@ -122,7 +137,7 @@ pub(crate) fn exec_command(argv: &[String], json: bool) -> Command {
         Err(message) => return usage_error(Scope::Root, message),
     };
     if parsed.bool_flag("help") {
-        return help_or_error(Scope::Root, json);
+        return help_or_error(Scope::Root, Help::Exec, json);
     }
     // An explicit `--` cannot carry a command: exec takes its program by flag so
     // that exactly one shell program crosses the boundary (EXEC-001).

@@ -4,7 +4,8 @@
 use crate::cli::grammar::{
     FlagSpec, JSON, PLAIN_FLAGS, Parsed, help_or_error, parse, parse_duration, usage_error,
 };
-use crate::cli::{Command, Scope};
+use crate::cli::usage::leaf_or_group;
+use crate::cli::{Command, Help, Scope};
 use crate::session;
 use std::time::Duration;
 
@@ -53,43 +54,74 @@ pub enum Session {
 
 static CREATE_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("name", false),
-    FlagSpec::value("cwd", false),
-    FlagSpec::value("shell", false),
-    FlagSpec::value("timeout", false),
+    FlagSpec::value("name", false, "session name; empty allocates one"),
+    FlagSpec::value("cwd", false, "remote working directory"),
+    FlagSpec::value("shell", false, "remote login shell (bash only)"),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "operation deadline; 0 uses the default budget",
+    ),
 ];
-static LIST_FLAGS: &[FlagSpec] = &[JSON, FlagSpec::value("timeout", false)];
+static LIST_FLAGS: &[FlagSpec] = &[
+    JSON,
+    FlagSpec::value(
+        "timeout",
+        false,
+        "operation deadline; 0 uses the default budget",
+    ),
+];
 static EXEC_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("command", true),
-    FlagSpec::value("timeout", false),
+    FlagSpec::value("command", true, "shell program to run in the session"),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "operation deadline; 0 uses the default budget",
+    ),
 ];
 static SEND_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("data", false),
-    FlagSpec::value("key", false),
-    FlagSpec::long("enter"),
+    FlagSpec::value("data", false, "text to paste into the session"),
+    FlagSpec::value("key", false, "control key to send, e.g. C-c"),
+    FlagSpec::long("enter", "press Enter after the data"),
 ];
 static READ_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("since", false),
-    FlagSpec::value("timeout", false),
+    FlagSpec::value(
+        "since",
+        false,
+        "byte offset to resume from; 0 reads the start",
+    ),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "operation deadline; 0 uses the default budget",
+    ),
 ];
-static RECOVER_FLAGS: &[FlagSpec] = &[JSON, FlagSpec::value("timeout", false)];
+static RECOVER_FLAGS: &[FlagSpec] = &[
+    JSON,
+    FlagSpec::value(
+        "timeout",
+        false,
+        "operation deadline; 0 uses the default budget",
+    ),
+];
 
 /// The flags the group knows so a leaf can be found, exactly as for `fs`: a flag
-/// belonging to a sibling leaf is then refused by that leaf's own table.
+/// belonging to a sibling leaf is then refused by that leaf's own table. The help
+/// text is unused here — this table only locates the leaf.
 static ANY_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("name", false),
-    FlagSpec::value("cwd", false),
-    FlagSpec::value("shell", false),
-    FlagSpec::value("command", false),
-    FlagSpec::value("data", false),
-    FlagSpec::value("key", false),
-    FlagSpec::value("since", false),
-    FlagSpec::value("timeout", false),
-    FlagSpec::long("enter"),
+    FlagSpec::value("name", false, ""),
+    FlagSpec::value("cwd", false, ""),
+    FlagSpec::value("shell", false, ""),
+    FlagSpec::value("command", false, ""),
+    FlagSpec::value("data", false, ""),
+    FlagSpec::value("key", false, ""),
+    FlagSpec::value("since", false, ""),
+    FlagSpec::value("timeout", false, ""),
+    FlagSpec::long("enter", ""),
 ];
 
 /// Each operation's own budget. A create waits for a shell to come up, while a
@@ -108,10 +140,18 @@ pub(crate) fn command(argv: &[String], json: bool) -> Command {
         Ok(parsed) => parsed,
         Err(message) => return usage_error(Scope::Session, message),
     };
+    let leaf = scanned.operand(0).map(str::to_string);
     if scanned.bool_flag("help") {
-        return help_or_error(Scope::Session, json);
+        return help_or_error(
+            Scope::Session,
+            match &leaf {
+                Some(leaf) => leaf_or_group(Scope::Session, leaf),
+                None => Help::Group(Scope::Session),
+            },
+            json,
+        );
     }
-    let Some(leaf) = scanned.operand(0).map(str::to_string) else {
+    let Some(leaf) = leaf else {
         return usage_error(
             Scope::Session,
             "rhost session needs a subcommand".to_string(),
@@ -270,7 +310,8 @@ pub(crate) fn command(argv: &[String], json: bool) -> Command {
     }
 }
 
-fn flags(leaf: &str) -> &'static [FlagSpec] {
+/// The flags each leaf accepts, so its `--help` page and its parse read one table.
+pub(crate) fn flags(leaf: &str) -> &'static [FlagSpec] {
     match leaf {
         "create" => CREATE_FLAGS,
         "list" => LIST_FLAGS,

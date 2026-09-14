@@ -1,8 +1,10 @@
 # rhost CLI reference
 
-The installed binary's `--help` output is the authoritative command inventory.
-All structured responses use schema v2 with top-level `schema_version`,
-`operation`, `ok`, `data`, and `error`.
+The installed binary's `--help` output is the authoritative command and flag
+inventory: every command has its own page, and a flag that reaches a parser
+without reaching its page fails the test suite. All structured responses use
+schema v2 with top-level `schema_version`, `operation`, `ok`, `data`, and
+`error`.
 
 ## Foreground execution
 

@@ -9,7 +9,7 @@ use super::commands;
 use super::files;
 use super::session;
 use super::tunnel;
-use super::{Command, Invocation, Scope};
+use super::{Command, Help, Invocation, Scope};
 
 /// One flag the grammar knows.
 #[derive(Clone, Copy)]
@@ -21,24 +21,58 @@ pub(crate) struct FlagSpec {
     /// are unique: silently letting the last `--cwd` win is worse than refusing,
     /// while a repeated boolean is harmless.
     unique: bool,
+    /// The one line `--help` prints for this flag. It lives beside the flag so
+    /// the help renderer can only describe flags the table holds, and a flag
+    /// cannot be added without the line a human reads.
+    help: &'static str,
 }
 
 impl FlagSpec {
-    pub(crate) const fn long(name: &'static str) -> Self {
+    pub(crate) const fn long(name: &'static str, help: &'static str) -> Self {
         Self {
             name,
             short: None,
             valued: false,
             unique: false,
+            help,
         }
     }
-    pub(crate) const fn value(name: &'static str, unique: bool) -> Self {
+    pub(crate) const fn value(name: &'static str, unique: bool, help: &'static str) -> Self {
         Self {
             name,
             short: None,
             valued: true,
             unique,
+            help,
         }
+    }
+    pub(crate) const fn value_short(
+        name: &'static str,
+        short: char,
+        unique: bool,
+        help: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            short: Some(short),
+            valued: true,
+            unique,
+            help,
+        }
+    }
+    /// What the help renderer reads: the spelling callers type, whether it takes
+    /// a value, and the line that describes it.
+    pub(crate) fn name(&self) -> &'static str {
+        self.name
+    }
+    pub(crate) fn short(&self) -> Option<char> {
+        self.short
+    }
+    pub(crate) fn valued(&self) -> bool {
+        self.valued
+    }
+    pub(crate) fn help(&self) -> &'static str {
+        self.help
     }
 }
 
@@ -84,40 +118,35 @@ impl Parsed {
     }
 }
 
-pub(crate) const JSON: FlagSpec = FlagSpec::long("json");
+pub(crate) const JSON: FlagSpec =
+    FlagSpec::long("json", "one machine-readable JSON document on stdout");
 
 pub(crate) static ROOT_FLAGS_ALL: &[FlagSpec] = &[
     JSON,
-    FlagSpec {
-        name: "version",
-        short: None,
-        valued: false,
-        unique: false,
-    },
+    FlagSpec::long("version", "print the version and exit"),
 ];
 
 pub(crate) static EXEC_FLAGS_ALL: &[FlagSpec] = &[
     JSON,
-    FlagSpec {
-        name: "command",
-        short: Some('c'),
-        valued: true,
-        unique: true,
-    },
-    FlagSpec::value("command-file", true),
-    FlagSpec::value("cwd", false),
-    FlagSpec::value("timeout", false),
-    FlagSpec::value("max-output-bytes", false),
-    FlagSpec::value("env", false),
-    FlagSpec::long("fresh"),
-    FlagSpec::long("stream"),
+    FlagSpec::value_short("command", 'c', true, "the shell program to run"),
+    FlagSpec::value("command-file", true, "read the program from a local file"),
+    FlagSpec::value("cwd", false, "working directory on the remote host"),
+    FlagSpec::value("timeout", false, "execution deadline; 0 waits forever"),
+    FlagSpec::value(
+        "max-output-bytes",
+        false,
+        "captured bytes per stream; 0 = all",
+    ),
+    FlagSpec::value("env", false, "environment variable KEY=VALUE (repeatable)"),
+    FlagSpec::long("fresh", "use an independent SSH connection"),
+    FlagSpec::long("stream", "mirror live output to stderr; JSON stays"),
 ];
 
 pub(crate) static PLAIN_FLAGS: &[FlagSpec] = &[JSON];
 pub(crate) static DOCTOR_FLAGS_ALL: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::long("fresh"),
+    FlagSpec::value("timeout", false, "probe budget; 0 uses the default"),
+    FlagSpec::long("fresh", "use an independent SSH connection"),
 ];
 
 /// The flags every scope accepts, plus its own. `--json` is a root persistent
@@ -332,13 +361,13 @@ pub fn parse_invocation(argv: &[String]) -> Invocation {
             Ok(parsed) if parsed.bool_flag("help") || !json && parsed.operands.is_empty() => {
                 if json {
                     return Invocation {
-                        command: help_or_error(Scope::Root, json),
+                        command: help_or_error(Scope::Root, Help::Root, json),
                         json,
                     };
                 }
                 let _ = parsed;
                 Invocation {
-                    command: Command::Help(Scope::Root),
+                    command: Command::Help(Help::Root),
                     json,
                 }
             }
@@ -369,8 +398,16 @@ pub fn parse_invocation(argv: &[String]) -> Invocation {
     let command = match group.as_str() {
         "exec" => commands::exec_command(&rest, json),
         "doctor" => commands::doctor_command(&rest, json),
-        "hosts" => commands::simple_command(&rest, Command::Hosts, "rhost hosts", json),
-        "version" => commands::simple_command(&rest, Command::Version, "rhost version", json),
+        "hosts" => {
+            commands::simple_command(&rest, Command::Hosts, "rhost hosts", Help::Hosts, json)
+        }
+        "version" => commands::simple_command(
+            &rest,
+            Command::Version,
+            "rhost version",
+            Help::Version,
+            json,
+        ),
         "connection" => commands::connection_command(&rest, json),
         "session" => session::command(&rest, json),
         "tunnel" => tunnel::command(&rest, json),
@@ -398,7 +435,7 @@ pub(crate) fn usage_error(scope: Scope, message: String) -> Command {
 
 /// Requesting help with `--json` asks for two mutually exclusive things. The
 /// envelope wins, because an agent that set `--json` cannot read prose.
-pub(crate) fn help_or_error(scope: Scope, json: bool) -> Command {
+pub(crate) fn help_or_error(scope: Scope, help: Help, json: bool) -> Command {
     if json {
         return usage_error(
             scope,
@@ -408,7 +445,7 @@ pub(crate) fn help_or_error(scope: Scope, json: bool) -> Command {
             ),
         );
     }
-    Command::Help(scope)
+    Command::Help(help)
 }
 
 pub(crate) fn parse_duration(text: &str) -> Option<i64> {

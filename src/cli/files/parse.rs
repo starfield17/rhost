@@ -4,7 +4,8 @@ use crate::app::files as app_files;
 use crate::cli::grammar::{
     FlagSpec, JSON, PLAIN_FLAGS, help_or_error, parse, parse_duration, usage_error,
 };
-use crate::cli::{Command, Scope};
+use crate::cli::usage::leaf_or_group;
+use crate::cli::{Command, Help, Scope};
 
 /// Every file operation the parser can hand to [`run`].
 pub enum Fs {
@@ -72,72 +73,109 @@ pub enum Fs {
 
 pub(crate) static FS_PUT_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::long("resume"),
-    FlagSpec::long("checksum"),
-    FlagSpec::long("parents"),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "deadline for the operation; 0 uses the default",
+    ),
+    FlagSpec::long("resume", "resume a partial transfer"),
+    FlagSpec::long("checksum", "verify with a checksum"),
+    FlagSpec::long("parents", "create missing remote directories"),
 ];
 static FS_GET_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::long("resume"),
-    FlagSpec::long("checksum"),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "deadline for the operation; 0 uses the default",
+    ),
+    FlagSpec::long("resume", "resume a partial transfer"),
+    FlagSpec::long("checksum", "verify with a checksum"),
 ];
 static FS_SYNC_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::long("delete"),
-    FlagSpec::long("dry-run"),
-    FlagSpec::long("checksum"),
-    FlagSpec::value("exclude", false),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "deadline for the operation; 0 uses the default",
+    ),
+    FlagSpec::long("delete", "delete remote files missing locally"),
+    FlagSpec::long("dry-run", "report changes without applying them"),
+    FlagSpec::long("checksum", "verify with a checksum"),
+    FlagSpec::value("exclude", false, "remote path pattern to skip (repeatable)"),
 ];
 static FS_BATCH_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::value("manifest", false),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "deadline for the operation; 0 uses the default",
+    ),
+    FlagSpec::value("manifest", false, "local JSON manifest of copies"),
 ];
 static FS_READ_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::value("max-bytes", false),
-    FlagSpec::value("start", false),
-    FlagSpec::value("lines", false),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "deadline for the operation; 0 uses the default",
+    ),
+    FlagSpec::value("max-bytes", false, "maximum bytes to return"),
+    FlagSpec::value("start", false, "first line to return (1-based)"),
+    FlagSpec::value("lines", false, "number of lines to return"),
 ];
 static FS_WRITE_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::value("from", false),
-    FlagSpec::value("if-hash", false),
-    FlagSpec::value("mode", false),
-    FlagSpec::long("parents"),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "deadline for the operation; 0 uses the default",
+    ),
+    FlagSpec::value("from", false, "local file to upload, or - for stdin"),
+    FlagSpec::value(
+        "if-hash",
+        false,
+        "refuse unless the current SHA-256 matches",
+    ),
+    FlagSpec::value("mode", false, "file mode to apply, e.g. 0644"),
+    FlagSpec::long("parents", "create missing remote directories"),
 ];
 static FS_PATCH_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::value("patch", false),
-    FlagSpec::value("if-hash", false),
+    FlagSpec::value(
+        "timeout",
+        false,
+        "deadline for the operation; 0 uses the default",
+    ),
+    FlagSpec::value("patch", false, "local patch file, or - for stdin"),
+    FlagSpec::value(
+        "if-hash",
+        false,
+        "refuse unless the current SHA-256 matches",
+    ),
 ];
 
 /// Every flag the `fs` group knows, used only to find the leaf before its own
 /// table parses the same argv again. A flag that belongs to another leaf is
 /// therefore still rejected — by the second parse, which is the one that counts.
+/// The help text is unused here; the leaf's own table carries it.
 static FS_ANY_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("timeout", false),
-    FlagSpec::value("max-bytes", false),
-    FlagSpec::value("start", false),
-    FlagSpec::value("lines", false),
-    FlagSpec::value("from", false),
-    FlagSpec::value("if-hash", false),
-    FlagSpec::value("mode", false),
-    FlagSpec::value("patch", false),
-    FlagSpec::value("manifest", false),
-    FlagSpec::value("exclude", false),
-    FlagSpec::long("resume"),
-    FlagSpec::long("checksum"),
-    FlagSpec::long("parents"),
-    FlagSpec::long("delete"),
-    FlagSpec::long("dry-run"),
+    FlagSpec::value("timeout", false, ""),
+    FlagSpec::value("max-bytes", false, ""),
+    FlagSpec::value("start", false, ""),
+    FlagSpec::value("lines", false, ""),
+    FlagSpec::value("from", false, ""),
+    FlagSpec::value("if-hash", false, ""),
+    FlagSpec::value("mode", false, ""),
+    FlagSpec::value("patch", false, ""),
+    FlagSpec::value("manifest", false, ""),
+    FlagSpec::value("exclude", false, ""),
+    FlagSpec::long("resume", ""),
+    FlagSpec::long("checksum", ""),
+    FlagSpec::long("parents", ""),
+    FlagSpec::long("delete", ""),
+    FlagSpec::long("dry-run", ""),
 ];
 
 /// Defaults for `fs` timeouts: a copy's duration belongs to the size of the
@@ -153,10 +191,18 @@ pub(crate) fn command(argv: &[String], json: bool) -> Command {
         Ok(parsed) => parsed,
         Err(message) => return usage_error(Scope::Fs, message),
     };
+    let leaf = scanned.operand(0).map(str::to_string);
     if scanned.bool_flag("help") {
-        return help_or_error(Scope::Fs, json);
+        return help_or_error(
+            Scope::Fs,
+            match &leaf {
+                Some(leaf) => leaf_or_group(Scope::Fs, leaf),
+                None => Help::Group(Scope::Fs),
+            },
+            json,
+        );
     }
-    let Some(leaf) = scanned.operand(0).map(str::to_string) else {
+    let Some(leaf) = leaf else {
         return usage_error(Scope::Fs, "rhost fs needs a subcommand".to_string());
     };
     let parsed = match parse(argv, fs_flags(&leaf)) {
@@ -345,7 +391,8 @@ pub(crate) fn command(argv: &[String], json: bool) -> Command {
     }
 }
 
-fn fs_flags(leaf: &str) -> &'static [FlagSpec] {
+/// The flags each leaf accepts, so its `--help` page and its parse read one table.
+pub(crate) fn fs_flags(leaf: &str) -> &'static [FlagSpec] {
     match leaf {
         "put" => FS_PUT_FLAGS,
         "get" => FS_GET_FLAGS,

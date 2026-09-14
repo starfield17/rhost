@@ -7,17 +7,17 @@
 
 use super::console::{Sink, warn};
 use super::grammar::{FlagSpec, JSON, help_or_error, parse, usage_error};
-use super::{Command, Scope};
+use super::{Command, Help, Scope};
 use crate::audit;
 use crate::config;
 use crate::output;
 use std::time::Instant;
 
 /// The flags `audit` takes. It reads a local file, so it has no host operand.
-static AUDIT_FLAGS: &[FlagSpec] = &[
+pub(crate) static AUDIT_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("limit", false),
-    FlagSpec::value("host", false),
+    FlagSpec::value("limit", false, "show at most N recent entries; 0 shows all"),
+    FlagSpec::value("host", false, "only entries for this host"),
 ];
 
 /// How many entries a caller who said nothing gets. The trail is append-only and
@@ -30,7 +30,7 @@ pub(crate) fn command(argv: &[String], json: bool) -> Command {
         Err(message) => return usage_error(Scope::Root, message),
     };
     if parsed.bool_flag("help") {
-        return help_or_error(Scope::Root, json);
+        return help_or_error(Scope::Root, Help::Audit, json);
     }
     if !parsed.operands.is_empty() || parsed.dash {
         return usage_error(

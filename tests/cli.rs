@@ -14,6 +14,61 @@ fn binary_reports_its_own_version_and_schema() -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
+/// `--help` is the authoritative inventory: each command's page must list the
+/// flags its parser accepts, including the ones that never fit in a usage line
+/// (`exec --cwd`, `exec --max-output-bytes`). The router once sent every leaf to
+/// the root page, so this drives the real argv path rather than the renderer.
+#[test]
+fn help_lists_the_flags_each_command_accepts() -> Result<(), Box<dyn std::error::Error>> {
+    for (argv, flags) in [
+        (
+            vec!["exec", "--help"],
+            vec![
+                "--command",
+                "--command-file",
+                "--cwd",
+                "--env",
+                "--timeout",
+                "--max-output-bytes",
+                "--fresh",
+                "--stream",
+            ],
+        ),
+        (vec!["doctor", "--help"], vec!["--timeout", "--fresh"]),
+        (vec!["audit", "--help"], vec!["--limit", "--host"]),
+        (
+            vec!["session", "send", "--help"],
+            vec!["--data", "--key", "--enter"],
+        ),
+        (
+            vec!["fs", "write", "--help"],
+            vec!["--from", "--if-hash", "--mode", "--parents"],
+        ),
+        (
+            vec!["tunnel", "open", "--help"],
+            vec!["--kind", "--listen", "--destination", "--allow-exposure"],
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+            .args(&argv)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{argv:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let help = String::from_utf8(output.stdout)?;
+        assert!(
+            help.contains("Flags:"),
+            "{argv:?} has no flag list:\n{help}"
+        );
+        for flag in flags {
+            assert!(help.contains(flag), "{argv:?} omits {flag}:\n{help}");
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn release_waits_for_four_native_platforms_before_publication() {
     let workflow = include_str!("../.github/workflows/release.yml");

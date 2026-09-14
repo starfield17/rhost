@@ -15,4 +15,5 @@ mod run;
 
 pub use parse::Session;
 pub(crate) use parse::command;
+pub(crate) use parse::flags as leaf_flags;
 pub(crate) use run::run;

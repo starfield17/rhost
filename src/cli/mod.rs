@@ -52,10 +52,10 @@ pub struct Invocation {
 /// Everything the grammar accepted, already validated as grammar.
 pub enum Command {
     Version,
-    /// Human help text for one scope: the root's usage, or a group's subcommand
-    /// list. Unreachable with `--json`, where help becomes a usage envelope:
-    /// prose on stdout would break a decoder (WIRE-002).
-    Help(Scope),
+    /// Human help text for one page. Unreachable with `--json`, where help
+    /// becomes a usage envelope: prose on stdout would break a decoder
+    /// (WIRE-002).
+    Help(Help),
     Hosts,
     Doctor {
         host: String,
@@ -99,13 +99,30 @@ pub enum Command {
 
 /// Which part of the grammar an error belongs to. Every variant names a real
 /// `operation` value in the schema's closed set.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scope {
     Root,
     Session,
     Connection,
     Tunnel,
     Fs,
+}
+
+/// One page of human help: the root's usage, a group's subcommand list, or one
+/// command with its own flags. Every command a caller can run has a page, so
+/// `--help` can never show one command's flag set under another command's name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Help {
+    Root,
+    Exec,
+    Doctor,
+    Hosts,
+    Version,
+    Audit,
+    /// A group's overview: its subcommands, and the flags the group itself takes.
+    Group(Scope),
+    /// One leaf of a group, with that leaf's own flags.
+    Leaf(Scope, &'static str),
 }
 
 /// The exact shell program, as named by the caller. Which of the two it was is
@@ -149,10 +166,6 @@ impl Scope {
             Self::Fs => "fs",
         }
     }
-
-    fn help(self) -> String {
-        usage::help(self)
-    }
 }
 
 impl Invocation {
@@ -178,8 +191,8 @@ impl Invocation {
                 }
                 0
             }
-            Command::Help(scope) => {
-                sink.text(&scope.help());
+            Command::Help(help) => {
+                sink.text(&usage::help(help));
                 0
             }
             Command::Hosts => run::hosts(&mut sink, json),
@@ -211,7 +224,7 @@ impl Invocation {
                 } else {
                     warn(&format!("rhost: USAGE_ERROR: {message}"));
                     if scope == Scope::Root && wants_help(&message) {
-                        sink.text(&scope.help());
+                        sink.text(&usage::help(Help::Root));
                     }
                 }
                 255

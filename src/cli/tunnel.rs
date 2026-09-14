@@ -9,7 +9,8 @@
 use super::audit::Timer;
 use super::console::{Failure, Sink};
 use super::grammar::{FlagSpec, JSON, PLAIN_FLAGS, help_or_error, parse, usage_error};
-use super::{Command, Scope};
+use super::usage::leaf_or_group;
+use super::{Command, Help, Scope};
 use crate::output;
 use crate::transport::openssh::Client;
 use crate::tunnel::{self, Fault};
@@ -34,11 +35,21 @@ pub enum Tunnel {
 /// what refuses a flag that belongs to a sibling operation.
 static TUNNEL_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("kind", false),
-    FlagSpec::value("listen", false),
-    FlagSpec::value("destination", false),
-    FlagSpec::long("allow-exposure"),
+    FlagSpec::value("kind", false, "forward kind (local or remote)"),
+    FlagSpec::value("listen", false, "address to listen on"),
+    FlagSpec::value("destination", false, "forward destination host:port"),
+    FlagSpec::long("allow-exposure", "permit binding a non-loopback address"),
 ];
+
+/// The flags each leaf accepts, so its `--help` page and its parse read the same
+/// table. `list` and `close` take operands only.
+pub(crate) fn leaf_flags(leaf: &str) -> &'static [FlagSpec] {
+    if leaf == "open" {
+        TUNNEL_FLAGS
+    } else {
+        PLAIN_FLAGS
+    }
+}
 
 /// Defaults that match the reference: the common case is a local forward out of
 /// loopback, and a caller who wants something else says so.
@@ -50,18 +61,21 @@ pub(crate) fn command(argv: &[String], json: bool) -> Command {
         Ok(parsed) => parsed,
         Err(message) => return usage_error(Scope::Tunnel, message),
     };
+    let leaf = scanned.operand(0).map(str::to_string);
     if scanned.bool_flag("help") {
-        return help_or_error(Scope::Tunnel, json);
+        return help_or_error(
+            Scope::Tunnel,
+            match &leaf {
+                Some(leaf) => leaf_or_group(Scope::Tunnel, leaf),
+                None => Help::Group(Scope::Tunnel),
+            },
+            json,
+        );
     }
-    let Some(leaf) = scanned.operand(0).map(str::to_string) else {
+    let Some(leaf) = leaf else {
         return usage_error(Scope::Tunnel, "rhost tunnel needs a subcommand".to_string());
     };
-    let flags = if leaf == "open" {
-        TUNNEL_FLAGS
-    } else {
-        PLAIN_FLAGS
-    };
-    let parsed = match parse(argv, flags) {
+    let parsed = match parse(argv, leaf_flags(&leaf)) {
         Ok(parsed) => parsed,
         Err(message) => return usage_error(Scope::Tunnel, message),
     };
