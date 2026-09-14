@@ -148,11 +148,15 @@ func TestConnectionStatusDistinguishesAbsentAndUnknown(t *testing.T) {
 }
 
 func TestFreshRunSkipsSharedControlDirectory(t *testing.T) {
-	dir := t.TempDir()
-	blocked := filepath.Join(dir, "not-a-directory")
-	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+	f, err := os.CreateTemp("/tmp", "rhost-cache-file-")
+	if err != nil {
 		t.Fatal(err)
 	}
+	blocked := f.Name()
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(blocked) })
 	t.Setenv("RHOST_CACHE_DIR", blocked)
 	c := New(Config{SSHBin: "/usr/bin/true"})
 	if status := c.ConnectionStatus(context.Background(), "example-host"); status.MasterStatus != MasterAlive {
