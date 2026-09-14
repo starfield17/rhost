@@ -115,9 +115,9 @@ func TestUsageErrorHumanPathKeepsStderrClean(t *testing.T) {
 }
 
 func saveGlobals() func() {
-	oldJSON, oldExit, oldArgs := jsonFlag, exitCode, os.Args
+	oldJSON, oldVersion, oldExit, oldArgs := jsonFlag, versionFlag, exitCode, os.Args
 	return func() {
-		jsonFlag, exitCode, os.Args = oldJSON, oldExit, oldArgs
+		jsonFlag, versionFlag, exitCode, os.Args = oldJSON, oldVersion, oldExit, oldArgs
 	}
 }
 
