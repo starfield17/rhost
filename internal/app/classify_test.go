@@ -80,8 +80,8 @@ func TestClassifyMissingMarker(t *testing.T) {
 			name:        "timeout during banner",
 			stderr:      "Connection timed out during banner exchange",
 			exitCode:    255,
-			wantCode:    errs.RemoteExecutionUnknown,
-			wantRetry:   false,
+			wantCode:    errs.SSHUnreachable,
+			wantRetry:   true,
 			wantMessage: "connection timed out",
 		},
 		{
@@ -98,8 +98,8 @@ func TestClassifyMissingMarker(t *testing.T) {
 			name:        "command exited non-zero without a marker",
 			stderr:      "boom\nsecond line\n",
 			exitCode:    1,
-			wantCode:    errs.SSHUnreachable,
-			wantRetry:   true,
+			wantCode:    errs.RemoteExecutionUnknown,
+			wantRetry:   false,
 			wantMessage: "boom",
 		},
 		{
