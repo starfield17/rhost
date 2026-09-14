@@ -11,7 +11,7 @@ func TestParseExec(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
 	payload := base64.StdEncoding.EncodeToString([]byte("hello\nworld\n"))
 
-	out := ParseExec("RHOST_TOKEN="+token+"\nRHOST_EXIT=3\nRHOST_OUTPUT="+payload+"\n", token)
+	out := ParseExec("RHOST_ID=s_1\nRHOST_TOKEN="+token+"\nRHOST_EXIT=3\nRHOST_OUTPUT="+payload+"\n", token)
 	if out.Err != "" {
 		t.Fatalf("unexpected err %q", out.Err)
 	}
@@ -21,15 +21,18 @@ func TestParseExec(t *testing.T) {
 	if out.Output != "hello\nworld\n" {
 		t.Errorf("output = %q", out.Output)
 	}
+	if out.SessionID != "s_1" {
+		t.Errorf("session id = %q, want s_1", out.SessionID)
+	}
 
-	tout := ParseExec("RHOST_ERR=timeout\n", token)
-	if tout.Err != "timeout" {
+	tout := ParseExec("RHOST_ID=s_1\nRHOST_ERR=timeout\n", token)
+	if tout.Err != "timeout" || tout.SessionID != "s_1" {
 		t.Errorf("err = %q, want timeout", tout.Err)
 	}
 
 	// The refusal of a pane owned by another program names that program, because
 	// the caller's next move depends on what it is.
-	busy := ParseExec("RHOST_FG=python3\nRHOST_ERR=busy\n", token)
+	busy := ParseExec("RHOST_ID=s_1\nRHOST_FG=python3\nRHOST_ERR=busy\n", token)
 	if busy.Err != "busy" || busy.Foreground != "python3" {
 		t.Errorf("busy refusal = %+v, want err=busy foreground=python3", busy)
 	}
@@ -38,22 +41,22 @@ func TestParseExec(t *testing.T) {
 	// with whether the pane actually came back. "timed out" and "timed out but the
 	// session is usable" are different instructions to a caller, so the two states
 	// must survive parsing.
-	if out := ParseExec("RHOST_RECOVERED=1\nRHOST_ERR=timeout\n", token); out.Err != "timeout" || !out.Recovered {
+	if out := ParseExec("RHOST_ID=s_1\nRHOST_RECOVERED=1\nRHOST_ERR=timeout\n", token); out.Err != "timeout" || !out.Recovered {
 		t.Errorf("recovered timeout parsed as %+v", out)
 	}
-	if out := ParseExec("RHOST_RECOVERED=0\nRHOST_ERR=timeout\n", token); out.Err != "timeout" || out.Recovered {
+	if out := ParseExec("RHOST_ID=s_1\nRHOST_RECOVERED=0\nRHOST_ERR=timeout\n", token); out.Err != "timeout" || out.Recovered {
 		t.Errorf("unrecovered timeout parsed as %+v", out)
 	}
 	// The marker is only ever printed next to a timeout; a clean command must not
 	// pick up a recovered flag out of nowhere.
-	if out := ParseExec("RHOST_TOKEN="+token+"\nRHOST_EXIT=0\nRHOST_OUTPUT="+payload+"\n", token); out.Recovered {
+	if out := ParseExec("RHOST_ID=s_1\nRHOST_TOKEN="+token+"\nRHOST_EXIT=0\nRHOST_OUTPUT="+payload+"\n", token); out.Recovered {
 		t.Errorf("successful command reports Recovered")
 	}
 }
 
 func TestParseExecRejectsIncompleteOrForeignResults(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
-	validEmpty := "RHOST_TOKEN=" + token + "\nRHOST_EXIT=0\nRHOST_OUTPUT=\n"
+	validEmpty := "RHOST_ID=s_1\nRHOST_TOKEN=" + token + "\nRHOST_EXIT=0\nRHOST_OUTPUT=\n"
 	if out := ParseExec(validEmpty, token); out.Err != "" || out.ExitCode != 0 || out.Output != "" {
 		t.Fatalf("valid empty stdout parsed as %+v", out)
 	}
@@ -79,7 +82,7 @@ func TestParseExecRejectsIncompleteOrForeignResults(t *testing.T) {
 		})
 	}
 
-	nonzero := "RHOST_TOKEN=" + token + "\nRHOST_EXIT=7\nRHOST_OUTPUT=" +
+	nonzero := "RHOST_ID=s_1\nRHOST_TOKEN=" + token + "\nRHOST_EXIT=7\nRHOST_OUTPUT=" +
 		base64.StdEncoding.EncodeToString([]byte("failed\n")) + "\n"
 	if out := ParseExec(nonzero, token); out.Err != "" || out.ExitCode != 7 || out.Output != "failed\n" {
 		t.Errorf("valid non-zero command parsed as %+v", out)
@@ -88,12 +91,15 @@ func TestParseExecRejectsIncompleteOrForeignResults(t *testing.T) {
 
 func TestParseRead(t *testing.T) {
 	payload := base64.StdEncoding.EncodeToString([]byte("abc"))
-	out := ParseRead("RHOST_FROM=10\nRHOST_NEXT=13\nRHOST_SIZE=20\n" + payload + "\n")
+	out := ParseRead("RHOST_ID=s_1\nRHOST_FROM=10\nRHOST_NEXT=13\nRHOST_SIZE=20\n" + payload + "\n")
 	if out.Error != "" || out.From != 10 || out.Next != 13 || out.Size != 20 {
 		t.Errorf("parsed read = %+v", out)
 	}
 	if string(out.Data) != "abc" {
 		t.Errorf("data = %q", out.Data)
+	}
+	if out.SessionID != "s_1" {
+		t.Errorf("session id = %q, want s_1", out.SessionID)
 	}
 }
 
@@ -152,8 +158,8 @@ func TestCreateScriptProtocol(t *testing.T) {
 
 func TestResolvedSessionHelpersReturnCanonicalID(t *testing.T) {
 	for name, script := range map[string]string{
-		"exec": ExecScript("dev", "true", time.Second, "token"),
-		"read": ReadScript("dev", 0, 0),
+		"exec":    ExecScript("dev", "true", time.Second, "token"),
+		"read":    ReadScript("dev", 0, 0),
 		"recover": RecoverScript("dev", time.Second),
 	} {
 		if !strings.Contains(script, "RHOST_ID=") {
