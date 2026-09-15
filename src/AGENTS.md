@@ -29,7 +29,10 @@ points the wrong way, fails the build rather than being a convention.
   (`exec`, `doctor`, `files`, `session`, `tunnel`); `mod.rs` owns the envelope and
   the shared error payload. Domain never derives serde.
 - `cli/`: `mod.rs` is the surface (types plus dispatch); `grammar`/`commands` parse
-  the non-file commands, `run`/`tunnel` execute them, `console` delivers,
+  the non-file commands. The private `grammar.rs` facade routes whole invocations;
+  `grammar/flags` owns flag tables and help metadata, and `grammar/scan` owns argv
+  scanning, parsed values, command locating, JSON detection and durations.
+  `run`/`tunnel` execute commands, `console` delivers,
   `render`/`usage` write prose. `files.rs` and `session.rs` are surfaces too:
   `files/parse` and `session/parse` turn argv into an operation, `files/run` and
   `session/run` execute one, and `files/input` reads a local body before anything
