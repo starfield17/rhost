@@ -7,7 +7,7 @@ export RHOST_REPO_ROOT := $(CURDIR)
 # a reproducible build does.
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-.PHONY: build build-release build-rust check rust-check test test-smoke fmt portability structure live-suite release-contract agent-package install-test build-reference test-conformance
+.PHONY: build build-release build-rust check rust-check test test-smoke stress-transfer-timeout fmt portability structure live-suite release-contract agent-package install-test build-reference test-conformance
 build:
 	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --bin rhost
 # The release candidate: the same locked, optimized, provenance-stamped build
@@ -54,6 +54,15 @@ test-conformance:
 test-smoke:
 	@command -v python3 >/dev/null 2>&1 || (echo "test-smoke requires python3 for the embedded remote-helper paths" >&2; exit 1)
 	cargo test --locked --test acceptance
+
+STRESS_RUNS ?= 50
+stress-transfer-timeout:
+	@case "$(STRESS_RUNS)" in ''|*[!0-9]*|0) echo "STRESS_RUNS must be a positive integer" >&2; exit 2 ;; esac
+	@i=0; while [ "$$i" -lt "$(STRESS_RUNS)" ]; do \
+		i=$$((i + 1)); \
+		echo "stress-transfer-timeout: acceptance run $$i/$(STRESS_RUNS)"; \
+		cargo test --locked --test acceptance || exit; \
+	done
 
 .PHONY: test-live-smoke
 test-live-smoke:

@@ -70,5 +70,49 @@
     "contract": "FS-004",
     "mechanism_test": "archive/go-v3.1.0/internal/fileops/remote_helper_test.go:TestEmbeddedRemoteHelperSuite",
     "conformance_test": "archive/conformance-v1/conformance/live_smoke_test.go:TestSmokeLive"
+  },
+  {
+    "id": "HIST-RS-PROC-001",
+    "origin": "0af36ae",
+    "contract": "FS-005",
+    "mechanism_test": "src/transport/process.rs:cancellation_stops_a_ready_process_group_and_its_descendant",
+    "conformance_test": "tests/acceptance/files.rs:a_transfer_deadline_bounds_the_local_tool"
+  },
+  {
+    "id": "HIST-RS-CLI-001",
+    "origin": "769d81b",
+    "contract": "WIRE-007",
+    "mechanism_test": "src/cli/usage.rs:every_page_describes_every_flag_it_accepts",
+    "conformance_test": "tests/cli.rs:help_lists_the_flags_each_command_accepts"
+  },
+  {
+    "id": "HIST-RS-RELEASE-001",
+    "origin": "5e23c57",
+    "contract": "RELEASE-001",
+    "mechanism_test": "tests/cli.rs:release_artifacts_report_checkout_provenance",
+    "conformance_test": null,
+    "gap": "The release workflow executes each native artifact and asserts its checkout commit and UTC build date; the local contract test prevents that evidence from leaving the workflow."
+  },
+  {
+    "id": "HIST-RS-SESSION-001",
+    "origin": "2611324",
+    "contract": "SESSION-010",
+    "mechanism_test": "src/app/session/create.rs:silence_is_unknown_and_keeps_the_transport_cause",
+    "conformance_test": "tests/acceptance/session.rs:a_create_without_completion_evidence_reports_the_candidate_and_unknown"
+  },
+  {
+    "id": "HIST-RS-SESSION-002",
+    "origin": "2611324",
+    "contract": "SESSION-010",
+    "mechanism_test": "src/app/session/create.rs:a_full_record_is_created_and_reports_the_resolved_cwd",
+    "conformance_test": "tests/live/session.rs:cwd_is_resolved_to_an_absolute_path_that_matches_the_session"
+  },
+  {
+    "id": "HIST-RS-WIRE-001",
+    "origin": "2611324",
+    "contract": "WIRE-001",
+    "mechanism_test": "tests/contracts.rs:published_v2_validator_detects_closed_object_growth",
+    "conformance_test": null,
+    "gap": "v4.1.0 is the documented pre-policy exception; current DTO cases are now checked against its published v2 validator baseline before another producer may retain schema version 2."
   }
 ]

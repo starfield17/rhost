@@ -117,3 +117,16 @@ fn release_waits_for_four_native_platforms_before_publication() {
     assert!(workflow.contains("contents: write"));
     assert!(workflow.contains("gh release create \"v${version}\" dist/* --verify-tag"));
 }
+
+#[test]
+fn release_artifacts_report_checkout_provenance() {
+    let workflow = include_str!("../.github/workflows/release.yml");
+    for evidence in [
+        "RHOST_BUILD_COMMIT",
+        "RHOST_BUILD_DATE",
+        "d[\"data\"][\"commit\"] == sys.argv[1]",
+        "d[\"data\"][\"build_date\"]",
+    ] {
+        assert!(workflow.contains(evidence), "release omits {evidence}");
+    }
+}
