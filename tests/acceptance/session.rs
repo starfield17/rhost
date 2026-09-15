@@ -183,3 +183,114 @@ fn session_transport_failures_keep_their_own_codes() -> Result<(), String> {
     }
     Ok(())
 }
+
+/// A create whose answer was lost still reports the candidate identity and says
+/// the outcome is unknown, so the caller can look the session up (SESSION-010).
+#[test]
+fn a_create_without_completion_evidence_reports_the_candidate_and_unknown() -> Result<(), String> {
+    let harness = Harness::open("session-create-unknown")?;
+    // The submission is accepted and then the channel goes silent: a timeout or
+    // a disconnect after the remote may already have created the session.
+    harness.stub("ssh", "exit 0")?;
+    let (outcome, value) = envelope(&harness, &["session", "create", "gpu", "--json"])?;
+    assert_eq!(outcome.status, 255, "{value}");
+    assert_eq!(operation(&value), "session.create");
+    want_code(&value, "REMOTE_EXECUTION_UNKNOWN")?;
+    assert_eq!(value["error"]["retryable"], serde_json::Value::Bool(false));
+    let id = value["data"]["session_id"]
+        .as_str()
+        .ok_or("create failure must name a candidate session id")?;
+    assert!(id.starts_with("s_"), "{value}");
+    assert_eq!(value["data"]["creation_status"], "unknown");
+    // The name defaults to the id when the caller gives none.
+    assert_eq!(value["data"]["session_ref"], id);
+    // The human line names a candidate and points at `session list`.
+    let human = run(&harness, &["session", "create", "gpu"])?;
+    assert_eq!(human.status, 255);
+    assert!(
+        human.stderr.contains("candidate session s_") && human.stderr.contains("session list"),
+        "{:?}",
+        human.stderr
+    );
+    Ok(())
+}
+
+/// An explicit remote refusal is a definite negative: no session was kept, so
+/// the creation status is `not_created`.
+#[test]
+fn a_refused_create_reports_the_candidate_and_not_created() -> Result<(), String> {
+    for (helper_code, want) in [
+        ("nameinuse", "CONFIG_INVALID"),
+        ("notmux", "REMOTE_DEPENDENCY_MISSING"),
+        ("noflock", "REMOTE_DEPENDENCY_MISSING"),
+    ] {
+        let harness = Harness::open(&format!("session-create-{helper_code}"))?;
+        // The helper prints its refusal as its own stdout and exits zero.
+        harness.stub(
+            "ssh",
+            &format!("printf 'RHOST_ERR={helper_code}\\n'\nexit 0"),
+        )?;
+        let (outcome, value) = envelope(&harness, &["session", "create", "gpu", "--json"])?;
+        assert_eq!(outcome.status, 255, "{helper_code}: {value}");
+        want_code(&value, want).map_err(|error| format!("{helper_code} {error}"))?;
+        assert!(
+            value["data"]["session_id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("s_")),
+            "{helper_code}: {value}"
+        );
+        assert_eq!(
+            value["data"]["creation_status"], "not_created",
+            "{helper_code}: a refusal keeps no session"
+        );
+    }
+    Ok(())
+}
+
+/// A create that failed before the command was submitted (bad target,
+/// authentication, unreachable host) proves nothing was created, so it stays the
+/// ordinary null-data failure rather than inventing a candidate session.
+#[test]
+fn a_create_that_never_reached_the_host_has_no_candidate_session() -> Result<(), String> {
+    for (diagnostic, code) in [
+        ("Permission denied (publickey).", "SSH_AUTH_FAILED"),
+        (
+            "ssh: connect to host example-host port 22: Connection refused",
+            "SSH_UNREACHABLE",
+        ),
+    ] {
+        let harness = Harness::open(&format!("session-create-{}", code.to_lowercase()))?;
+        harness.stub(
+            "ssh",
+            &format!("printf '%s\\n' {} >&2\nexit 255", shell_quote(diagnostic)),
+        )?;
+        let (outcome, value) = envelope(&harness, &["session", "create", "gpu", "--json"])?;
+        assert_eq!(outcome.status, 255, "{code}: {value}");
+        want_code(&value, code)?;
+        assert_eq!(
+            value["data"],
+            serde_json::Value::Null,
+            "{code}: a pre-submission failure has no candidate session"
+        );
+    }
+    Ok(())
+}
+
+/// A local mistake never reached the host, so there is no candidate to report.
+#[test]
+fn a_local_create_mistake_has_no_candidate_session() -> Result<(), String> {
+    let harness = Harness::open("session-create-local")?;
+    harness.stub("ssh", "exit 99")?;
+    let (outcome, value) = envelope(
+        &harness,
+        &["session", "create", "gpu", "--json", "--shell", "zsh"],
+    )?;
+    assert_eq!(outcome.status, 255);
+    want_code(&value, "CONFIG_INVALID")?;
+    assert_eq!(
+        value["data"],
+        serde_json::Value::Null,
+        "a local mistake has no candidate identity"
+    );
+    harness.assert_no_remote_tool("session create local mistake")
+}

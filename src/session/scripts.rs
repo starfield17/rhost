@@ -120,6 +120,17 @@ mod tests {
             );
         }
         assert!(script.ends_with("echo RHOST_OK=created\n"));
+        // Creation evidence is printed only after the cleanup trap is disarmed,
+        // so a helper the transport killed can never leave behind evidence for a
+        // session its own EXIT trap then removed.
+        let trap_off = script
+            .find("trap - EXIT HUP INT TERM")
+            .unwrap_or(usize::MAX);
+        let created_evidence = script.find("RHOST_CREATED=").unwrap_or(usize::MAX);
+        assert!(
+            trap_off < created_evidence,
+            "RHOST_CREATED must follow the commit point, not precede it: {script}"
+        );
     }
 
     #[test]

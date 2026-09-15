@@ -89,6 +89,8 @@
         "wsl": false,
         "capabilities": {
         },
+        "capability_paths": {
+        },
         "connection": {
           "master_status": "alive",
           "control_path": "example"

@@ -38,10 +38,25 @@ Closing a tunnel affects only its dedicated OpenSSH master and canonical ID.
 
 ## Privilege and dependencies
 
-rhost never installs a missing remote dependency. Establish the intended user or
-privilege context before changing packages or login behavior, preserve an
-independent recovery connection, and verify through a new SSH connection. Never
-place a sudo password in arguments, files, audit data, or environment flags.
+rhost never installs a missing remote dependency and never infers which package
+supplies a tool: ask the host with `command -V <tool>` and the host's own package
+manager (`dpkg -S`, `rpm -qf`, `brew --prefix`, ...), run through `exec`.
+
+Do not rely on a `sudo` timestamp surviving across rhost calls. Each invocation is
+its own submission, so a cache granted to an earlier call may have expired. When
+`sudo` needs a password, use OpenSSH's own PTY — `ssh -t <host> 'sudo ...'` —
+and never pass the password through a session `send`, a command argument, an
+environment flag, or a temporary plaintext file.
+
+Establish the intended user or privilege context before changing packages or
+login behavior, preserve an independent recovery connection, and verify through a
+new SSH connection. Packages and login-shell changes can move which binary a name
+resolves to, so re-verify resolution in the ordinary-user context and again in the
+real `sudo`/service context before trusting a long-running step.
+
+After any account-state change, run `doctor --fresh` to see what the new login
+resolves to, then `connection reset` to retire the old authentication snapshot so
+the next call re-authenticates rather than reusing stale state.
 
 ## State and audit
 

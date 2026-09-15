@@ -69,6 +69,38 @@ fn help_lists_the_flags_each_command_accepts() -> Result<(), Box<dyn std::error:
     Ok(())
 }
 
+/// `--help` must name the concrete defaults a caller needs, not merely that a
+/// default exists, and the file flags the CLI reference documents (FS-003/FS-004).
+#[test]
+fn help_names_concrete_defaults_and_file_flags() -> Result<(), Box<dyn std::error::Error>> {
+    for (argv, wanted) in [
+        (
+            vec!["fs", "read", "--help"],
+            vec!["256 KiB", "8 MiB", "--max-bytes"],
+        ),
+        (
+            vec!["fs", "write", "--help"],
+            vec!["0600", "--mode", "--if-hash"],
+        ),
+        (vec!["fs", "put", "--help"], vec!["5-minute"]),
+        (
+            vec!["session", "create", "--help"],
+            vec!["60-second", "--cwd"],
+        ),
+        (vec!["session", "exec", "--help"], vec!["default"]),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+            .args(&argv)
+            .output()?;
+        assert!(output.status.success(), "{argv:?}");
+        let help = String::from_utf8(output.stdout)?;
+        for needle in wanted {
+            assert!(help.contains(needle), "{argv:?} omits {needle:?}:\n{help}");
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn release_waits_for_four_native_platforms_before_publication() {
     let workflow = include_str!("../.github/workflows/release.yml");

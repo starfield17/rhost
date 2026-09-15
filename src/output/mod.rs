@@ -15,8 +15,8 @@ pub use doctor::{ConnectionDto, connection, connection_failure, doctor, doctor_f
 pub use exec::{exec, exec_diagnostic};
 pub use files::{batch, file_failure, file_read, file_write, sync, transfer};
 pub use session::{
-    session_closed, session_created, session_exec, session_exec_failure, session_exec_status,
-    session_failure, session_read, session_recover, session_sent, sessions,
+    session_closed, session_create_failure, session_created, session_exec, session_exec_failure,
+    session_exec_status, session_failure, session_read, session_recover, session_sent, sessions,
 };
 pub use tunnel::{tunnel, tunnel_closed, tunnels};
 

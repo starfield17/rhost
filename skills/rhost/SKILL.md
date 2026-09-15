@@ -78,6 +78,26 @@ OpenSSH owns target resolution, authentication, ProxyJump and host keys. Do not
 weaken its policy, store credentials in rhost, or install missing remote packages.
 Do not put secrets in command text, `--env`, command files, or process arguments.
 
+`--command`/`--command-file` text is consumed by the target account's *login*
+shell, which resolves the `ssh` wrapper and then starts `bash -lc`. So the
+program sees the environment that login shell already built: `~/.profile`,
+`~/.bash_profile` and friends run first, exactly as an interactive login would
+set them. `--fresh` means a new SSH connection with no shared ControlMaster; it
+does **not** mean a clean environment or a minimal `PATH`. When a command's
+result depends on which binary a name resolves to, ask the host rather than
+assume: run `command -V <tool>` (and, for package ownership,
+`dpkg -S`/`rpm -qf`/`brew --prefix` as that host provides) through `exec`.
+
+Quoting ends at the local shell. A `;`, `|`, `&&` or redirection *outside* the
+quoted `--command` value is consumed by your local shell before rhost sees argv,
+and rhost cannot detect it — it only ever receives the one program you passed.
+Put the whole program inside the quotes, and when nesting becomes awkward use
+`--command-file`. That file is program text read locally and sent as one program;
+it is not uploaded and no remote script is created, which covers most "temporary
+remote script" needs. A real temporary file is still the caller's to create,
+clean up and verify: rhost promises no cleanup of it, especially across a
+disconnect.
+
 ## Choose the smallest operation
 
 - Use `exec` for ordinary foreground work. It has no default deadline; add one
@@ -96,6 +116,23 @@ prove a remote side effect did not happen. Inspect `data.execution` and
 `data.cleanup`, then check the operation's actual remote result before retrying.
 
 Read [references/CLI.md](references/CLI.md) for command and JSON details,
-[references/RECOVERY.md](references/RECOVERY.md) after a failed call, and
+[references/RECOVERY.md](references/RECOVERY.md) after a failed call — it holds
+the full `error.code` → recovery table — and
 [references/SAFETY.md](references/SAFETY.md) before file deletion, exposed
 tunnels, privilege changes, or commands involving credentials.
+
+## Keep the skill and the binary in step
+
+Updating the skill and updating the binary are separate acts, and a *symlinked*
+skill drifts from the binary it points at independently. After changing either,
+before trusting a call, confirm both agree:
+
+```bash
+rhost version --json              # the installed binary's version, commit and date
+rhost <command> --help            # the flags this binary actually accepts
+```
+
+Treat `--help` as the authoritative flag inventory for the installed binary and
+`error.code` as the branching interface; neither is frozen to this document. If
+their `version` and `--help` do not match what the skill describes, install the
+matching pair before continuing.

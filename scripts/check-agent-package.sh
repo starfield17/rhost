@@ -44,4 +44,13 @@ if grep -R -nE 'data\.(exit_code|stdout|stderr|timed_out|cancelled)|cleanup_conf
   fail "skill contains retired v1 wire guidance"
 fi
 
+# The skill must tell a reader to confirm the installed binary and the skill
+# agree after either changes, because a symlinked skill drifts independently.
+grep -Fq 'rhost version --json' skills/rhost/SKILL.md \
+  || fail "SKILL.md must tell readers to check the installed binary version"
+grep -Fq 'rhost <command> --help' skills/rhost/SKILL.md \
+  || fail "SKILL.md must tell readers to check the installed binary --help"
+grep -Eq 'symlinked|symlink' skills/rhost/SKILL.md \
+  || fail "SKILL.md must warn that a symlinked skill drifts from the binary"
+
 echo "check-agent-package: OK"

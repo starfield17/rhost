@@ -4,6 +4,11 @@ Read `ok`, `error.code`, `error.retryable`, and the operation's `data`. English
 messages are diagnostics, not a branching interface. Missing evidence remains
 unknown rather than being converted into success or safe retry permission.
 
+The sections below are the RECOVERY table: every `error.code` the binary can
+return, grouped by cause, with what it does and does not prove. Branch on the
+code, then confirm state with the operation named here. `--help` and
+`rhost version --json` describe the installed binary this table belongs to.
+
 ## Execution and transport
 
 - `SSH_UNREACHABLE` proves a connection-stage failure and may be retryable, but
@@ -33,6 +38,11 @@ unknown rather than being converted into success or safe retry permission.
   reliable. Read the pane first, then recover if interruption is intended.
 - `SESSION_NOT_FOUND` never silently recreates state. Create a new session only
   when losing the previous state is acceptable.
+- A `session create` that reached the host but did not return its full record
+  reports `data.creation_status`: `not_created` (a definite refusal), `unknown`
+  (a timeout, cancellation, disconnect or missing evidence), or `created`
+  (creation was observed). Read `data.session_id` and check `session list`
+  before retrying; a local argument mistake leaves `data` null.
 
 For session results, use `data.execution.status`, `data.session_preserved`, and
 PTY content under `data.output`. A timeout with `session_preserved:false` means
@@ -61,3 +71,20 @@ mutation merely to test connectivity.
 For long work that must survive the agent runtime, submit it to a scheduler
 already installed on the remote host and use that scheduler's own status and
 logs. A tmux session is interactive state, not a generic scheduler.
+
+## Privilege, packages and login shells
+
+rhost does not infer which package supplies a tool, and it does not manage
+privilege for you. After changing packages or the login shell, re-verify command
+resolution in the context that will actually run: as the ordinary user, and again
+under the real `sudo`/service context that a long-running step uses, since they
+can see different `PATH`s.
+
+Do not rely on a `sudo` timestamp surviving between rhost calls; each call is a
+new submission and the credential cache may be gone. Interactive `sudo` belongs
+in OpenSSH's own PTY (`ssh -t <host> 'sudo ...'`), never inside a session `send`,
+an argument, an environment variable or a temporary plaintext file.
+
+After an account's state changes, run `doctor --fresh` to verify what the new
+login resolves to, then `connection reset` to retire the old authentication
+snapshot so the next call re-authenticates cleanly.

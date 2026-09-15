@@ -128,6 +128,7 @@ pub struct DoctorDto {
     state_dir_writable: bool,
     wsl: bool,
     capabilities: std::collections::BTreeMap<String, bool>,
+    capability_paths: std::collections::BTreeMap<String, Option<String>>,
     connection: ConnectionDto,
     connection_reused: Option<bool>,
 }
@@ -152,6 +153,7 @@ pub fn doctor(report: &app::doctor::Report) -> Envelope<DoctorDto> {
             state_dir_writable: report.state_dir_writable,
             wsl: report.wsl,
             capabilities: report.capabilities.clone(),
+            capability_paths: report.capability_paths.clone(),
             connection: ConnectionDto::from(&report.connection),
             connection_reused: report.connection_reused,
         },
@@ -184,6 +186,7 @@ pub fn doctor_failure(
             state_dir_writable: report.state_dir_writable,
             wsl: report.wsl,
             capabilities: report.capabilities.clone(),
+            capability_paths: report.capability_paths.clone(),
             connection: ConnectionDto::from(&report.connection),
             connection_reused: report.connection_reused,
         },

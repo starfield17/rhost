@@ -1,5 +1,9 @@
 //! Actual DTO cases for independent JSON Schema validation.
-use rhost::{domain::*, output};
+use rhost::{
+    app::session::{Created, CreationStatus},
+    domain::*,
+    output,
+};
 use serde::Serialize;
 fn emit<T: Serialize>(
     rows: &mut Vec<serde_json::Value>,
@@ -149,6 +153,26 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
                     CompletionEvidence::Missing,
                     preserved,
                     pty()?,
+                ),
+            ),
+        )?;
+    }
+    for status in [
+        CreationStatus::NotCreated,
+        CreationStatus::Unknown,
+        CreationStatus::Created,
+    ] {
+        emit(
+            &mut rows,
+            output::session_create_failure(
+                "gpu",
+                &Created::failed(
+                    "s_candidate",
+                    "caller-name",
+                    status,
+                    "SESSION_UNHEALTHY",
+                    "completion evidence is missing",
+                    false,
                 ),
             ),
         )?;

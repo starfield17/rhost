@@ -256,3 +256,52 @@ fn raw_send_exit_status_unknown_target_and_recovery_are_explicit() -> Result<(),
     closed?;
     Ok(())
 }
+
+/// A create with `--cwd '~'` records the absolute directory the account actually
+/// entered, and the session's own `pwd` agrees with it. `list` reports the same
+/// value, so create and list cannot disagree.
+#[test]
+fn cwd_is_resolved_to_an_absolute_path_that_matches_the_session() -> Result<(), String> {
+    let live = Live::new("session-cwd")?;
+    let host = live.host().to_string();
+    let name = unique("rlive-cwd");
+    let created = live.ok(&[
+        "--json", "session", "create", &host, "--name", &name, "--cwd", "~",
+    ])?;
+    let result: Result<(), String> = (|| {
+        let reported = text(&created.value, "/data/initial_cwd")?.to_string();
+        assert!(
+            reported.starts_with('/'),
+            "a resolved cwd must be absolute, not the literal `~`: {reported:?}"
+        );
+        // The session's own shell is in exactly that directory.
+        let inside = live.ok(&[
+            "--json",
+            "session",
+            "exec",
+            &host,
+            &name,
+            "--command",
+            "printf '%s' \"$PWD\"",
+        ])?;
+        assert_eq!(
+            text(&inside.value, "/data/output/content")?.trim(),
+            reported,
+            "create's initial_cwd must match the session's live pwd"
+        );
+        // A later list reports the same resolved value, not `~`.
+        let listed = live.ok(&["--json", "session", "list", &host])?;
+        let entry = listed.value["data"]["sessions"]
+            .as_array()
+            .ok_or("sessions is not an array")?
+            .iter()
+            .find(|entry| entry["name"] == name.as_str())
+            .ok_or("created session is missing from list")?;
+        assert_eq!(entry["initial_cwd"], reported);
+        Ok(())
+    })();
+    let closed = live.ok(&["--json", "session", "close", &host, &name]);
+    result?;
+    closed?;
+    Ok(())
+}

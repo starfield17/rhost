@@ -59,16 +59,30 @@ fn submission(outcome: &ExecOutcome) -> Option<Error> {
     })
 }
 
-/// Runs one remote command through the normal execution path and reports its
-/// status with the streams it produced.
-pub(crate) fn run_remote(
+/// One remote run's outcome: what it printed, whether it completed, and why not.
+///
+/// A caller that treats "the submission did not complete" as a failure reads
+/// [`failure`](Self::failure); a caller that has to reason about *partial* side
+/// effects — `session create` — reads the streams too, because a run that died
+/// mid-flight may still have made a session.
+pub(crate) struct RemoteRun {
+    pub stdout: String,
+    pub stderr: String,
+    /// Present only when the command completed; a completed run has no failure.
+    pub status: Option<u8>,
+    pub failure: Option<Error>,
+}
+
+/// Runs one remote command and keeps whatever it printed whether or not it
+/// completed.
+pub(crate) fn run_remote_partial(
     client: &Client,
     host: &str,
     command: &str,
     stdin: Option<&[u8]>,
     timeout: Duration,
     capture: usize,
-) -> Result<(u8, String, String), Error> {
+) -> Result<RemoteRun, Error> {
     let request = ExecRequest {
         host,
         command,
@@ -80,24 +94,50 @@ pub(crate) fn run_remote(
     };
     let outcome = exec::execute_captured(client, command, &request, stdin)
         .map_err(|error| internal(error.to_string()))?;
-    if let Some(error) = submission(&outcome) {
+    let output = outcome.output();
+    let stdout = output.stdout.content().to_string();
+    let stderr = output.stderr.content().to_string();
+    if let Some(failure) = submission(&outcome) {
+        return Ok(RemoteRun {
+            stdout,
+            stderr,
+            status: None,
+            failure: Some(failure),
+        });
+    }
+    let status = match outcome.execution() {
+        Execution::Completed(code) => Some(code.get()),
+        // `submission` above covers every state without a completion, so this
+        // cannot be reached with a silent success.
+        Execution::Unknown | Execution::NotStarted => None,
+    };
+    Ok(RemoteRun {
+        stdout,
+        stderr,
+        status,
+        failure: None,
+    })
+}
+
+/// Runs one remote command through the normal execution path and reports its
+/// status with the streams it produced.
+pub(crate) fn run_remote(
+    client: &Client,
+    host: &str,
+    command: &str,
+    stdin: Option<&[u8]>,
+    timeout: Duration,
+    capture: usize,
+) -> Result<(u8, String, String), Error> {
+    let run = run_remote_partial(client, host, command, stdin, timeout, capture)?;
+    if let Some(error) = run.failure {
         return Err(error);
     }
-    let code = match outcome.execution() {
-        Execution::Completed(code) => code.get(),
-        // `submission` above covers every state without a completion, so this is
-        // unreachable rather than an assumed success.
-        Execution::Unknown | Execution::NotStarted => {
-            return Err(Error::new(
-                "REMOTE_EXECUTION_UNKNOWN",
-                "completion evidence is missing",
-            ));
-        }
+    let Some(status) = run.status else {
+        return Err(Error::new(
+            "REMOTE_EXECUTION_UNKNOWN",
+            "completion evidence is missing",
+        ));
     };
-    let output = outcome.output();
-    Ok((
-        code,
-        output.stdout.content().to_string(),
-        output.stderr.content().to_string(),
-    ))
+    Ok((status, run.stdout, run.stderr))
 }

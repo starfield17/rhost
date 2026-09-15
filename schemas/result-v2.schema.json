@@ -114,6 +114,32 @@
         }
       }
     },
+    "session_create_failure": {
+      "description": "session.create that reached the host but did not return its full record: the candidate identity plus what is known about whether the remote created it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session_id",
+        "session_ref",
+        "creation_status"
+      ],
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "session_ref": {
+          "type": "string"
+        },
+        "creation_status": {
+          "enum": [
+            "not_created",
+            "unknown",
+            "created"
+          ]
+        }
+      }
+    },
     "session_exec": {
       "type": "object",
       "additionalProperties": false,
@@ -566,6 +592,7 @@
         "state_dir_writable",
         "wsl",
         "capabilities",
+        "capability_paths",
         "connection",
         "connection_reused"
       ],
@@ -607,6 +634,16 @@
           "type": "object",
           "additionalProperties": {
             "type": "boolean"
+          }
+        },
+        "capability_paths": {
+          "description": "Same keys as capabilities; the path this execution environment resolves the capability to, or null when it is missing.",
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "connection": {
@@ -1118,6 +1155,9 @@
               },
               {
                 "$ref": "#/definitions/session_info"
+              },
+              {
+                "$ref": "#/definitions/session_create_failure"
               }
             ]
           }

@@ -27,7 +27,12 @@ impl Info {
             name: entry.meta.name.clone(),
             tmux_session: entry.meta.tmux_session.clone(),
             created_at: entry.meta.created_at.clone(),
-            initial_cwd: entry.meta.initial_cwd.clone(),
+            // The resolved sidecar wins; a record from an older build has none,
+            // so its metadata literal stands in without rewriting the record.
+            initial_cwd: entry
+                .resolved_cwd
+                .clone()
+                .unwrap_or_else(|| entry.meta.initial_cwd.clone()),
             shell: entry.meta.shell.clone(),
             status: if entry.alive {
                 Status::Alive

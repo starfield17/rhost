@@ -4,7 +4,11 @@ The installed binary's `--help` output is the authoritative command and flag
 inventory: every command has its own page, and a flag that reaches a parser
 without reaching its page fails the test suite. All structured responses use
 schema v2 with top-level `schema_version`, `operation`, `ok`, `data`, and
-`error`.
+`error`. Branch on `error.code`, never on English text; the full
+`error.code` → recovery table lives in
+[RECOVERY.md](RECOVERY.md). Confirm `rhost version --json` and
+`rhost <command> --help` match this reference before relying on it, since a
+symlinked skill and the installed binary can drift apart.
 
 ## Foreground execution
 
@@ -28,6 +32,17 @@ There is no default exec deadline. JSON capture defaults to 1 MiB per stream;
 captured text is incomplete even though `bytes` reports all observed source
 bytes.
 
+The program runs under the target account's login shell, which resolves the
+`ssh` wrapper and enters `bash -lc`; the environment that login already built is
+the one the command sees. `--fresh` selects a new SSH connection, not a clean
+`PATH`. rhost does not infer which package a tool belongs to: ask the host with
+`command -V <tool>` and the host's own package manager, run through `exec`.
+
+A `;`, pipe or redirection left *outside* the quoted `--command` value is
+consumed by your local shell before rhost runs anything; rhost cannot detect it.
+Keep the whole program inside the value, or use `--command-file`, which sends the
+file's text as one program without creating any remote script.
+
 For `exec`, read:
 
 - `data.execution.status`: `completed`, `unknown`, or `not_started`;
@@ -36,6 +51,12 @@ For `exec`, read:
   `content`, `bytes`, and `truncated`;
 - `data.cleanup.status`: `not_attempted`, `confirmed_stopped`, or `unconfirmed`;
 - `data.cancel_signal` when local SIGINT or SIGTERM ended the invocation.
+
+A `REMOTE_COMMAND_TIMEOUT` is the *managed* command exceeding its deadline: the
+wrapper's matched process group is the thing that may have been stopped, and the
+command may already have had effects. `TRANSFER_FAILED` is different: it is a
+local `scp`/`rsync` failure after a transfer was attempted, so the tool's own
+diagnostic and the real destination are the evidence. Do not conflate them.
 
 ### Small scripts and exploration
 
@@ -83,6 +104,17 @@ rhost connection reset <host> --json
 master accepting new channels; already accepted channels continue. `--fresh`
 uses no shared ControlMaster state.
 
+Default budgets, for callers who do not name a deadline:
+
+- `doctor`: 60 s probe.
+- transfers (`fs put`/`get`/`sync`/`mirror` and each `fs batch` item): 5 minutes
+  per item — the batch budget is per entry, not for the whole list.
+- file helpers (`fs read`/`write`/`patch`): 60 s.
+- `session create`: 60 s; other session operations (`list`, `exec`, `send`,
+  `read`, `recover`, `close`): 30 s, except `exec`, whose 60 s covers the command.
+
+`doctor --timeout 0` and an omitted `--timeout` both select these defaults.
+
 For a frequently used target, an optional entry in `~/.ssh/config` avoids
 repeating the login and hostname:
 
@@ -103,8 +135,12 @@ testing an independent connection. Elapsed time alone cannot distinguish a
 new handshake from remote login-shell startup or command execution costs.
 
 Useful paths include `data.hosts[]`, `data.complete`, `data.warnings[]`,
-`data.capabilities`, `data.state_dir`, `data.connection.master_status`,
-`data.connection_reused`, `data.master_status`, and `data.control_path`.
+`data.capabilities`, `data.capability_paths`, `data.state_dir`,
+`data.connection.master_status`, `data.connection_reused`, `data.master_status`,
+and `data.control_path`. `data.capability_paths` uses the same keys as
+`data.capabilities` and gives the path this execution environment resolves each
+tool to — the same `command -v` answer a real run would get — or `null` when the
+tool is absent. A failed probe reports both maps empty.
 
 ## Sessions
 
@@ -131,6 +167,19 @@ Session exec returns `data.session_id`, `data.session_ref`, `data.execution`,
 `data.more`. `session attach` returns a non-retryable `USAGE_ERROR`; the v2
 envelope has no honest terminal attachment representation.
 
+`session create --cwd` records the *absolute* directory the account actually
+entered, so `~` comes back as a real path and `create` and a later `list` agree.
+Without `--cwd`, `initial_cwd` is omitted, and the session starts wherever the
+login shell leaves it.
+
+A create that reaches the host but does not return its full record reports the
+candidate it reserved under `data.session_id`/`data.session_ref` and a
+`data.creation_status` of `not_created` (the remote refused, or was seen to clean
+up), `unknown` (a timeout, cancellation, disconnect or missing evidence), or
+`created` (creation was observed but the rest of the response was not). Use
+`session list` to confirm a candidate instead of retrying blind. A local
+argument mistake or an id that cannot be generated still reports `data: null`.
+
 ## Files
 
 ```bash
@@ -154,6 +203,11 @@ new file needs no hash. Replacing an existing file and every patch require the
 fresh hash returned by the last read. Batch is ordered serial put/get, continues
 after individual failures, and reports `data.items[]`, `data.succeeded`, and
 `data.failed`; it is not a transaction.
+
+`fs read --max-bytes` defaults to 256 KiB and is capped at 8 MiB; a larger value
+is refused as `CONFIG_INVALID`. `fs write --mode` is three or four octal digits;
+when it is omitted a newly created file is `0600` and a replacement keeps the
+existing file's permissions.
 
 ## Tunnels and audit
 

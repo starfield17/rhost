@@ -55,12 +55,16 @@ pub enum Session {
 static CREATE_FLAGS: &[FlagSpec] = &[
     JSON,
     FlagSpec::value("name", false, "session name; empty allocates one"),
-    FlagSpec::value("cwd", false, "remote working directory"),
+    FlagSpec::value(
+        "cwd",
+        false,
+        "remote working directory; resolved to an absolute path",
+    ),
     FlagSpec::value("shell", false, "remote login shell (bash only)"),
     FlagSpec::value(
         "timeout",
         false,
-        "operation deadline; 0 uses the default budget",
+        "operation deadline; 0 uses the 60-second default",
     ),
 ];
 static LIST_FLAGS: &[FlagSpec] = &[

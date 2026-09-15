@@ -42,17 +42,57 @@ impl<'a> From<&'a app_session::Info> for SessionInfoDto<'a> {
     }
 }
 
+/// The failure shape of `session.create`: the candidate identity this invocation
+/// reserved, and what is known about whether the remote created it. A caller that
+/// lost the answer uses `session_id` with `session list` instead of retrying
+/// blind (SESSION-010).
+#[derive(Debug, Serialize)]
+pub struct SessionCreateFailureDto<'a> {
+    session_id: &'a str,
+    session_ref: &'a str,
+    creation_status: &'static str,
+}
+
 pub fn session_created<'a>(
     host: &str,
-    value: &'a app_session::Info,
+    value: &'a app_session::Created,
 ) -> Envelope<SessionInfoDto<'a>> {
     Envelope {
         schema_version: 2,
         operation: "session.create",
         ok: true,
         host: Some(host.into()),
-        data: SessionInfoDto::from(value),
+        // A successful create always carries the record.
+        data: SessionInfoDto::from(
+            value
+                .info
+                .as_ref()
+                .unwrap_or_else(|| unreachable!("successful create has an Info")),
+        ),
         error: None,
+    }
+}
+
+pub fn session_create_failure<'a>(
+    host: &str,
+    value: &'a app_session::Created,
+) -> Envelope<SessionCreateFailureDto<'a>> {
+    let error = value
+        .error
+        .as_ref()
+        .map(|failure| error(failure.code, &failure.message, failure.retryable))
+        .unwrap_or_else(|| error("INTERNAL", "missing create failure", false));
+    Envelope {
+        schema_version: 2,
+        operation: "session.create",
+        ok: false,
+        host: Some(host.into()),
+        data: SessionCreateFailureDto {
+            session_id: &value.candidate_id,
+            session_ref: &value.candidate_ref,
+            creation_status: value.creation_status.as_str(),
+        },
+        error: Some(error),
     }
 }
 

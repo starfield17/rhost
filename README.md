@@ -46,9 +46,14 @@ To build from source with Rust 1.85 or newer:
 ```bash
 git clone https://github.com/starfield17/rhost.git
 cd rhost
-make build
-install -m 755 target/debug/rhost ~/.local/bin/rhost
+make build-release
+install -m 755 target/release/rhost ~/.local/bin/rhost
 ```
+
+`make build-release` is the shipping build: locked dependencies, `--release`,
+and the commit and UTC build date stamped in so `rhost version --json` names
+what the binary was built from. `make build` is the faster debug build for
+development; it stamps the same provenance but is not the release candidate.
 
 ## Start with an ordinary command
 

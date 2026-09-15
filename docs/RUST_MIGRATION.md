@@ -41,21 +41,21 @@ skills, installers and release workflows. archive/conformance-v1 contains the
 extracted independent harness and historical corpus, finalized before freeze.
 Do not change either snapshot or its integrity manifest. Future work is Rust only.
 
-Cargo.toml is the sole active version authority (4.0.0); schema version 2
-is independent. The root build/check/CI use Rust. Go is optional only for running
-the frozen reference or compatibility harness.
+Cargo.toml is the sole active version authority; schema version 2 is independent
+and does not track the binary version. The root build/check/CI use Rust. Go is
+optional only for running the frozen reference or compatibility harness.
 
 ## Checks
 
 ```sh
-make build
+make build-release
 make check
 make build-reference
 RHOST_BIN=./bin/rhost-go make test-conformance
 ```
 
 make check runs fmt, clippy, Rust tests, independent JSON Schema validation of
-35 actual DTO cases, archive hashes, the domain boundary guard, standalone domain
+38 actual DTO cases, archive hashes, the domain boundary guard, standalone domain
 compilation, portability, the structure budget (file size and dependency
 direction), agent-package validation, hermetic installer tests and the release
 contract check. A version tag builds, executes and verifies the four shipping
@@ -67,7 +67,7 @@ The verification stack is now Rust-first and deliberately layered:
 - `make test-smoke` runs the complete local black-box acceptance crate with
   denying `ssh`/`scp`/`rsync` defaults. It needs no configured host and cannot
   fall through to a developer's real SSH configuration. It currently contains
-  57 cases and passes locally.
+  62 cases and passes locally.
 - Native live tests live in the feature-gated `tests/live_exec.rs` crate and
   `tests/live/` capability modules. `make check` compiles and lints them without
   contacting a host or adding ignored tests. Every runtime answer is validated
@@ -91,7 +91,7 @@ The native live crate covers foreground completion and cancellation races,
 bounded capture, doctor and ControlMaster reuse/reset, deep cache roots, file
 transfer/CAS/sync safety, session persistence/busy/recovery/client death, tunnel
 persistence and reverse traffic, and audit persistence/redaction/concurrent
-writes. Both the smoke selector and the complete 21-case `make test-live-all`
+writes. Both the smoke selector and the complete 23-case `make test-live-all`
 suite pass against a real remote Linux host over SSH in this revision, with no
 failed or ignored native live tests.
 

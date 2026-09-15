@@ -18,7 +18,7 @@ mod io;
 mod lifecycle;
 mod shared;
 
-pub use create::{CreateOptions, create};
+pub use create::{CreateOptions, Created, CreationStatus, create};
 pub use exec::{ExecOptions, exec};
 pub use io::{Read, SendOptions, read, send};
 pub use lifecycle::{Info, Recover, close, list, recover};

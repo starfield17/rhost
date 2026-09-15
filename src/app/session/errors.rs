@@ -6,7 +6,7 @@
 
 use super::shared::helper_budget;
 use crate::app::Error;
-use crate::app::remote::run_remote;
+use crate::app::remote::{RemoteRun, run_remote, run_remote_partial};
 use crate::session::{self, HelperFailure};
 use crate::transport::openssh::Client;
 use std::time::Duration;
@@ -36,6 +36,26 @@ pub(super) fn run_helper(
         )));
     }
     Ok(stdout)
+}
+
+/// One helper submission that keeps whatever it printed whether or not it
+/// completed. `create` needs the partial answer: the remote may have made a
+/// session before the response was lost.
+pub(super) fn run_helper_once(
+    client: &Client,
+    host: &str,
+    script: &str,
+    user_timeout: Duration,
+    capture: usize,
+) -> Result<RemoteRun, Error> {
+    run_remote_partial(
+        client,
+        host,
+        script,
+        None,
+        helper_budget(user_timeout),
+        capture,
+    )
 }
 
 pub(super) fn detail(stderr: &str) -> String {

@@ -47,9 +47,21 @@ pub fn create(meta: &Meta, pane_shell_command: &str) -> String {
         } else {
             out.push_str(&format!("CWD={}\n", shell::path_quote(&meta.initial_cwd)));
         }
+        // Resolve the requested directory in a subshell so the helper's own cwd
+        // is untouched, and report the absolute path the account actually gets.
+        // `~` never travels onward literally: the caller asked for a directory,
+        // and which directory it turned out to be is a fact worth recording.
         out.push_str(
-            "[ -d \"$CWD\" ] && (cd -- \"$CWD\") 2>/dev/null || { echo RHOST_ERR=invalidcwd; exit 0; }\n",
+            "CWD=$(cd -- \"$CWD\" 2>/dev/null && printf '%s' \"$PWD\") || { echo RHOST_ERR=invalidcwd; exit 0; }\n",
         );
+        out.push_str("[ -n \"$CWD\" ] || { echo RHOST_ERR=invalidcwd; exit 0; }\n");
+        // A resolved path is written back as part of the session's remote state,
+        // so `create` and a later `list` report the same directory. It is a
+        // sidecar rather than a `meta.json` edit: the path is raw bytes and needs
+        // no JSON escaping, and an old record without one falls back to the
+        // metadata it was created with (no migration, no rewrite).
+        out.push_str("echo \"RHOST_CWD=$CWD\"\n");
+        out.push_str("RESOLVED_CWD=$CWD\n");
     }
     out.push_str("mkdir -p \"$BASE/sessions\" && chmod 700 \"$BASE/sessions\" 2>/dev/null || { echo RHOST_ERR=newfailed; exit 0; }\n");
     out.push_str("exec 8> \"$BASE/sessions/.create.lock\"\n");
@@ -120,6 +132,14 @@ pub fn create(meta: &Meta, pane_shell_command: &str) -> String {
     // Drop the bootstrap chatter so a read from offset 0 starts clean:
     // `pipe-pane`'s `cat` appends, so truncating is safe.
     out.push_str(": > \"$LOG\"\n");
+    if !meta.initial_cwd.is_empty() {
+        out.push_str(
+            "printf '%s' \"$RESOLVED_CWD\" > \"$DIR/cwd\" || { echo RHOST_ERR=newfailed; exit 0; }\n",
+        );
+        out.push_str(
+            "chmod 600 \"$DIR/cwd\" 2>/dev/null || { echo RHOST_ERR=newfailed; exit 0; }\n",
+        );
+    }
     let meta_json = serde_json::to_string(meta).unwrap_or_else(|_| "{}".to_string());
     out.push_str(&format!(
         "printf '%s' '{}' | base64 -d > \"$DIR/meta.json\" || {{ echo RHOST_ERR=newfailed; exit 0; }}\n",
@@ -128,8 +148,13 @@ pub fn create(meta: &Meta, pane_shell_command: &str) -> String {
     out.push_str(
         "chmod 600 \"$DIR/meta.json\" 2>/dev/null || { echo RHOST_ERR=newfailed; exit 0; }\n",
     );
+    // The commit point: the record is on disk and the cleanup trap is disarmed,
+    // so the session will survive even if this helper dies now. `RHOST_CREATED`
+    // is printed here, and only here — after this line the session is not the
+    // trap's to remove, so the evidence a lost response leaves behind is honest.
     out.push_str("created=no\n");
     out.push_str("trap - EXIT HUP INT TERM\n");
+    out.push_str(&format!("echo \"RHOST_CREATED={}\"\n", meta.id));
     out.push_str("echo RHOST_OK=created\n");
     out
 }

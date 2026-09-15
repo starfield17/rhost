@@ -76,7 +76,7 @@ pub(crate) static FS_PUT_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "deadline for the operation; 0 uses the default",
+        "deadline for the operation; 0 uses the 5-minute default",
     ),
     FlagSpec::long("resume", "resume a partial transfer"),
     FlagSpec::long("checksum", "verify with a checksum"),
@@ -87,7 +87,7 @@ static FS_GET_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "deadline for the operation; 0 uses the default",
+        "deadline for the operation; 0 uses the 5-minute default",
     ),
     FlagSpec::long("resume", "resume a partial transfer"),
     FlagSpec::long("checksum", "verify with a checksum"),
@@ -97,7 +97,7 @@ static FS_SYNC_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "deadline for the operation; 0 uses the default",
+        "deadline for the operation; 0 uses the 5-minute default",
     ),
     FlagSpec::long("delete", "delete remote files missing locally"),
     FlagSpec::long("dry-run", "report changes without applying them"),
@@ -109,7 +109,7 @@ static FS_BATCH_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "deadline for the operation; 0 uses the default",
+        "per-item deadline; 0 uses the 5-minute default",
     ),
     FlagSpec::value("manifest", false, "local JSON manifest of copies"),
 ];
@@ -118,9 +118,13 @@ static FS_READ_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "deadline for the operation; 0 uses the default",
+        "deadline for the operation; 0 uses the 60-second default",
     ),
-    FlagSpec::value("max-bytes", false, "maximum bytes to return"),
+    FlagSpec::value(
+        "max-bytes",
+        false,
+        "maximum bytes to return; default 256 KiB, max 8 MiB",
+    ),
     FlagSpec::value("start", false, "first line to return (1-based)"),
     FlagSpec::value("lines", false, "number of lines to return"),
 ];
@@ -129,7 +133,7 @@ static FS_WRITE_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "deadline for the operation; 0 uses the default",
+        "deadline for the operation; 0 uses the 60-second default",
     ),
     FlagSpec::value("from", false, "local file to upload, or - for stdin"),
     FlagSpec::value(
@@ -137,7 +141,11 @@ static FS_WRITE_FLAGS: &[FlagSpec] = &[
         false,
         "refuse unless the current SHA-256 matches",
     ),
-    FlagSpec::value("mode", false, "file mode to apply, e.g. 0644"),
+    FlagSpec::value(
+        "mode",
+        false,
+        "3- or 4-digit octal mode; new files default 0600, replacements keep theirs",
+    ),
     FlagSpec::long("parents", "create missing remote directories"),
 ];
 static FS_PATCH_FLAGS: &[FlagSpec] = &[
@@ -145,7 +153,7 @@ static FS_PATCH_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "deadline for the operation; 0 uses the default",
+        "deadline for the operation; 0 uses the 60-second default",
     ),
     FlagSpec::value("patch", false, "local patch file, or - for stdin"),
     FlagSpec::value(

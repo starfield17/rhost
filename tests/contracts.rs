@@ -7,7 +7,7 @@ fn actual_dtos_match_independent_schema() -> Result<(), Box<dyn std::error::Erro
         serde_json::from_str(include_str!("../schemas/result-v2.schema.json"))?;
     let validator = jsonschema::validator_for(&schema)?;
     let cases = contract_cases::cases()?;
-    assert_eq!(cases.len(), 35);
+    assert_eq!(cases.len(), 38);
     for case in cases {
         assert!(validator.is_valid(&case), "{case}");
         let mut missing = case.clone();

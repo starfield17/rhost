@@ -107,6 +107,19 @@ require_once "locked release build" "cargo build --locked --release --bin rhost"
 # workflow cannot produce artifacts that look shipping-shaped.
 require_once "self-check step" "./scripts/check-release-contract.sh"
 
+# `make build-release` is the local release candidate, so it must be the same
+# locked, optimized, provenance-stamped build the workflow runs. `make build`
+# stays the debug build, and neither may drop the lockfile.
+maketarget=$(awk '/^build-release:/ { inside = 1; next } inside && /^[^[:space:]]/ { inside = 0 } inside { print }' Makefile)
+for pattern in 'cargo build --locked --release --bin rhost' 'RHOST_BUILD_COMMIT' 'RHOST_BUILD_DATE'; do
+	if ! printf '%s\n' "$maketarget" | grep -Fq "$pattern"; then
+		report "make build-release is missing: $pattern"
+	fi
+done
+if printf '%s\n' "$maketarget" | grep -Fq -- '--debug'; then
+	report "make build-release must not build the debug profile"
+fi
+
 # The version comes from Cargo.toml, and from nowhere else.
 require_once "version read from Cargo.toml" "sed -n 's/^version = \"\\([^\"]*\\)\"/\\1/p' Cargo.toml"
 refuse "a second version authority" 'plugin\.json|(/|\s)VERSION([^_A-Z]|$)'

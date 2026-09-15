@@ -2,6 +2,7 @@
 //!
 //! A stub ssh answers exactly the control exchanges a real one would, so these
 //! cases pin what rhost reports about a master without owning one.
+use crate::hosts::local_host;
 use crate::support::{Harness, envelope, operation, run, shell_quote, want_code};
 
 /// A stub OpenSSH that answers the control protocol and nothing else. The mode
@@ -180,6 +181,11 @@ fn a_failed_probe_reports_the_connection_it_knew_and_no_capabilities() -> Result
         "a probe that never completed has no capability answers"
     );
     assert_eq!(
+        value["data"]["capability_paths"],
+        serde_json::Value::Object(serde_json::Map::new()),
+        "a probe that never completed has no resolved paths either"
+    );
+    assert_eq!(
         value["data"]["connection"]["master_status"],
         serde_json::Value::String("unknown".into()),
         "the master state read before the probe is still evidence"
@@ -195,6 +201,67 @@ fn a_failed_probe_reports_the_connection_it_knew_and_no_capabilities() -> Result
         human.stderr.contains("SSH_AUTH_FAILED"),
         "{:?}",
         human.stderr
+    );
+    Ok(())
+}
+
+/// A completed probe reports the path this execution environment resolves each
+/// capability to, under the same key set as `capabilities`, and the human view
+/// names it. A host stand-in runs the probe exactly as a real one would.
+#[test]
+fn a_completed_probe_reports_the_path_each_capability_resolved_to() -> Result<(), String> {
+    let harness = Harness::open("doctor-paths")?;
+    local_host(&harness)?;
+    let (outcome, value) = envelope(&harness, &["doctor", "gpu", "--json"])?;
+    assert_eq!(outcome.status, 0, "{value}");
+    assert_eq!(value["data"]["online"], serde_json::Value::Bool(true));
+
+    let capabilities = value["data"]["capabilities"]
+        .as_object()
+        .ok_or("capabilities is not an object")?;
+    let paths = value["data"]["capability_paths"]
+        .as_object()
+        .ok_or("capability_paths is not an object")?;
+    let mut capability_keys: Vec<&String> = capabilities.keys().collect();
+    let mut path_keys: Vec<&String> = paths.keys().collect();
+    capability_keys.sort();
+    path_keys.sort();
+    assert_eq!(
+        capability_keys, path_keys,
+        "both maps must publish the same key set"
+    );
+
+    // A capability this host has must carry the path `command -v` returned; a
+    // capability it lacks must carry null, never a fabricated path.
+    let mut seen_found = false;
+    for (name, found) in capabilities {
+        let found = found.as_bool().ok_or("capability is not a boolean")?;
+        let path = paths
+            .get(name)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        if found {
+            seen_found = true;
+            assert!(
+                path.as_deref().is_some_and(|value| value.starts_with('/')),
+                "{name} is present but has no resolved path: {value}"
+            );
+        } else {
+            assert_eq!(path, None, "{name} is missing but names a path");
+        }
+    }
+    assert!(
+        seen_found,
+        "the probe needs at least one present capability to be a useful test"
+    );
+
+    // The human line carries the same fact the envelope does.
+    let human = run(&harness, &["doctor", "gpu"])?;
+    assert_eq!(human.status, 0);
+    assert!(
+        human.stdout.contains("OK (/"),
+        "the human view must name the resolved path: {:?}",
+        human.stdout
     );
     Ok(())
 }

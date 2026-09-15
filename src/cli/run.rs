@@ -192,11 +192,7 @@ pub(crate) fn doctor(
     field(sink, "WSL", yes(report.wsl));
     sink.line("");
     for name in app_doctor::CAPABILITIES {
-        field(
-            sink,
-            name,
-            ok_missing(report.capabilities.get(name).copied().unwrap_or(false)),
-        );
+        field(sink, name, &capability_line(report, name));
     }
     0
 }
@@ -323,6 +319,16 @@ pub(crate) fn exec(
         warn(&exec_status_line(&outcome));
     }
     status
+}
+
+/// One capability line: `OK (<resolved-path>)` when this execution environment
+/// found the tool, `missing` otherwise. The path is the same value the envelope
+/// carries under `data.capability_paths`, so a human and an agent read one fact.
+fn capability_line(report: &app_doctor::Report, name: &str) -> String {
+    match report.capability_paths.get(name).and_then(Option::as_deref) {
+        Some(path) => format!("OK ({path})"),
+        None => ok_missing(false).to_string(),
+    }
 }
 
 /// The human counterpart of `data.execution`, `data.cleanup` and

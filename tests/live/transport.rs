@@ -24,6 +24,42 @@ fn doctor_and_connection_reuse_are_real_across_processes() -> Result<(), String>
     Ok(())
 }
 
+/// The capability paths `doctor` reports must be the paths the *same* execution
+/// environment resolves: a real run's `command -v` for the same names.
+#[test]
+fn doctor_capability_paths_match_a_real_command_v() -> Result<(), String> {
+    let live = Live::new("transport-paths")?;
+    let host = live.host().to_string();
+    let doctor = live.ok(&["--json", "doctor", &host, "--timeout", "0"])?;
+    assert!(boolean(&doctor.value, "/data/online")?);
+
+    for capability in ["bash", "tmux", "flock", "rsync", "python3"] {
+        assert_eq!(
+            doctor.value["data"]["capabilities"][capability], true,
+            "{capability} should be present on the test host"
+        );
+        let reported = text(
+            &doctor.value,
+            &format!("/data/capability_paths/{capability}"),
+        )?
+        .to_string();
+        assert!(
+            reported.starts_with('/'),
+            "{capability} path must be absolute: {reported:?}"
+        );
+        // Ask the host directly, the way a run would resolve the name.
+        let probe = live.exec(&format!("command -v {capability}"))?;
+        let observed = text(&probe.value, "/data/output/stdout/content")?
+            .trim()
+            .to_string();
+        assert_eq!(
+            reported, observed,
+            "doctor must report what command -v resolves for {capability}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn reset_does_not_kill_an_already_accepted_channel() -> Result<(), String> {
     let live = Live::new("transport-reset")?;

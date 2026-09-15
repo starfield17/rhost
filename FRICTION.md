@@ -130,3 +130,63 @@ later implementation look consistent. A passing local test is not live evidence.
   version.
 - Follow-up: the Rust archive test and agent/release checks all fail on manifest
   drift; neither manifest is read by a build.
+
+## 2026-09-15 — create uncertainty is reported, not erased
+
+- Observation: a `session create` whose response was lost left the caller with
+  `data: null`, even though the remote may have created the tmux session and
+  written its `meta.json` before the channel died.
+- Impact: an agent could not tell "definitely nothing" from "maybe a session
+  exists", and a blind retry could leak an orphan session.
+- Decision: reserve the candidate identity before submitting and report it with
+  `creation_status` (`not_created`/`unknown`/`created`) on every failure that
+  reached the host (SESSION-010). A failure that never reached the host keeps
+  `data: null`. The transport cause and retryability are unchanged.
+- Follow-up: `create` now reads the partial transcript. The remote prints its
+  created-evidence line only *after* the record is on disk and the cleanup trap
+  is disarmed, so evidence a killed helper leaves behind is honest: the session
+  it names is not one the trap then removes. A live full-suite run showed the
+  earlier "print early" ordering could name a session the trap had already
+  deleted.
+
+## 2026-09-15 — initial_cwd records the directory, not the request
+
+- Observation: `session create --cwd '~'` stored the literal `~` in the record,
+  so `create` and a later `list` reported a value that is not a directory and
+  would not match the session's own `pwd`.
+- Impact: a caller comparing the recorded cwd to live state saw a spurious
+  mismatch; `~` is a shell shorthand, not a path.
+- Decision: resolve `--cwd` in a remote subshell, record the absolute `$PWD` as
+  a `cwd` sidecar beside `meta.json`, and report it from both `create` and
+  `list`. An old record without a sidecar falls back to its metadata literal —
+  no migration, no rewrite.
+- Follow-up: the sidecar is raw bytes, not JSON, so a path with any characters
+  round-trips without escaping.
+
+## 2026-09-15 — a missing capability is unit-testable, not portably black-box
+
+- Observation: `doctor` must report `null` for a capability the host lacks, but
+  a hermetic black-box test cannot force one to be missing: the acceptance
+  harness runs the probe under the local login shell, whose profile rebuilds
+  `PATH` (macOS `path_helper`, `/etc/profile`) so `/usr/bin` tools always resolve.
+- Impact: a black-box "missing" case would either be flaky across hosts or would
+  have to parse the wrapper's private base64 protocol, which the harness
+  deliberately does not do.
+- Decision: cover the missing semantics deterministically in the
+  `capability_maps` unit test (present → path, missing → null, empty probe → all
+  null) and cover "a probe that never completed reports both maps empty" in the
+  black-box suite. The success case asserts the two maps always share one key set.
+- Follow-up: the live `doctor_capability_paths_match_a_real_command_v` case
+  proves presence against a real `command -v`; absence needs no real host.
+
+## 2026-09-15 — a transient transfer-deadline acceptance flake
+
+- Observation: `files::a_transfer_deadline_stops_the_whole_tool_group` failed
+  once during a full `make test-smoke` run, then passed on its own and in the
+  immediate full re-run, with no code change between.
+- Impact: it is unrelated to the session/doctor work in this change and must not
+  be folded into it as if the fix had addressed it.
+- Decision: record it here as a separate observation; do not weaken or widen the
+  test to hide it. If it recurs, investigate the transfer deadline timing on its
+  own.
+- Follow-up: none in this change; the test is left exactly as it was.

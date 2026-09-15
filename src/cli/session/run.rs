@@ -2,6 +2,7 @@
 //! process status the answer implies.
 
 use super::parse::{CLOSE_TIMEOUT, SEND_TIMEOUT, Session, budget};
+use crate::app::Error as AppError;
 use crate::app::session as app_session;
 use crate::cli::audit::Timer;
 use crate::cli::console::{Failure, Sink, warn};
@@ -29,15 +30,36 @@ pub(crate) fn run(sink: &mut Sink, client: &Client, command: Session, json: bool
                 timeout: budget(timeout_nanos),
             };
             match app_session::create(client, &options) {
-                Ok(info) => {
-                    timer.succeeded(&cwd, "", None);
-                    if json {
-                        sink.envelope(&output::session_created(&host, &info));
-                    } else {
-                        render::session_created(sink, &info);
+                Ok(created) => match &created.info {
+                    Some(info) => {
+                        timer.succeeded(&info.initial_cwd, "", None);
+                        if json {
+                            sink.envelope(&output::session_created(&host, &created));
+                        } else {
+                            render::session_created(sink, info);
+                        }
+                        0
                     }
-                    0
-                }
+                    // The request reached the host, so the answer names the
+                    // candidate identity and what became of it, on both paths.
+                    None => {
+                        let error = created
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| AppError::new("INTERNAL", "missing create failure"));
+                        timer.failed(error.code);
+                        if json {
+                            sink.envelope(&output::session_create_failure(&host, &created));
+                        } else {
+                            warn(&format!(
+                                "rhost: {}: {}",
+                                error.code,
+                                created_failure_message(&created)
+                            ));
+                        }
+                        Failure::from_error("session.create", &host, error).status()
+                    }
+                },
                 Err(error) => {
                     timer.failed(error.code);
                     Failure::from_error("session.create", &host, error).deliver(sink, json)
@@ -220,4 +242,19 @@ pub(crate) fn run(sink: &mut Sink, client: &Client, command: Session, json: bool
             }
         }
     }
+}
+
+/// The human text for a create that did not return a full record. It names the
+/// candidate identity and points at the one way to find out what happened: list
+/// the sessions.
+fn created_failure_message(created: &app_session::Created) -> String {
+    let message = created
+        .error
+        .as_ref()
+        .map(|error| error.message.clone())
+        .unwrap_or_else(|| "session creation did not return a record".to_string());
+    format!(
+        "{message} (candidate session {}; run `rhost session list` to check it)",
+        created.candidate_id
+    )
 }

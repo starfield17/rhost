@@ -22,7 +22,11 @@ for d in "$BASE"/sessions/*/; do
   alive=no
   if [ -n "$tmuxname" ] && tmux has-session -t "$tmuxname" 2>/dev/null; then alive=yes; fi
   meta=$(base64 -w0 < "$d/meta.json")
-  printf 'RHOST_META\t%s\t%s\t%s\n' "$id" "$alive" "$meta"
+  # The resolved cwd is a sidecar because it is raw bytes; an old record without
+  # one reports an empty field and the metadata's literal value is used instead.
+  cwd=""
+  [ -f "$d/cwd" ] && cwd=$(base64 -w0 < "$d/cwd")
+  printf 'RHOST_META\t%s\t%s\t%s\t%s\n' "$id" "$alive" "$meta" "$cwd"
 done
 "#,
     );
