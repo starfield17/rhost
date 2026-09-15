@@ -1,7 +1,7 @@
 //! Moving files: `scp` for one file, `rsync` for a tree.
 
 use crate::hosts::{local_host, rsync_stub, scp_stub};
-use crate::support::{Harness, envelope, fail, run, shell_quote, want_code};
+use crate::support::{Harness, envelope, fail, run, want_code};
 
 #[test]
 fn a_put_builds_one_scp_invocation_and_reports_the_landing_file() -> Result<(), String> {
@@ -219,20 +219,14 @@ fn a_missing_local_tool_is_not_retryable() -> Result<(), String> {
 }
 
 #[test]
-fn a_transfer_deadline_stops_the_whole_tool_group() -> Result<(), String> {
+fn a_transfer_deadline_bounds_the_local_tool() -> Result<(), String> {
     let harness = Harness::open("fs-descendant")?;
     harness.stub("ssh", "exit 255")?;
-    let marker = harness.path("started");
-    // The evidence comes first, so a loaded machine cannot make the fixture look
-    // as though it never ran: what this test proves is that the *descendant*
-    // cannot keep the pipes open past the deadline.
-    harness.stub(
-        "scp",
-        &format!(
-            "printf started > {}\nsleep 5 &\nwait",
-            shell_quote(&marker.to_string_lossy())
-        ),
-    )?;
+    // Process-group membership is proved with a readiness handshake in the
+    // process module. This black-box case proves the public transfer deadline;
+    // it must not assume the newly spawned stub was scheduled before that
+    // deadline expired.
+    harness.stub("scp", "sleep 5 &\nwait")?;
     let source = harness.path("input");
     std::fs::write(&source, "input").map_err(|e| fail("fixture", e))?;
     let started = std::time::Instant::now();
@@ -258,10 +252,6 @@ fn a_transfer_deadline_stops_the_whole_tool_group() -> Result<(), String> {
     assert!(
         elapsed < std::time::Duration::from_millis(3500),
         "a forked descendant kept the transfer pipes open: {elapsed:?}"
-    );
-    assert!(
-        marker.exists(),
-        "the fixture never started its pipe-holding descendant"
     );
     Ok(())
 }

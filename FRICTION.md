@@ -190,3 +190,19 @@ later implementation look consistent. A passing local test is not live evidence.
   test to hide it. If it recurs, investigate the transfer deadline timing on its
   own.
 - Follow-up: none in this change; the test is left exactly as it was.
+
+## 2026-09-15 — transfer-deadline flake recurred under concurrent smoke load
+
+- Observation: the same transfer case failed again in a default concurrent
+  `make check`; its stub had not written the readiness marker before the two-second
+  deadline. The exact case passed alone, and the complete 62-case acceptance
+  suite passed serially without a source change.
+- Evidence: the failure was `the fixture never started its pipe-holding
+  descendant`; the public result had already reported the expected timeout.
+- Impact: the marker assertion confused child scheduling with the behavior under
+  test, so load could fail the measurement before the descendant existed.
+- Decision: keep the public deadline/status assertions unchanged, and move group
+  termination evidence to a process-level case that waits for explicit readiness
+  before cancellation and checks the descendant is no longer running.
+- Follow-up: use `make stress-transfer-timeout` for repeated concurrent smoke
+  runs; do not add retries, ignored tests or a wider production timeout.

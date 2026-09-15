@@ -20,7 +20,9 @@ pub use run::{DRAIN_GRACE, Run, RunFailure, Spec, StdinSource, run};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::io;
+    use std::process::Command;
     use std::time::{Duration, Instant};
 
     struct Collect(Vec<u8>, u64);
@@ -141,6 +143,82 @@ mod tests {
         let run = run(&armed, &mut stdout, &mut stderr);
         assert!(run.cancelled);
         assert!(!run.timed_out);
+    }
+
+    /// The group-kill syntax once worked on BSD `kill` but not GNU `kill`: the
+    /// shell died while its pipe-holding child survived. Readiness, rather than
+    /// a wall-clock guess, proves the descendant existed before cancellation.
+    #[test]
+    fn cancellation_stops_a_ready_process_group_and_its_descendant() {
+        let root = std::env::temp_dir().join(format!(
+            "rhost-process-group-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap_or_else(|error| panic!("fixture: {error}"));
+        let pid_file = root.join("descendant-pid");
+        let parent_file = root.join("parent-pid");
+        let ready = root.join("ready");
+        let script = r#"printf '%s' "$$" > "$3"
+sh -c 'printf "%s" "$$" > "$1"; printf ready > "$2"; exec sleep 30' child "$1" "$2" &
+wait"#;
+        let args = vec![
+            "-c".to_string(),
+            script.to_string(),
+            "rhost-process-group-test".to_string(),
+            pid_file.to_string_lossy().into_owned(),
+            ready.to_string_lossy().into_owned(),
+            parent_file.to_string_lossy().into_owned(),
+        ];
+        let observed = Cell::new(false);
+        let cancelled = || {
+            let is_ready = ready.exists();
+            observed.set(observed.get() || is_ready);
+            is_ready
+        };
+        let grouped = Spec {
+            program: "/bin/sh",
+            args: &args,
+            stdin: StdinSource::Closed,
+            deadline: Some(Instant::now() + Duration::from_secs(10)),
+            cancelled: &cancelled,
+            group: true,
+        };
+        let mut stdout = Collect(Vec::new(), 0);
+        let mut stderr = Collect(Vec::new(), 0);
+        let run = run(&grouped, &mut stdout, &mut stderr);
+        assert!(observed.get(), "the fixture never reported readiness");
+        assert!(run.cancelled && !run.timed_out);
+
+        let mut survivors = Vec::new();
+        for file in [&parent_file, &pid_file] {
+            let raw = std::fs::read_to_string(file)
+                .unwrap_or_else(|error| panic!("read fixture pid: {error}"));
+            let pid = raw.trim();
+            assert!(!pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()));
+            if process_is_running(pid) {
+                let _ = Command::new("kill").args(["-KILL", pid]).status();
+                survivors.push(pid.to_string());
+            }
+        }
+        assert!(
+            survivors.is_empty(),
+            "group cancellation left {survivors:?} running"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn process_is_running(pid: &str) -> bool {
+        let output = match Command::new("ps").args(["-o", "stat=", "-p", pid]).output() {
+            Ok(output) => output,
+            Err(_) => return true,
+        };
+        let state = String::from_utf8_lossy(&output.stdout);
+        output.status.success()
+            && state
+                .split_whitespace()
+                .any(|value| !value.starts_with('Z'))
     }
 
     #[test]
