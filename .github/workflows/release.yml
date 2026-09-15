@@ -7,7 +7,23 @@ on:
 permissions:
   contents: read
 jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install declared Rust toolchain
+        run: |
+          rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$rust_version" --profile minimal
+          rustup component add --toolchain "$rust_version" rustfmt clippy
+          rustup override set "$rust_version"
+      - run: make check
   native:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +39,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install declared Rust toolchain
+        run: |
+          rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$rust_version" --profile minimal
+          rustup override set "$rust_version"
       - name: Prove the rehearsal still matches the release contract
         run: ./scripts/check-release-contract.sh
       - name: Build and execute exact native artifact
