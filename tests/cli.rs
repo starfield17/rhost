@@ -112,6 +112,10 @@ fn release_waits_for_four_native_platforms_before_publication() {
     assert!(workflow.contains("\"$artifact\" --help"));
     assert!(workflow.contains("workflow_dispatch:"));
     assert!(workflow.contains("tags:"));
+    assert!(workflow.contains("  verify:"));
+    assert!(workflow.contains("os: [ubuntu-24.04, macos-15]"));
+    assert_eq!(workflow.matches("run: make check").count(), 1);
+    assert!(workflow.contains("  native:\n    needs: verify"));
     assert!(workflow.contains("needs: native"));
     assert!(workflow.contains("if: startsWith(github.ref, 'refs/tags/v')"));
     assert!(workflow.contains("contents: write"));
@@ -129,4 +133,38 @@ fn release_artifacts_report_checkout_provenance() {
     ] {
         assert!(workflow.contains(evidence), "release omits {evidence}");
     }
+}
+
+#[test]
+fn release_uses_the_declared_toolchain_in_each_build_job() {
+    let workflow = include_str!("../.github/workflows/release.yml");
+    for name in ["verify", "native"] {
+        let heading = format!("  {name}:\n");
+        let job = workflow
+            .split_once(&heading)
+            .unwrap_or_else(|| panic!("release job missing"))
+            .1;
+        let job = job
+            .lines()
+            .take_while(|line| {
+                !line.starts_with("  ") || line.starts_with("    ") || line.trim().is_empty()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        for required in [
+            r#"rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)"#,
+            r#"rustup toolchain install "$rust_version" --profile minimal"#,
+            r#"rustup override set "$rust_version""#,
+        ] {
+            assert!(job.contains(required), "{name} omits {required}");
+        }
+        if name == "verify" {
+            assert!(job.contains("runs-on: ${{ matrix.os }}"));
+            assert!(
+                job.contains(r#"rustup component add --toolchain "$rust_version" rustfmt clippy"#)
+            );
+            assert_eq!(job.matches("run: make check").count(), 1);
+        }
+    }
+    assert!(!workflow.contains("make test-smoke"));
 }

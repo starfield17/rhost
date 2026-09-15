@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # check-release-contract.sh — the release workflow still enforces the contract.
 #
-# CONTRACT.md RELEASE-001 promises four shipping artifacts, built and executed on
-# a native runner each, with their checksums verified, before publication.
-# The workflow must build exactly the four shipping
+# CONTRACT.md RELEASE-001 promises the complete source gate on Linux and macOS,
+# then four shipping artifacts built and executed on a native runner each, with
+# their checksums verified, before publication. The workflow must build exactly the four shipping
 # platform/runner pairs, the version taken from Cargo.toml (the sole version
 # authority), the artifact named, executed and summed the way a release expects,
 # no cross-compilation or write near the frozen archive, and every action pinned
@@ -103,6 +103,44 @@ fi
 # One build, of the one binary, from the lockfile.
 require_once "locked release build" "cargo build --locked --release --bin rhost"
 
+# Scope source verification and dependency checks to the job that owns them.
+# A matching line in another job cannot satisfy a release dependency.
+job_text() {
+    awk -v wanted="$1" '
+        /^  [a-zA-Z_-]+:/ { inside = ($0 == "  " wanted ":") }
+        inside { print }
+    ' "$workflow"
+}
+require_job_once() {
+    job=$1
+    pattern=$2
+    count=$(job_text "$job" | grep -cF -- "$pattern" || true)
+    if [ "$count" -ne 1 ]; then
+        report "expected exactly one '$pattern' in $job, found $count"
+    fi
+}
+require_once "source verification job" "  verify:"
+require_job_once verify '        os: [ubuntu-24.04, macos-15]'
+require_job_once verify '    runs-on: ${{ matrix.os }}'
+require_job_once verify '      - run: make check'
+require_once "complete source gate" '      - run: make check'
+require_job_once native '    needs: verify'
+require_job_once publish '    needs: native'
+require_job_once verify 'rustup component add --toolchain "$rust_version" rustfmt clippy'
+refuse "a redundant smoke suite" 'make test-smoke'
+
+# Both jobs must read the declared MSRV, install it and select it before running
+# their gate/build. Counting steps globally could hide a missing native setup.
+toolchain_read=$(cat <<'EOF'
+rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
+EOF
+)
+for job in verify native; do
+    require_job_once "$job" "$toolchain_read"
+    require_job_once "$job" 'rustup toolchain install "$rust_version" --profile minimal'
+    require_job_once "$job" 'rustup override set "$rust_version"'
+done
+
 # The workflow proves this definition before it builds anything, so a drifted
 # workflow cannot produce artifacts that look shipping-shaped.
 require_once "self-check step" "./scripts/check-release-contract.sh"
@@ -164,8 +202,9 @@ if ! grep -Eq 'sha256sum|shasum' "$installer"; then
 	report "install.sh does not verify SHA-256"
 fi
 
-# Publishing is one final job, restricted to a version tag and dependent on all
-# four native matrix entries. Manual dispatch therefore remains a rehearsal.
+# Publishing is one final job, restricted to a version tag and transitively
+# dependent on source verification plus all four native matrix entries. Manual
+# dispatch therefore remains a rehearsal.
 require_once "version-tag trigger" '      - "v*"'
 require_once "publication tag guard" "    if: startsWith(github.ref, 'refs/tags/v')"
 require_once "publication waits for native artifacts" "    needs: native"
@@ -218,8 +257,8 @@ if [ "$hits" -gt 0 ]; then
 Found release-contract violations.
 
 The release workflow and this check are described in docs/CONTRACT.md
-(RELEASE-001) and docs/RUST_MIGRATION.md. Publication must remain downstream of
-all four natively executed and checksum-verified artifacts.
+(RELEASE-001) and docs/MAINTENANCE.md. Publication must remain downstream of the
+source gate and all four natively executed and checksum-verified artifacts.
 EOF
 	exit 1
 fi
@@ -228,4 +267,4 @@ if [ "$verbose" = 1 ]; then
 	printf '%s\n' "$actual_pairs"
 fi
 pairs=$(printf '%s\n' "$actual_pairs" | grep -c .)
-echo "check-release-contract: OK ($pairs native platform/runner pairs, tag-gated publication)"
+echo "check-release-contract: OK (2 source platforms, $pairs native platform/runner pairs, tag-gated publication)"
