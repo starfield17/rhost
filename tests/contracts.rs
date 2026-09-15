@@ -57,11 +57,10 @@ fn published_v410_validator_is_immutable() {
     let digest = Sha256::digest(include_bytes!(
         "../schemas/compat/result-v2-v4.1.0.schema.json"
     ));
-    assert_eq!(
-        digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>(),
-        "94da74d3cf1b9857fe64b2c399947eb4274d79465fe9fff197f3af55a00b50f3"
-    );
+    let expected = [
+        0x94, 0xda, 0x74, 0xd3, 0xcf, 0x1b, 0x98, 0x57, 0xfe, 0x64, 0xb2, 0xc3, 0x99, 0x94, 0x7e,
+        0xb4, 0x27, 0x4d, 0x79, 0x46, 0x5f, 0xe9, 0xff, 0xf1, 0x97, 0xf3, 0xaf, 0x55, 0xa0, 0x0b,
+        0x50, 0xf3,
+    ];
+    assert_eq!(digest.as_slice(), &expected);
 }
