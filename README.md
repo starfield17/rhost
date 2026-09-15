@@ -230,6 +230,7 @@ erase state it promised to preserve.
 - [Agent skill](skills/rhost/SKILL.md)
 - [JSON envelope schema](schemas/result-v2.schema.json)
 - [Contributor rules](AGENTS.md)
+- [Maintenance policy](docs/MAINTENANCE.md)
 
 ```bash
 make test-smoke
@@ -249,5 +250,5 @@ Rust release dependency.
 Live suites always take their target and binary from `RHOST_TEST_HOST` and
 `RHOST_BIN`; the repository has no machine-specific default. The v1 schema is
 retained as wire history. Current command availability is defined by `rhost
---help`, and the implemented and remotely verified status is tracked in
-[`docs/RUST_MIGRATION.md`](docs/RUST_MIGRATION.md).
+--help`, and ongoing compatibility and release policy is defined in
+[`docs/MAINTENANCE.md`](docs/MAINTENANCE.md).

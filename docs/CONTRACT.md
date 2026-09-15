@@ -1,24 +1,24 @@
 # rhost contract ledger
 
-This ledger is the migration authority for product semantics. The Go reference
-is v3.1.0 (`d9daaa9`); the Rust candidate targets v4 with wire schema v2.
-Language replacement does not grant permission to reinterpret execution evidence,
+This ledger is the authority for rhost product semantics. The production Rust
+implementation is v4 with wire schema v2; Go v3.1.0 (`d9daaa9`) remains frozen
+history. Maintenance does not grant permission to reinterpret execution evidence,
 retryability, resource ownership, or destructive operations.
 
 ## Authority and evidence
 
 - [Architecture](ARCHITECTURE.md) explains the guarantees; this ledger identifies
   them. [v1](../archive/go-v3.1.0/schemas/result-v1.schema.json) remains immutable wire history;
-  [v2](../schemas/result-v2.schema.json) defines the candidate's representation.
+  [v2](../schemas/result-v2.schema.json) defines the current representation.
 - The owner reports real SSH verification of Go v3.1.0. That is baseline evidence,
-  not evidence for the extracted harness. The Rust candidate's complete native
+  not evidence for the extracted harness. The Rust implementation's complete native
   live suite passes against a real remote Linux host over SSH in this revision.
 - `make check` verifies the local implementation, schema, frozen corpus hashes,
   Rust foundation, and the map from all 27 frozen live names to native Rust
   evidence. The extracted live corpus remains an optional historical comparison.
   A live result requires an explicit `RHOST_TEST_HOST`; the recorded full-suite
-  result used an explicit target and candidate binary.
-- Links to Go unit tests are implementation evidence, not independent candidate
+  result used an explicit target and selected binary.
+- Links to Go unit tests are implementation evidence, not independent Rust
   conformance. A mechanism-specific test is not a requirement to copy that mechanism.
 - Where Go and this ledger intentionally differ, the difference is listed below.
   An unlisted conflict must be recorded in [FRICTION.md](../FRICTION.md) before
@@ -51,12 +51,13 @@ Source: [files and JSON](architecture/files-and-json.md).
 
 | ID | Required behavior | JSON path | Executable evidence |
 | --- | --- | --- | --- |
-| WIRE-001 | Binary and schema versions are independent. Go emits v1; Rust emits v2 with a closed current operation set and no job surface. | `schema_version`, `operation` | [TestConformanceCLI](../archive/conformance-v1/conformance/contract_test.go); [TestSchemaV2Fixtures](../archive/conformance-v1/conformance/schema_test.go) |
+| WIRE-001 | Binary and schema versions are independent. A schema version is a compatibility generation: every output from a same-generation producer must pass that generation's published compatibility validator, or the schema version increases. v4.1.0 is the documented pre-policy v2 exception. | `schema_version`, `operation` | [DTO compatibility tests](../tests/contracts.rs); [maintenance policy](MAINTENANCE.md#wire-compatibility) |
 | WIRE-002 | JSON stdout contains one document and no progress/prose. `--json --stream` mirrors live streams to stderr. | Entire envelope | [CLI stream tests](../archive/go-v3.1.0/internal/cli/root_test.go); [validated envelope decoder](../archive/conformance-v1/conformance/contract_test.go) |
 | WIRE-003 | `ok` describes adapter completion. Consumers branch on stable `error.code`, not English diagnostics or numeric exit alone. | `ok`, `error.code`, `error.retryable` | [TestConformanceExecUncertainty](../archive/conformance-v1/conformance/hermetic_test.go); [schema tests](../archive/conformance-v1/conformance/schema_test.go) |
 | WIRE-004 | Remote status passes through; timeout is 124, SIGINT/SIGTERM cancellation 130/143, other adapter failure 255. These overlap possible remote statuses. | `data.execution.exit_code`, `error.code` | [TestLiveExec](../archive/conformance-v1/conformance/live_test.go); [domain outcome tests](../tests/domain.rs) |
 | WIRE-005 | Unknown exit has no integer in v2. Missing/null data must not silently decode to zero/false. | `data.execution.status` | [TestSchemaV2RejectsFalseEvidence](../archive/conformance-v1/conformance/schema_test.go); [strict field access](../archive/conformance-v1/conformance/contract_test.go) |
 | WIRE-006 | Empty command is `USAGE_ERROR`; whitespace-only command is `CONFIG_INVALID`. Invalid input fails before SSH. | `error.code` | [TestConformanceCLI/command-validation](../archive/conformance-v1/conformance/contract_test.go) |
+| WIRE-007 | Each `--help` page lists the flags its parser accepts, from the same flag specifications. JSON callers receive the corresponding usage operation and `USAGE_ERROR`, never prose on stdout. | `operation`, `error.code` | [help/parser black-box test](../tests/cli.rs); [usage table test](../src/cli/usage.rs) |
 | AUDIT-001 | Audit is local, bounded and fail-open; never log environment maps, file contents or send payloads. | `data.entries[]` | [TestLiveAudit](../archive/conformance-v1/conformance/live_audit_test.go); [audit unit tests](../archive/go-v3.1.0/internal/audit/audit_test.go) |
 
 ## Persistent state and sessions
@@ -66,7 +67,7 @@ Source: [persistent work](architecture/persistent-work.md).
 | ID | Required behavior | JSON path | Executable evidence |
 | --- | --- | --- | --- |
 | PERSIST-001 | Durable connections belong to OpenSSH; sessions to remote tmux/state; tunnels to dedicated masters and local records. No CLI-owned durable map or daemon. | `connection.status`, `session.list`, `tunnel.list` results | [TestLiveTransportReuse](../archive/conformance-v1/conformance/live_test.go); [TestLiveSession](../archive/conformance-v1/conformance/live_session_test.go); [TestLiveTunnelPersistence](../archive/conformance-v1/conformance/live_tools_test.go) |
-| PERSIST-002 | v4 does not adopt or delete v3 state. Upgrade requires explicitly closing old sessions/tunnels before switching; v4 uses a separate namespace. An explicit `RHOST_REMOTE_STATE` is the complete remote v4 root used consistently by exec cleanup, doctor and sessions. | `config::v4_state_dir`, `RHOST_STATE_DIR/v4` (audit trail), `${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost/v4}` | **Implemented**; [migration policy](RUST_MIGRATION.md#state-and-upgrade-policy) |
+| PERSIST-002 | v4 does not adopt or delete v3 state. Upgrade requires explicitly closing old sessions/tunnels before switching; v4 uses a separate namespace. An explicit `RHOST_REMOTE_STATE` is the complete remote v4 root used consistently by exec cleanup, doctor and sessions. | `config::v4_state_dir`, `RHOST_STATE_DIR/v4` (audit trail), `${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost/v4}` | **Implemented**; [historical upgrade policy](RUST_MIGRATION.md#state-and-upgrade-policy) |
 | SESSION-001 | Freeze create/list/exec/send/read/attach/recover/close. Do not introduce scheduling, windows or layout management. | `operation` | [v2 schema](../schemas/result-v2.schema.json); [TestConformanceCLI](../archive/conformance-v1/conformance/contract_test.go) |
 | SESSION-002 | Preserve cwd, environment, shell process and discovery across CLI exits. | `data.sessions[]` | [TestLiveSession](../archive/conformance-v1/conformance/live_session_test.go) |
 | SESSION-003 | Exec writes only when the idle managed shell owns the pane. A foreground REPL returns `SESSION_BUSY` without receiving command input. | `data.execution.status`, `error.code` | [TestLiveSessionPythonRecovery](../archive/conformance-v1/conformance/live_session_protocol_test.go); [TestLiveSessionBusyRefusesExec](../archive/conformance-v1/conformance/live_session_test.go) |
@@ -96,7 +97,7 @@ Source: [files](architecture/files-and-json.md), [runtime](architecture/runtime.
 | FS-004 | Existing content replacement and patch require matching hash; replacement is locked, same-directory, atomic and preserves permissions. | `error.code`, `data.sha256` | [TestSmokeLive](../archive/conformance-v1/conformance/live_smoke_test.go); [FileWrite](../src/domain/files.rs); [remote helper suite](../archive/go-v3.1.0/internal/fileops/remote_test.py) |
 | FS-005 | Sync/mirror never delete without explicit delete; preserve dangerous-path refusal and timeout process cleanup. | `data.delete`, `data.changes`, `error.code` | [TestLiveFsSyncPlanAndApply](../archive/conformance-v1/conformance/live_fs_test.go); [fileops tests](../archive/go-v3.1.0/internal/fileops/sync_test.go) |
 | FS-006 | Batch is ordered serial put/get, not a transaction. Continue after entry failures; completed report has ok=true, failed entries make process status 255. | `data.items[]`, `data.failed` | [batch CLI tests](../archive/go-v3.1.0/internal/cli/tools_test.go) |
-| RELEASE-001 | Execute the exact four shipping artifacts natively and verify their checksums before publication. The local installer selects the same assets and verifies SHA-256 before replacement; plugin versions mirror Cargo, the sole binary version authority. | `version` result | [release workflow](../.github/workflows/release.yml); [release contract check](../scripts/check-release-contract.sh); [installer test](../scripts/test-install.sh) |
+| RELEASE-001 | Re-run the complete tagged-source gate on Linux and macOS, then execute the exact four shipping artifacts natively and verify their checksums before publication. All six jobs use the Rust version declared by Cargo. The local installer selects the same assets and verifies SHA-256 before replacement; plugin versions mirror Cargo, the sole binary version authority. | `version` result | [release workflow](../.github/workflows/release.yml); [release contract check](../scripts/check-release-contract.sh); [installer test](../scripts/test-install.sh) |
 
 ## Mechanisms deliberately not frozen
 

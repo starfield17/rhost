@@ -90,23 +90,27 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all 
 Name in your report exactly which suite you ran, and don't widen a test script's
 or CI job's run-pattern to cover tests you weren't asked to run.
 
-## 10. Rust migration map and gates
+## 10. Maintenance map and gates
 
 - `docs/CONTRACT.md` is the semantic ledger; `schemas/result-v2.schema.json` is
-  the Rust wire target. v1 remains the Go wire-history contract.
+  the active wire contract; `docs/MAINTENANCE.md` defines compatibility, MSRV,
+  release and change-risk policy. v1 remains Go wire history.
 - `archive/conformance-v1/conformance/` drives `RHOST_BIN`, imports no production packages, and
   preserves the original live selectors. It is available through
   `make test-conformance` and `test-legacy-live-*`, but is not the Rust release
   gate. Native live targets require both `RHOST_TEST_HOST` and `RHOST_BIN`.
 - `src/domain/` is pure; `src/output/` maps domain values to v2. The Rust binary
   implements every v2 operation except `session attach`, which the schema makes a
-  usage error. `docs/RUST_MIGRATION.md` names pending gates.
+  usage error. `docs/RUST_MIGRATION.md` is a frozen historical record.
 - `make check` also runs Rust fmt/clippy/tests, compiles and lints the feature-gated
   native live crate, validates its frozen-corpus coverage map, and runs independent
   DTO schema validation, domain boundary checks, the structure budget, the release
   contract check and frozen corpus hashes. It needs Cargo, not Go.
 - Contract/tests cannot be weakened to make an implementation pass. Record a
   semantic conflict in `FRICTION.md`; resolve its acceptance change separately.
+- Contract/schema, domain, process cleanup, transport/session protocol and release
+  semantics are Risk A: name affected consumers and get architecture review before
+  implementation. See `docs/MAINTENANCE.md#change-risk` for the complete map.
 
 ## Frozen legacy boundary
 
@@ -115,5 +119,6 @@ are immutable under archive/. Cargo.toml is the sole active binary version
 authority. New implementation and acceptance tests must be Rust. Do not edit
 the archive manifest to bless changes. make check needs no Go toolchain.
 The current Rust binary implements the v2 operations except `session attach`.
-Live suites are the required real-remote verification gate. A version tag builds
-and executes all four native release artifacts before the release job can publish.
+Live suites are the required real-remote verification gate. A version tag first
+runs `make check` on Linux and macOS, then builds and executes all four native
+release artifacts before the release job can publish.

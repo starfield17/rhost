@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/starfield17/rhost/schemas/result-v2.schema.json",
   "title": "rhost result envelope v2",
-  "description": "rhost v4 wire contract. The frozen Go implementation emitted v1. No implicit v1 compatibility mode.",
+  "description": "Rust v4 target contract. The Go reference continues to emit v1. No implicit v1 compatibility mode.",
   "type": "object",
   "required": [
     "schema_version",

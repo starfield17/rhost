@@ -1,4 +1,4 @@
-# Migration friction log
+# Engineering friction log
 
 Append observations and resolutions; do not rewrite earlier entries to make a
 later implementation look consistent. A passing local test is not live evidence.

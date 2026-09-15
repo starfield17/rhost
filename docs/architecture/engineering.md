@@ -37,9 +37,9 @@ host and cannot accidentally contact one. `make check` covers Rust formatting,
 clippy, unit tests, independent DTO schema validation, domain boundaries,
 portability, the structure budget, native-live compilation and coverage,
 the release contract check and archive integrity.
-The Rust candidate implements every schema-v2 operation except `session attach`,
-which the schema requires to be a usage error; see
-[the migration guide](../RUST_MIGRATION.md). Live suites are the gate that proves behavior across independent CLI processes on a real
+The production Rust implementation covers every schema-v2 operation except
+`session attach`, which the schema requires to be a usage error; see the current
+[maintenance policy](../MAINTENANCE.md). Live suites are the gate that proves behavior across independent CLI processes on a real
 remote Linux host. `test-live-smoke` is the frequent, bounded check of the main
 exec, file and session workflows. The feature suites and `test-live-all`
 retain the exhaustive failure, persistence and transport cases. The native full

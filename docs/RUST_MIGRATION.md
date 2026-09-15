@@ -1,5 +1,9 @@
 # Rust v4 migration
 
+> Migration completed at v4.1.0. This document is frozen as historical evidence.
+> Current product semantics live in [CONTRACT.md](CONTRACT.md); compatibility,
+> toolchain, review and release policy lives in [MAINTENANCE.md](MAINTENANCE.md).
+
 ## Implemented
 
 Contract ledger, schema-v2 design, independent compatibility harness, Rust
