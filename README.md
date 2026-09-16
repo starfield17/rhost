@@ -242,7 +242,9 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
 ```
 
 `test-smoke` is the complete local Rust black-box suite and cannot contact a
-real host. `test-live-all` is the serial, Rust-native real-SSH release gate. The
+real host. `test-live-all` is the serial, Rust-native real-SSH suite, and a
+required manual pre-release verification; the release workflow does not run it,
+because no CI-reachable host is provisioned. The
 frozen Go harness remains available only through `make test-conformance` and the
 explicitly named `test-legacy-live-*` targets; it is historical evidence, not a
 Rust release dependency.

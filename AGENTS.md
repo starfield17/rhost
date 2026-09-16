@@ -97,8 +97,8 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   release and change-risk policy. v1 remains Go wire history.
 - `archive/conformance-v1/conformance/` drives `RHOST_BIN`, imports no production packages, and
   preserves the original live selectors. It is available through
-  `make test-conformance` and `test-legacy-live-*`, but is not the Rust release
-  gate. Native live targets require both `RHOST_TEST_HOST` and `RHOST_BIN`.
+  `make test-conformance` and `test-legacy-live-*`, but is not part of the Rust
+  release gate. Native live targets require both `RHOST_TEST_HOST` and `RHOST_BIN`.
 - `src/domain/` is pure; `src/output/` maps domain values to v2. The Rust binary
   implements every v2 operation except `session attach`, which the schema makes a
   usage error. `docs/RUST_MIGRATION.md` is a frozen historical record.
@@ -123,6 +123,10 @@ are immutable under archive/. Cargo.toml is the sole active binary version
 authority. New implementation and acceptance tests must be Rust. Do not edit
 the archive manifest to bless changes. make check needs no Go toolchain.
 The current Rust binary implements the v2 operations except `session attach`.
-Live suites are the required real-remote verification gate. A version tag first
-runs `make check` on Linux and macOS, then builds and executes all four native
-release artifacts before the release job can publish.
+Live suites against a real remote host are a required **manual pre-release
+verification**, not a gate the release workflow enforces: the workflow has no
+reachable test host, so it cannot run them. A version tag first runs `make check`
+on Linux and macOS, then builds and executes all four native release artifacts
+before the release job can publish. If a CI-reachable host is ever provided, the
+workflow must bind a same-commit live result to the tagged commit before that
+language may call it a gate (docs/MAINTENANCE.md).

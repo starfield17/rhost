@@ -12,7 +12,9 @@ retryability, resource ownership, or destructive operations.
   [v2](../schemas/result-v2.schema.json) defines the current representation.
 - The owner reports real SSH verification of Go v3.1.0. That is baseline evidence,
   not evidence for the extracted harness. The Rust implementation's complete native
-  live suite passes against a real remote Linux host over SSH in this revision.
+  live suite has passed against a real remote Linux host over SSH; that suite is a
+  required manual pre-release verification, not a workflow-enforced gate, because
+  no CI-reachable target is provisioned (docs/MAINTENANCE.md).
 - `make check` verifies the local implementation, schema, frozen corpus hashes,
   Rust foundation, and the map from all 27 frozen live names to native Rust
   evidence. The extracted live corpus remains an optional historical comparison.

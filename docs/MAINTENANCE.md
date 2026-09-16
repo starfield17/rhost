@@ -37,6 +37,12 @@ ships in a binary minor or major release, never a patch.
 - Rust 1.85 is the MSRV for the 4.x line. Raise it only when a security or
   dependency constraint makes that necessary, document the reason, and ship the
   change in a minor release.
+- Real-remote live verification is a required **manual** pre-release step until a
+  CI-reachable test host exists. `make test-live-all` takes its target only from
+  `RHOST_TEST_HOST`, so the release workflow cannot run it and does not claim to.
+  If a reachable host is provisioned, the workflow must record a live result
+  bound to the exact tagged commit and make publication depend on it; only then
+  is the live suite a release gate rather than a documented expectation.
 - Releases are event-driven: ship a security or user-visible correctness fix
   promptly; otherwise batch low-risk maintenance. A tag must re-run `make check`
   on Linux and macOS before any native artifact is built.

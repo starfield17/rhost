@@ -30,7 +30,7 @@ workflow=.github/workflows/release.yml
 manifest=Cargo.toml
 installer=scripts/install.sh
 
-for file in "$workflow" "$manifest" "$installer" plugin.json .codex-plugin/plugin.json; do
+for file in "$workflow" "$manifest" "$installer" plugin.json .codex-plugin/plugin.json README.md AGENTS.md docs/MAINTENANCE.md; do
 	if [ ! -f "$file" ]; then
 		echo "check-release-contract: $file is missing" >&2
 		exit 2
@@ -128,6 +128,30 @@ require_job_once native '    needs: verify'
 require_job_once publish '    needs: native'
 require_job_once verify 'rustup component add --toolchain "$rust_version" rustfmt clippy'
 refuse "a redundant smoke suite" 'make test-smoke'
+
+# The live suite is a manual pre-release step, not a workflow gate. The workflow
+# must stay unable to claim otherwise, and the docs must keep saying which it is.
+refuse "a live suite the release workflow cannot actually reach" 'test-live|RHOST_TEST_HOST'
+retired_live_claims=$(cat <<'EOF'
+`test-live-all` is the serial, Rust-native real-SSH release gate
+Live suites are the required real-remote verification gate
+EOF
+)
+while IFS= read -r claim; do
+	[ -n "$claim" ] || continue
+	for doc in README.md AGENTS.md; do
+		if grep -Fq "$claim" "$doc"; then
+			report "$doc still claims a workflow-enforced live gate: $claim"
+		fi
+	done
+done <<EOF
+$retired_live_claims
+EOF
+for doc in README.md AGENTS.md docs/MAINTENANCE.md; do
+	if ! grep -Eqi 'manual[*_ ]*pre-release' "$doc"; then
+		report "$doc does not state that real-remote verification is manual pre-release"
+	fi
+done
 
 # Both jobs must read the declared MSRV, install it and select it before running
 # their gate/build. Counting steps globally could hide a missing native setup.
