@@ -1,25 +1,29 @@
 # Rust ownership boundary
 
-Run `make rust-check` after Rust changes. The map below is checked by
-`make structure`: a file that outgrows the reading budget, or a dependency that
-points the wrong way, fails the build rather than being a convention.
+Run `make rust-check` after Rust changes. `make structure` enforces the shape:
+a file that outgrows the reading budget fails, and so does a first-party
+`crate::`/`rhost::` dependency the policy does not allow or one that closes a
+cycle. The one place the permitted edges are written down is the `ALLOWED` map
+in `scripts/check-structure.sh`; read it there (`./scripts/check-structure.sh -v`
+prints it beside the graph the source actually produced). A module added here
+must gain a policy entry there.
 
 ## Module map
 
-| Path | Owns | May depend on |
-| --- | --- | --- |
-| `domain/` | values, transitions, completion evidence, CAS intents | nothing (no serde, no I/O, no env) |
-| `output/` | schema-v2 DTOs and one-document delivery | `domain`, `app`, `host`, `transport`, `tunnel` |
-| `fileops/` | path/argv rules, the local `scp`/`rsync` runner, the remote helper program | `domain`, `shell`, `stdio`, `transport` |
-| `transport/` | the OpenSSH child, the wrapper protocol, the process loop | `config`, `domain`, `shell` |
-| `tunnel/` | one forward per dedicated OpenSSH master: local records, requests, the master itself | `config`, `transport` |
-| `session/` | the remote tmux helper programs and their line protocol | `base64`, `shell`, `transport` |
-| `audit.rs` | the local JSON Lines trail and its reader | `clock` |
-| `app/` | use-cases: exec, doctor, files (transfer, sync, edit, batch) | everything below it |
-| `cli/` | grammar, execution, console, rendering, usage prose | `app`, `output`, `transport`, `fileops`, `tunnel`, `session` |
-| `main.rs` | signal handlers, parse, run, deliver | `cli`, `signals`, `transport` |
-| `tests/acceptance/` | one hermetic black-box test crate: `support` harness, `exec`, `files`, `edit`, `tunnel`, `session`, `audit`, `transport` | the built binary only |
-| `tests/live_exec.rs`, `tests/live/` | feature-gated native live acceptance, split by capability and run serially against explicit `RHOST_BIN`/`RHOST_TEST_HOST` | the selected binary and a real host |
+| Path | Owns |
+| --- | --- |
+| `domain/` | values, transitions, completion evidence, CAS intents |
+| `output/` | schema-v2 DTOs and one-document delivery |
+| `fileops/` | path/argv rules, the local `scp`/`rsync` runner, the remote helper program |
+| `transport/` | the OpenSSH child, the wrapper protocol, the process loop |
+| `tunnel/` | one forward per dedicated OpenSSH master: local records, requests, the master itself |
+| `session/` | the remote tmux helper programs and their line protocol |
+| `audit.rs` | the local JSON Lines trail and its reader |
+| `app/` | use-cases: exec, doctor, files (transfer, sync, edit, batch) |
+| `cli/` | grammar, execution, console, rendering, usage prose |
+| `main.rs` | signal handlers, parse, run, deliver |
+| `tests/acceptance/` | one hermetic black-box test crate: `support` harness, `exec`, `files`, `edit`, `tunnel`, `session`, `audit`, `transport` |
+| `tests/live_exec.rs`, `tests/live/` | feature-gated native live acceptance, split by capability and run serially against explicit `RHOST_BIN`/`RHOST_TEST_HOST` |
 
 - `domain/`: validated identities, completion evidence, execution/session states,
   and CAS intents. No serde, crate-level dependencies, I/O, environment, process,
