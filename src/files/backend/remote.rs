@@ -1,9 +1,28 @@
 //! The remote file helper: one JSON request in, one JSON answer out.
 //!
-//! The program itself is embedded in the binary and executed by the *remote*
-//! python3; nothing is installed there (AGENTS.md §5). It travels as one quoted
-//! argument, so no path or file body ever has to survive a shell parser, and the
-//! request goes in on stdin for the same reason.
+//! The program is embedded in the binary and executed by the *remote* python3;
+//! nothing is installed there (AGENTS.md §5). It travels as one quoted argument,
+//! so no path or file body ever has to survive a shell parser, and the request
+//! goes in on stdin for the same reason.
+//!
+//! Why an embedded interpreter script rather than Rust or a generated shell
+//! program, given the session helpers are shell scripts:
+//!
+//! * the helper runs on a host whose architecture rhost does not know (x86_64,
+//!   aarch64, ...), so a Rust helper would have to be cross-compiled per target;
+//!   `check-release-contract.sh` refuses a cross-compiler, and rhost never
+//!   installs anything remotely (AGENTS.md §5), so a native remote binary is out;
+//! * unlike the session helpers, this one has to move binary bodies and return
+//!   structured bytes: `fs write`/`patch` carry base64 content and hashes in a
+//!   JSON request and must reply with one bounded JSON document, under a `flock`
+//!   and an atomic same-directory replace — logic that POSIX shell plus
+//!   coreutils cannot express without inventing a fragile quoting protocol;
+//! * an already-present `python3` on the target gives exactly that JSON pump
+//!   with no install step, and a host without it is reported as
+//!   `REMOTE_DEPENDENCY_MISSING`, never as a silent failure.
+//!
+//! `docs/CONTRACT.md` explicitly leaves the helper's source language unfrozen, so
+//! this can change later if a target without python3 ever justifies it.
 
 use crate::shell;
 use serde_json::{Map, Value, json};
@@ -196,6 +215,26 @@ mod tests {
         assert!(
             command.contains("CONFIG_INVALID"),
             "the program is embedded"
+        );
+    }
+
+    #[test]
+    fn a_missing_interpreter_is_a_dependency_failure_not_a_silent_run() {
+        let command = command();
+        // The probe must gate execution: no python3 means exit 127 (the code the
+        // caller maps to REMOTE_DEPENDENCY_MISSING), before any helper logic.
+        assert!(
+            command.contains("command -v python3 >/dev/null 2>&1 || exit 127;"),
+            "the helper must refuse to run without python3: {command}"
+        );
+        // The program is compiled in, never read from a remote path.
+        assert!(
+            PROGRAM.contains("import json") && PROGRAM.contains("def run("),
+            "the embedded program looks truncated"
+        );
+        assert!(
+            !command.contains('/') || command.contains("python3 -c"),
+            "the helper must be embedded, not a remote path: {command}"
         );
     }
 }
