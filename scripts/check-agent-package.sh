@@ -53,4 +53,57 @@ grep -Fq 'rhost <command> --help' skills/rhost/SKILL.md \
 grep -Eq 'symlinked|symlink' skills/rhost/SKILL.md \
   || fail "SKILL.md must warn that a symlinked skill drifts from the binary"
 
+# RECOVERY.md claims to cover every `error.code` the binary can return. Make
+# that a fact: take the authoritative set from the active schema, require a
+# recovery entry for each, and refuse a code the schema does not define. A
+# reserved enum value the binary never emits is listed here so the doc can say
+# so honestly instead of inventing a recovery that cannot happen.
+python3 - schemas/result-v2.schema.json skills/rhost/references/RECOVERY.md <<'PY'
+import json
+import re
+import sys
+
+schema_path, recovery_path = sys.argv[1], sys.argv[2]
+# In the closed wire enum but never emitted by the current binary.
+RESERVED = {"UNSUPPORTED_REMOTE_OS"}
+
+codes = None
+
+
+def walk(node):
+    global codes
+    if isinstance(node, dict):
+        enum = node.get("enum")
+        if isinstance(enum, list) and "USAGE_ERROR" in enum:
+            codes = enum
+        for value in node.values():
+            walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            walk(value)
+
+
+with open(schema_path, encoding="utf-8") as source:
+    walk(json.load(source))
+if not codes:
+    raise SystemExit("check-agent-package: schema has no error.code enum")
+codes = set(codes)
+
+with open(recovery_path, encoding="utf-8") as source:
+    recovery = source.read()
+documented = set(re.findall(r"`([A-Z][A-Z_]{2,})`", recovery))
+
+missing = sorted(code for code in codes - RESERVED if code not in documented)
+unknown = sorted(documented - codes - RESERVED - {"PATH"})
+if missing:
+    raise SystemExit(
+        "check-agent-package: RECOVERY.md has no entry for: " + ", ".join(missing)
+    )
+if unknown:
+    raise SystemExit(
+        "check-agent-package: RECOVERY.md names codes the schema does not define: "
+        + ", ".join(unknown)
+    )
+PY
+
 echo "check-agent-package: OK"

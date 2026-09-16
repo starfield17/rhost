@@ -8,6 +8,26 @@ The sections below are the RECOVERY table: every `error.code` the binary can
 return, grouped by cause, with what it does and does not prove. Branch on the
 code, then confirm state with the operation named here. `--help` and
 `rhost version --json` describe the installed binary this table belongs to.
+`make check` fails if this table and the active schema's `error.code` enum
+disagree, so a new code cannot ship undocumented.
+
+## Input and internal
+
+- `USAGE_ERROR` means the request never left the local process: a missing,
+  unknown or contradictory argument, an unusable `--command`, or an operation
+  the schema refuses (`session attach` needs a terminal). Correct the invocation;
+  `error.operation` names the operation that was judged. Nothing remote ran, so
+  nothing needs inspecting — but do not retry the same argv unchanged.
+- `CONFIG_INVALID` means local input was well-formed as argv but not as a value:
+  an empty or invalid `--command`, a path or `--cwd` that cannot be used, a
+  malformed `--manifest`, or a transfer operand that names the wrong side. It is
+  not retryable. Fix the value and resubmit; no remote state changed.
+- `INTERNAL` means a local invariant failed — a nonce that could not be drawn, a
+  capture or rendering step that should not fail, or a use-case result that
+  reached the renderer in an impossible shape. It is not retryable and proves
+  nothing about the remote side. Keep the `error.message`, check the remote state
+  for the operation before resubmitting, and report it rather than editing the
+  output by hand.
 
 ## Execution and transport
 
@@ -71,6 +91,13 @@ mutation merely to test connectivity.
 For long work that must survive the agent runtime, submit it to a scheduler
 already installed on the remote host and use that scheduler's own status and
 logs. A tmux session is interactive state, not a generic scheduler.
+
+## Reserved codes
+
+- `UNSUPPORTED_REMOTE_OS` is in the closed `error.code` enum but the current
+  binary never emits it; a host whose OS rhost cannot drive fails through the
+  dependency or command path instead. Treat it as a compatibility value: if it
+  ever appears, stop and report the host rather than working around it.
 
 ## Privilege, packages and login shells
 
