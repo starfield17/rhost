@@ -24,7 +24,8 @@ retryability, resource ownership, or destructive operations.
   conformance. A mechanism-specific test is not a requirement to copy that mechanism.
 - Where Go and this ledger intentionally differ, the difference is listed below.
   An unlisted conflict must be recorded in [FRICTION.md](../FRICTION.md) before
-  changing a contract or acceptance test.
+  changing a contract or acceptance test, and the acceptance change then lands
+  on its own with a `GateChange:` trailer (docs/MAINTENANCE.md).
 
 The JSON paths below are v2 paths. A dash means a CLI/environment guarantee whose
 observable outcome is in the associated operation envelope, not a new JSON field.
