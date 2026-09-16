@@ -9,9 +9,9 @@ use super::super::Error;
 use super::super::exec;
 pub(crate) use super::super::remote::{internal, run_remote};
 use super::PROBE_TIMEOUT;
+use crate::fileops as helper_protocol;
 use crate::fileops::Refusal;
-use crate::fileops::remote as helper_protocol;
-use crate::transport::openssh::{Client, MasterStatus};
+use crate::transport::{Client, MasterStatus};
 use serde_json::Value;
 use std::time::Duration;
 

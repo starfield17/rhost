@@ -71,8 +71,8 @@ impl From<&app::doctor::Connection> for ConnectionDto {
     }
 }
 
-impl From<&transport::openssh::ConnectionStatus> for ConnectionDto {
-    fn from(value: &transport::openssh::ConnectionStatus) -> Self {
+impl From<&transport::ConnectionStatus> for ConnectionDto {
+    fn from(value: &transport::ConnectionStatus) -> Self {
         Self {
             master_status: value.master_status.as_str(),
             control_path: value.control_path.clone(),

@@ -6,7 +6,7 @@
 #![forbid(unsafe_code)]
 use rhost::cli;
 use rhost::signals::Interrupt;
-use rhost::transport::openssh::{Client, Config};
+use rhost::transport::{Client, Config};
 use std::io::Write;
 use std::process::ExitCode;
 

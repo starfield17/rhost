@@ -5,7 +5,7 @@ use super::shared::FIELD_CAPTURE;
 use crate::app::Error;
 use crate::session::{self, SendKind};
 use crate::shell;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use std::time::Duration;
 
 /// What a caller passes to `session send`.

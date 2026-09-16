@@ -5,7 +5,7 @@
 //! resolved a different state root than `exec` would produce a session nobody
 //! could find again.
 
-use crate::transport::protocol::DEFAULT_REMOTE_STATE_DIR;
+use crate::transport::DEFAULT_REMOTE_STATE_DIR;
 
 /// The remote state root every script resolves the same way. `RHOST_REMOTE_STATE`
 /// overrides it; the default is this major version's own directory, so a session

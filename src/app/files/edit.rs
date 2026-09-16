@@ -11,8 +11,8 @@ use super::super::Error;
 use super::super::exec;
 use super::remote::{helper, internal, validation};
 use super::{HELPER_TIMEOUT, MAX_HELPER_BYTES, Read, ReadOptions, Write, WriteOptions};
-use crate::fileops::{self, remote};
-use crate::transport::openssh::Client;
+use crate::fileops;
+use crate::transport::Client;
 use serde_json::Value;
 use std::time::Duration;
 
@@ -34,7 +34,7 @@ pub fn read(client: &Client, options: &ReadOptions<'_>) -> Result<Read, Error> {
     let answer = helper(
         client,
         options.host,
-        &remote::read_request(
+        &fileops::read_request(
             options.path,
             options.start,
             options.lines,
@@ -43,7 +43,7 @@ pub fn read(client: &Client, options: &ReadOptions<'_>) -> Result<Read, Error> {
         options.timeout.unwrap_or(HELPER_TIMEOUT),
         options.max_bytes,
     )?;
-    let page = remote::read_result(&answer).map_err(internal)?;
+    let page = fileops::read_result(&answer).map_err(internal)?;
     Ok(Read {
         path: page.path,
         sha256: page.sha256,
@@ -82,7 +82,7 @@ pub fn write(client: &Client, options: &WriteOptions<'_>) -> Result<Write, Error
     let answer = helper(
         client,
         options.host,
-        &remote::write_request(
+        &fileops::write_request(
             options.path,
             &options.content,
             options.if_hash.as_deref().unwrap_or(""),
@@ -92,7 +92,7 @@ pub fn write(client: &Client, options: &WriteOptions<'_>) -> Result<Write, Error
         options.timeout.unwrap_or(HELPER_TIMEOUT),
         exec::DEFAULT_JSON_CAPTURE,
     )?;
-    let written = remote::write_result(&answer).map_err(internal)?;
+    let written = fileops::write_result(&answer).map_err(internal)?;
     Ok(Write {
         path: written.path,
         sha256: written.sha256,
@@ -125,11 +125,11 @@ pub fn patch(
     let answer = helper(
         client,
         host,
-        &remote::patch_request(path, edits, &expected, max_bytes),
+        &fileops::patch_request(path, edits, &expected, max_bytes),
         timeout.unwrap_or(HELPER_TIMEOUT),
         max_bytes,
     )?;
-    let written = remote::write_result(&answer).map_err(internal)?;
+    let written = fileops::write_result(&answer).map_err(internal)?;
     Ok(Write {
         path: written.path,
         sha256: written.sha256,

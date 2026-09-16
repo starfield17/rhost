@@ -8,7 +8,7 @@ use crate::cli::audit::Timer;
 use crate::cli::console::{Failure, Sink, warn};
 use crate::cli::render;
 use crate::output;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 
 /// Runs one session operation: the envelope or the human view, plus the process
 /// status the answer implies.

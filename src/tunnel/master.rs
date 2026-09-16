@@ -7,7 +7,8 @@
 //! only ever the answer to a control request that master actually gave.
 
 use super::record::Fault;
-use crate::transport::process::{self, Recorder, Run, RunFailure, Spec, StdinSource};
+use crate::transport::run as run_transport;
+use crate::transport::{Recorder, Run, RunFailure, Spec, StdinSource};
 use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -143,7 +144,7 @@ impl Master<'_> {
     fn capture(&self, args: &[String], timeout: Duration) -> (String, Run) {
         let mut stdout = Recorder::new(0);
         let mut stderr = Recorder::new(0);
-        let run = process::run(
+        let run = run_transport(
             &Spec {
                 program: self.ssh_bin,
                 args,

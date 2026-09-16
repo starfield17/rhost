@@ -5,7 +5,7 @@ use super::errors::{helper_failure, run_helper, session_error, unhealthy};
 use super::shared::FIELD_CAPTURE;
 use crate::app::Error;
 use crate::session::{self, HelperFailure, ListEntry, Status};
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use std::time::Duration;
 
 /// One session record as the caller sees it.

@@ -18,7 +18,7 @@ mod record;
 pub use record::{Fault, Kind, Status, Tunnel};
 
 use crate::config;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use master::{Control, Master};
 use std::net::IpAddr;
 

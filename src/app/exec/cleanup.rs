@@ -2,7 +2,7 @@
 
 use super::{Client, DIAGNOSTIC_CAPTURE, KILL_TIMEOUT, Request};
 use crate::domain::{CleanupEvidence, InvocationToken};
-use crate::transport::protocol;
+use crate::transport::{kill_command, wrap_script};
 
 /// Asks the remote host to stop the process group recorded for this submission
 /// and reports only what the attempt proved (EXEC-006, EXEC-007). Confirmation
@@ -12,7 +12,7 @@ pub(super) fn stop_group(
     request: &Request<'_>,
     nonce: &InvocationToken,
 ) -> CleanupEvidence {
-    let kill = protocol::wrap_script(&protocol::kill_command(nonce));
+    let kill = wrap_script(&kill_command(nonce));
     match client.run_captured(
         request.host,
         &kill,

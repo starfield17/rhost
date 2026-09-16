@@ -14,8 +14,8 @@ use crate::output;
 use crate::shell;
 use crate::signals::Interrupt;
 use crate::stdio::Stdout;
-use crate::transport::openssh::Client;
-use crate::transport::process::StdinSource;
+use crate::transport::Client;
+use crate::transport::StdinSource;
 use std::io::{self, Write};
 use std::time::Duration;
 

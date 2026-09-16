@@ -12,7 +12,7 @@ use super::shared::{OUTPUT_CAPTURE, now};
 use crate::app::Error;
 use crate::app::remote::{RemoteRun, internal};
 use crate::session::{self, Meta, Status};
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use std::time::Duration;
 
 /// What a caller passes to `session create`.

@@ -38,7 +38,7 @@ mod tests {
     use super::*;
     use crate::base64;
     use crate::session::{DEFAULT_SHELL, Meta};
-    use crate::transport::protocol::DEFAULT_REMOTE_STATE_DIR;
+    use crate::transport::DEFAULT_REMOTE_STATE_DIR;
     use std::time::Duration;
 
     use super::create::integration_script;

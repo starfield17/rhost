@@ -9,9 +9,9 @@ use super::super::exec;
 use super::remote::{helper, internal, master_alive, remote_has_rsync, validation};
 use super::transfer::run_tool;
 use super::{HELPER_TIMEOUT, Sync, SyncOptions};
-use crate::fileops::runner::{Stop, Tools};
-use crate::fileops::{self, remote, runner};
-use crate::transport::openssh::Client;
+use crate::fileops;
+use crate::fileops::{Stop, Tools};
+use crate::transport::Client;
 use std::path::Path;
 use std::time::Duration;
 
@@ -36,7 +36,7 @@ fn summarize(
     destination: &str,
     multiplexed: bool,
     options: &SyncOptions<'_>,
-    outcome: &runner::Outcome,
+    outcome: &fileops::Outcome,
 ) -> Sync {
     let (changes, notes) = fileops::parse_changes(&outcome.stdout_text());
     let mut sync = Sync {
@@ -74,11 +74,11 @@ pub(crate) fn resolve(
     let answer = helper(
         client,
         host,
-        &remote::resolve_request(path, delete),
+        &fileops::resolve_request(path, delete),
         timeout.min(HELPER_TIMEOUT),
         exec::DEFAULT_JSON_CAPTURE,
     )?;
-    remote::resolved_path(&answer).map_err(internal)
+    fileops::resolved_path(&answer).map_err(internal)
 }
 
 /// Brings a remote directory in line with a local one.
@@ -110,7 +110,7 @@ pub fn sync(
             options.host,
             options.destination,
             true,
-            options.timeout.unwrap_or(runner::DEFAULT_TIMEOUT),
+            options.timeout.unwrap_or(fileops::DEFAULT_TIMEOUT),
         )?;
         request.destination = actual;
         plan = fileops::push_args(&request, &client.ssh_options()).map_err(validation)?;

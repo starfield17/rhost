@@ -8,7 +8,7 @@
 use super::Error;
 use super::exec::{self, Request as ExecRequest};
 use crate::domain::{ExecFailure, ExecOutcome, Execution, Interruption, PreExecFailure};
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use std::time::Duration;
 
 pub(crate) fn internal(message: impl Into<String>) -> Error {

@@ -28,10 +28,10 @@ mod usage;
 
 pub use grammar::parse_invocation;
 
-use crate::fileops::runner::Stop;
+use crate::fileops::Stop;
 use crate::output;
 use crate::signals::Interrupt;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use console::{Failure, Sink, warn};
 
 /// Upper bound on a `--command-file`. A shell program this long is already

@@ -12,7 +12,7 @@ use super::grammar::{FlagSpec, JSON, PLAIN_FLAGS, help_or_error, parse, usage_er
 use super::usage::leaf_or_group;
 use super::{Command, Help, Scope};
 use crate::output;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use crate::tunnel::{self, Fault};
 
 /// Every tunnel operation the parser can hand to [`run`].

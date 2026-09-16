@@ -18,8 +18,8 @@
 
 mod args;
 mod changes;
-pub mod remote;
-pub mod runner;
+mod remote;
+mod runner;
 mod sync;
 
 pub use args::{
@@ -31,6 +31,14 @@ pub use changes::{
     remote_parent_command,
 };
 pub use sync::{SyncPlan, SyncRequest, pull_args, push_args, reject_sync_target};
+// The two submodules below reach a process and a remote helper. They are private
+// so a caller names the capability, not the internal split: changing the runner
+// or the helper protocol must not require finding every deep import.
+pub use remote::{
+    PROGRAM, ReadResult, WriteResult, command, output_budget, patch_request, read_request,
+    read_result, refusal, resolve_request, resolved_path, write_request, write_result,
+};
+pub use runner::{DEFAULT_TIMEOUT, Outcome, Stop, Tools, run};
 
 /// A refusal decided before anything runs. The distinction is the error code the
 /// caller sees: a path mistake is theirs to fix (`CONFIG_INVALID`), while a

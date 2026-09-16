@@ -7,8 +7,8 @@
 use super::super::Error;
 use super::transfer::{get, put};
 use super::{Batch, BatchItem, GetOptions, PutOptions};
-use crate::fileops::runner::{Stop, Tools};
-use crate::transport::openssh::Client;
+use crate::fileops::{Stop, Tools};
+use crate::transport::Client;
 use serde_json::Value;
 use std::time::{Duration, Instant};
 

@@ -50,9 +50,15 @@ must gain a policy entry there.
 - `fileops/`: `args` judges one copy's operands and builds scp's argv, `sync` does
   the same for rsync, `changes` reads rsync's itemized plan, and `mod.rs` owns the
   refusal type and re-exports.
-- `transport/process.rs` splits into `capture` (bounded copies and sinks) and
+- `transport/`: `mod.rs` is the only surface. `openssh`, `process` and
+  `protocol` are private submodules, so a neighbor names the capability
+  (`crate::transport::Client`) rather than an internal split; changing the child
+  loop or the wrapper script does not mean finding every deep import.
+  `transport/process.rs` splits into `capture` (bounded copies and sinks) and
   `run` (the child and its loop); `transport/protocol/stream.rs` owns the
   incremental marker-filtering reader.
+- `fileops/`: `mod.rs` is the surface; `runner` and `remote` are private for the
+  same reason.
 - `tunnel/`: `record` owns the id and the on-disk record, `master` owns the
   dedicated OpenSSH process, and `mod.rs` owns requests. A tunnel's socket is its
   own on purpose: closing one forward must not drop the shared connection.

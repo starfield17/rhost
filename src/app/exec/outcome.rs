@@ -12,7 +12,7 @@ use crate::domain::{
     CleanupEvidence, CompletionEvidence, ExecOutcome, ExitCode, Interruption, InvocationToken,
     PreExecFailure, ProcessOutput,
 };
-use crate::transport::process::{Run, RunFailure};
+use crate::transport::{Run, RunFailure};
 use std::time::Duration;
 
 /// What a finished run amounts to, decided while the invocation token is still

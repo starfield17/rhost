@@ -8,7 +8,8 @@
 use super::split_remote_spec;
 use crate::domain::CancelSignal;
 use crate::shell;
-use crate::transport::process::{self, Keep, Spec, StdinSource, Tap};
+use crate::transport::run as run_transport;
+use crate::transport::{Keep, RunFailure, Spec, StdinSource, Tap};
 use std::io;
 use std::time::{Duration, Instant};
 
@@ -133,7 +134,7 @@ pub fn run(program: &str, args: &[String], timeout: Duration, stop: Stop<'_>) ->
     let mut stdout = Tap::new(None, OUTPUT_LIMIT, Keep::Prefix);
     let mut stderr = Tap::new(None, OUTPUT_LIMIT, Keep::Prefix);
     let started = Instant::now();
-    let run = process::run(
+    let run = run_transport(
         &Spec {
             program,
             args,
@@ -159,8 +160,8 @@ pub fn run(program: &str, args: &[String], timeout: Duration, stop: Stop<'_>) ->
         .then(|| (stop.signal)().unwrap_or(CancelSignal::Term));
     Outcome {
         spawn_error: match run.failure {
-            Some(process::RunFailure::Spawn(error)) => Some(error),
-            Some(process::RunFailure::Stream(error)) => Some(error),
+            Some(RunFailure::Spawn(error)) => Some(error),
+            Some(RunFailure::Stream(error)) => Some(error),
             None => None,
         },
         stdout: stdout.body(),

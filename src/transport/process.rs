@@ -14,8 +14,8 @@
 mod capture;
 mod run;
 
-pub use capture::{Capture, Keep, Recorder, Stream, TAIL_KEEP, Tap};
-pub use run::{DRAIN_GRACE, Run, RunFailure, Spec, StdinSource, run};
+pub use capture::{Capture, Keep, Recorder, Stream, Tap};
+pub use run::{Run, RunFailure, Spec, StdinSource, run};
 
 #[cfg(test)]
 mod tests {
@@ -229,7 +229,7 @@ wait"#;
         }
         assert_eq!(capture.total(), 64_000);
         let body = capture.body();
-        assert_eq!(body.len(), 16 + TAIL_KEEP);
+        assert_eq!(body.len(), 16 + capture::TAIL_KEEP);
         assert!(body.starts_with(&[b'x'; 16]));
     }
 

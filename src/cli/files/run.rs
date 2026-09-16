@@ -8,9 +8,9 @@ use crate::audit;
 use crate::cli::audit::{Timer, record};
 use crate::cli::console::{Failure, Sink};
 use crate::cli::render;
-use crate::fileops::runner::Tools;
+use crate::fileops::Tools;
 use crate::output;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use std::time::Duration;
 
 /// Runs one parsed file operation against the host, delivering either the
@@ -20,7 +20,7 @@ pub(crate) fn run(
     client: &Client,
     command: Fs,
     json: bool,
-    stop: crate::fileops::runner::Stop<'_>,
+    stop: crate::fileops::Stop<'_>,
 ) -> u8 {
     match command {
         Fs::Put {

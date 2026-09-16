@@ -3,7 +3,7 @@
 //! authentication, a usable bash, `setsid`, and completion evidence all work.
 use super::exec::{self, Request};
 use crate::domain::{ExecOutcome, Execution};
-use crate::transport::openssh::{Client, MasterStatus};
+use crate::transport::{Client, MasterStatus};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -51,7 +51,7 @@ if mkdir -p "$rd" 2>/dev/null && [ -w "$rd" ]; then em state_dir_writable yes; e
 em state_dir "$rd"
 if grep -qi microsoft /proc/version 2>/dev/null; then em wsl yes; else em wsl no; fi
 "#,
-        state = crate::transport::protocol::DEFAULT_REMOTE_STATE_DIR
+        state = crate::transport::DEFAULT_REMOTE_STATE_DIR
     )
 }
 
@@ -306,6 +306,6 @@ mod tests {
         // capability and its path cannot come from two different lookups.
         assert!(probe.contains("path_$c"), "probe stopped resolving paths");
         // The state directory the probe reports is the one this version owns.
-        assert!(probe.contains(crate::transport::protocol::DEFAULT_REMOTE_STATE_DIR));
+        assert!(probe.contains(crate::transport::DEFAULT_REMOTE_STATE_DIR));
     }
 }

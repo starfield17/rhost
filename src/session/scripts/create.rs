@@ -7,7 +7,7 @@ use super::shared::{FLOCK_PREFLIGHT, NAME_OF_FUNC, TMUX_PREFLIGHT, preamble};
 use crate::base64;
 use crate::session::Meta;
 use crate::shell;
-use crate::transport::protocol::DEFAULT_REMOTE_STATE_DIR;
+use crate::transport::DEFAULT_REMOTE_STATE_DIR;
 
 /// Configures the pane's interactive bash. It is injected over the pane's stdin
 /// and never written to disk. The final `: > ready` creates a readiness file, so

@@ -8,7 +8,7 @@ use super::shared::helper_budget;
 use crate::app::Error;
 use crate::app::remote::{RemoteRun, run_remote, run_remote_partial};
 use crate::session::{self, HelperFailure};
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use std::time::Duration;
 
 /// One helper submission: the script runs through the ordinary exec path, and a

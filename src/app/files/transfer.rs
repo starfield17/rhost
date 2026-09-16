@@ -8,10 +8,10 @@ use super::super::Error;
 use super::super::exec;
 use super::remote::{first_line, master_alive, remote_has_rsync, run_remote, validation};
 use super::{GetOptions, PutOptions, Transfer};
-use crate::fileops::runner::{Stop, Tools};
-use crate::fileops::{self, runner};
+use crate::fileops;
+use crate::fileops::{Stop, Tools};
 use crate::shell;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use sha2::{Digest, Sha256};
 use std::io::Read as _;
 use std::path::Path;
@@ -137,7 +137,7 @@ pub(crate) fn run_tool(
     args: &[String],
     timeout: Option<Duration>,
     stop: Stop<'_>,
-) -> Result<runner::Outcome, Error> {
+) -> Result<fileops::Outcome, Error> {
     if let Err(error) = crate::config::ensure_control_dir() {
         return Err(Error::new("CONFIG_INVALID", error.to_string()));
     }
@@ -146,10 +146,10 @@ pub(crate) fn run_tool(
     } else {
         args.to_vec()
     };
-    let outcome = runner::run(
+    let outcome = fileops::run(
         program,
         &args,
-        timeout.unwrap_or(runner::DEFAULT_TIMEOUT),
+        timeout.unwrap_or(fileops::DEFAULT_TIMEOUT),
         stop,
     );
     if let Some(error) = outcome.spawn_error.as_ref() {
@@ -214,7 +214,7 @@ pub fn put(
     let destination = fileops::remote_spec(options.host, options.remote);
     fileops::validate_transfer_paths(&local, &destination).map_err(validation)?;
     let size = stat_local_file(Path::new(&local), "put")?;
-    let timeout = options.timeout.unwrap_or(runner::DEFAULT_TIMEOUT);
+    let timeout = options.timeout.unwrap_or(fileops::DEFAULT_TIMEOUT);
     if options.parents {
         ensure_remote_parent(client, options.host, options.remote, timeout)?;
     }
@@ -259,7 +259,7 @@ pub fn get(
     stop: Stop<'_>,
 ) -> Result<Transfer, Error> {
     fileops::validate_remote_path(options.remote).map_err(validation)?;
-    let timeout = options.timeout.unwrap_or(runner::DEFAULT_TIMEOUT);
+    let timeout = options.timeout.unwrap_or(fileops::DEFAULT_TIMEOUT);
     if options.resume || options.checksum {
         let local = fileops::local_arg(options.local_path).map_err(validation)?;
         return verified(

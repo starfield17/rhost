@@ -21,9 +21,10 @@ mod outcome;
 
 use crate::domain::{CancelSignal, ExecOutcome, InvocationToken, PreExecFailure, ProcessOutput};
 use crate::shell;
-use crate::transport::openssh::{Client, Streams};
-use crate::transport::process::{Keep, StdinSource, Tap};
-use crate::transport::protocol::{self, CompletionStream, ExecSpec, Separator};
+use crate::transport::{
+    Client, CompletionStream, ExecSpec, Keep, Separator, StdinSource, Streams, Tap, build_script,
+    new_nonce, parse_marker, wrap_script,
+};
 use std::io::Write;
 use std::time::Duration;
 
@@ -164,8 +165,8 @@ pub fn execute_stream(
             0,
         ));
     }
-    let nonce = protocol::new_nonce().map_err(|error| ExecError::Internal(error.to_string()))?;
-    let script = protocol::wrap_script(&protocol::build_script(
+    let nonce = new_nonce().map_err(|error| ExecError::Internal(error.to_string()))?;
+    let script = wrap_script(&build_script(
         &spec(request.command, request, &nonce),
         Separator::Nul,
     ));
@@ -217,8 +218,8 @@ pub fn execute_captured(
             0,
         ));
     }
-    let nonce = protocol::new_nonce().map_err(|error| ExecError::Internal(error.to_string()))?;
-    let script = protocol::wrap_script(&protocol::build_script(
+    let nonce = new_nonce().map_err(|error| ExecError::Internal(error.to_string()))?;
+    let script = wrap_script(&build_script(
         &spec(command, request, &nonce),
         Separator::Newline,
     ));
@@ -233,7 +234,7 @@ pub fn execute_captured(
             request.fresh,
         )
         .map_err(|error| ExecError::Internal(error.to_string()))?;
-    let (stdout_body, code) = match protocol::parse_marker(&captured.stdout, &nonce) {
+    let (stdout_body, code) = match parse_marker(&captured.stdout, &nonce) {
         Some((body, code)) => (body.to_vec(), Some(code)),
         None => (captured.stdout.clone(), None),
     };

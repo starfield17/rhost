@@ -10,7 +10,7 @@ use crate::domain::{
 };
 use crate::session::{self, ExecResult, HelperFailure};
 use crate::shell;
-use crate::transport::openssh::Client;
+use crate::transport::Client;
 use std::time::Duration;
 
 /// What a caller passes to `session exec`.
