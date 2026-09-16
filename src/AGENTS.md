@@ -10,67 +10,68 @@ must gain a policy entry there.
 
 ## Module map
 
+The tree is cut by capability: one directory owns one reason to change, and a
+change to a capability should need only that directory plus the shared surfaces
+it names. `app/`, `output/` and `fileops/` no longer exist; their work lives
+with the capability that owns it.
+
 | Path | Owns |
 | --- | --- |
-| `domain/` | values, transitions, completion evidence, CAS intents |
-| `output/` | schema-v2 DTOs and one-document delivery |
-| `fileops/` | path/argv rules, the local `scp`/`rsync` runner, the remote helper program |
+| `domain/` | values, transitions, completion evidence, CAS intents (pure) |
 | `transport/` | the OpenSSH child, the wrapper protocol, the process loop |
-| `tunnel/` | one forward per dedicated OpenSSH master: local records, requests, the master itself |
-| `session/` | the remote tmux helper programs and their line protocol |
-| `audit.rs` | the local JSON Lines trail and its reader |
-| `app/` | use-cases: exec, doctor, files (transfer, sync, edit, batch) |
-| `cli/` | grammar, execution, console, rendering, usage prose |
+| `remote/` | the one submit-a-program path and the `Error` taxonomy |
+| `wire/` | the schema-v2 envelope, delivery, and the shared execution DTO |
+| `cli/` | flag tables, the argv scanner, `Sink`/`Failure` — capability-agnostic |
+| `dispatch/` | the whole-argv grammar, the subcommand inventory, help prose, routing |
+| `audit/` | the local JSON Lines trail, its command, and the shared `Timer` |
+| `exec/` | `rhost exec`: grammar, run, human status |
+| `doctor/` | the capability probe and its envelope |
+| `hosts/` | local OpenSSH client-config discovery and its envelope |
+| `connection/` | control-master status/reset; the shared `ConnectionDto` |
+| `files/` | `fs`: grammar, use-cases, tool/helper backend, envelope (old `fileops`) |
+| `session/` | remote tmux sessions: grammar, use-cases, helper protocol/scripts, envelope |
+| `tunnel/` | one forward per dedicated OpenSSH master: records, requests, the master |
 | `main.rs` | signal handlers, parse, run, deliver |
-| `tests/acceptance/` | one hermetic black-box test crate: `support` harness, `exec`, `files`, `edit`, `tunnel`, `session`, `audit`, `transport` |
-| `tests/live_exec.rs`, `tests/live/` | feature-gated native live acceptance, split by capability and run serially against explicit `RHOST_BIN`/`RHOST_TEST_HOST` |
+| `tests/acceptance/` | one hermetic black-box test crate, split by capability |
+| `tests/live_exec.rs`, `tests/live/` | feature-gated native live acceptance, split by capability |
 
-- `domain/`: validated identities, completion evidence, execution/session states,
+- **Shared foundation** (`domain`, `transport`, `remote`, `wire`, `cli`) is the
+  only thing more than one capability may depend on. A capability never depends
+  on a sibling capability; the one declared exception is `doctor -> connection`,
+  which reuses the shared master DTO.
+- `dispatch` may depend on every capability because wiring is its whole job; it
+  holds no capability behavior. `main` depends only on `dispatch`.
+- `domain/`: validated identities, completion evidence, execution/session states
   and CAS intents. No serde, crate-level dependencies, I/O, environment, process,
-  thread or network access. Standalone rustc compilation and
-  `pure_domain_boundary` enforce this boundary.
-- `output/`: schema-v2 DTOs and one-document delivery. One module per capability
-  (`exec`, `doctor`, `files`, `session`, `tunnel`); `mod.rs` owns the envelope and
-  the shared error payload. Domain never derives serde.
-- `cli/`: `mod.rs` is the surface (types plus dispatch); `grammar`/`commands` parse
-  the non-file commands. The private `grammar.rs` facade routes whole invocations;
-  `grammar/flags` owns flag tables and help metadata, and `grammar/scan` owns argv
-  scanning, parsed values, command locating, JSON detection and durations.
-  `run`/`tunnel` execute commands, `console` delivers,
-  `render`/`usage` write prose. `files.rs` and `session.rs` are surfaces too:
-  `files/parse` and `session/parse` turn argv into an operation, `files/run` and
-  `session/run` execute one, and `files/input` reads a local body before anything
-  is sent.
-- `app/files/`: `transfer` moves one file, `sync` moves a tree, `edit` changes a
-  file in place, `batch` sequences transfers, `remote` holds the one path out.
-- `app/exec.rs`: the two entry points (`execute_stream`, `execute_captured`) over
-  `outcome` (what a finished run means, and where the invocation token is spent),
-  `capture` (bounded output) and `cleanup` (the remote stop attempt). `app/session`
-  is cut the same way: `create`, `exec`, `io`, `lifecycle`, `errors`, `shared`.
-- `fileops/`: `args` judges one copy's operands and builds scp's argv, `sync` does
-  the same for rsync, `changes` reads rsync's itemized plan, and `mod.rs` owns the
-  refusal type and re-exports.
-- `transport/`: `mod.rs` is the only surface. `openssh`, `process` and
-  `protocol` are private submodules, so a neighbor names the capability
-  (`crate::transport::Client`) rather than an internal split; changing the child
-  loop or the wrapper script does not mean finding every deep import.
-  `transport/process.rs` splits into `capture` (bounded copies and sinks) and
-  `run` (the child and its loop); `transport/protocol/stream.rs` owns the
-  incremental marker-filtering reader.
-- `fileops/`: `mod.rs` is the surface; `runner` and `remote` are private for the
-  same reason.
+  thread or network access. Standalone rustc compilation and `pure_domain_boundary`
+  enforce this boundary.
+- `cli/`: the flag vocabulary and argv scanner every capability parses with, the
+  stdout `Sink`, and `Failure` (the one mapping from an `error.code` to a process
+  status). It knows nothing about what any command means. A capability parser
+  returns `ParsedCommand<X>` — run, help, or a usage refusal — and `dispatch`
+  lifts it into a routed `Command`.
+- `dispatch/`: `route` is the only whole-argv parser; `commands` holds the
+  root-owned `version`; `usage` holds the help prose; `run` is the one match that
+  fans out to capabilities. `parse_invocation` is the only entry point the binary
+  uses.
+- `wire/`: the `Envelope`, its one-document delivery, `error`/`failure`, and the
+  `exec` DTO (`execution.rs`) that `doctor` reuses on a failed probe. Capability
+  DTOs live with their capability.
+- `exec/`, `doctor/`, `hosts/`, `connection/`: vertical slices — grammar, run and
+  envelope in one directory.
+- `files/`: `command` (grammar), `surface` (the parsed `Fs`), `ops` (transfer,
+  sync, edit, batch, the one path out), `backend` (path/argv rules, the local
+  `scp`/`rsync` runner, the remote helper program), `dto`, `render`. `transport`
+  stays a neighbor, not a member.
+- `session/`: `command`/`run`/`dto`/`render` plus `ops` (create, exec, io,
+  lifecycle, errors, shared) and `remote` (the helper `scripts` and their
+  `protocol`). The session itself is remote state; nothing here is remembered
+  between invocations. `session attach` is the one schema operation refused with
+  `USAGE_ERROR`.
 - `tunnel/`: `record` owns the id and the on-disk record, `master` owns the
-  dedicated OpenSSH process, and `mod.rs` owns requests. A tunnel's socket is its
-  own on purpose: closing one forward must not drop the shared connection.
-- `session/`: `scripts` holds the remote helper programs — one file per operation
-  (`create`, `exec`, `io`, `lifecycle`) over `shared` — `protocol` parses what
-  they print, and `mod.rs` owns the metadata and identity. The session itself is
-  remote state: nothing here is remembered between invocations.
-- `audit.rs` writes and reads the local trail; the CLI's `Timer` is the one place
-  an operation is recorded, and it is fail-open by construction.
-- `session attach` is the one schema operation that is refused: it needs a
-  terminal, so it reports `USAGE_ERROR` under its real operation name rather than
-  pretending to attach.
+  dedicated OpenSSH process, `command`/`run`/`dto`/`render` are the surface.
+- `transport/`: `mod.rs` is the only surface; `openssh`, `process` and `protocol`
+  are private, so a neighbor names the capability (`crate::transport::Client`).
 - Cargo forbids first-party unsafe and clippy rejects unwrap/expect. Do not add
   blanket lint allowances. Private domain modules expose only the facade in mod.rs.
 - Review contract changes before implementation changes. Type errors do not

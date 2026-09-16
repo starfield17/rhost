@@ -77,6 +77,8 @@ HITS = 0
 # The policy. A module absent from this map has no policy and fails below; a
 # module present with an empty set may depend on nothing first-party at all.
 ALLOWED = {
+    # The shared foundation. Every capability may depend on these; none of them
+    # may depend on a capability.
     "domain": set(),
     "clock": set(),
     "base64": set(),
@@ -84,18 +86,34 @@ ALLOWED = {
     "shell": set(),
     "stdio": set(),
     "config": set(),
-    "audit": {"clock"},
+    "wire": {"domain"},
+    "audit": {"cli", "clock", "config", "wire"},
     "host": {"config"},
     "signals": {"domain"},
     "transport": {"base64", "config", "domain", "random", "shell"},
-    "fileops": {"domain", "shell", "transport"},
-    "session": {"base64", "random", "shell", "transport"},
-    "tunnel": {"config", "transport"},
-    "app": {"config", "domain", "fileops", "session", "shell", "transport"},
-    "output": {"app", "audit", "domain", "host", "transport", "tunnel"},
-    "cli": {"app", "audit", "config", "domain", "fileops", "host", "output",
-            "session", "shell", "signals", "stdio", "transport", "tunnel"},
-    "main": {"cli", "signals", "transport"},
+    "remote": {"domain", "shell", "transport"},
+
+    # CLI primitives: the flag/argv vocabulary every capability parses with, plus
+    # the stdout sink and the shared error taxonomy they map onto a status.
+    "cli": {"remote", "stdio", "wire"},
+
+    # Capabilities. A capability may reach the shared foundation and the CLI
+    # primitives, and must not depend on a sibling capability; the one declared
+    # exception is doctor -> connection, which reports the shared master DTO.
+    "exec": {"audit", "cli", "domain", "remote", "shell", "signals", "stdio",
+             "transport", "wire"},
+    "hosts": {"cli", "host", "wire"},
+    "connection": {"audit", "cli", "remote", "transport", "wire"},
+    "doctor": {"audit", "cli", "connection", "domain", "remote", "transport", "wire"},
+    "files": {"audit", "cli", "config", "domain", "remote", "shell", "transport", "wire"},
+    "session": {"audit", "base64", "cli", "domain", "random", "remote", "shell",
+                "transport", "wire"},
+    "tunnel": {"audit", "cli", "config", "transport", "wire"},
+
+    # The composition root may depend on every capability; it holds no behavior.
+    "dispatch": {"audit", "cli", "connection", "doctor", "exec", "files", "hosts",
+                 "session", "signals", "transport", "tunnel", "wire"},
+    "main": {"dispatch", "signals", "transport"},
 }
 
 

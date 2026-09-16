@@ -12,10 +12,17 @@
 //! `record` for what is durable, `master` for the OpenSSH process, and this file
 //! for the requests a caller can make.
 
+pub mod command;
+mod dto;
 mod master;
 mod record;
+mod render;
+mod run;
 
+pub use command::{Command, command};
+pub use dto::{tunnel, tunnel_closed, tunnels};
 pub use record::{Fault, Kind, Status, Tunnel};
+pub use run::run;
 
 use crate::config;
 use crate::transport::Client;

@@ -21,14 +21,28 @@
 //! clean; nothing here supports `attach`, which the v2 schema reports as a usage
 //! error.
 
-mod protocol;
-mod scripts;
+pub mod command;
+mod dto;
+mod ops;
+pub mod remote;
+mod render;
+mod run;
 
-pub use protocol::{
+pub use command::{Session, command};
+pub use dto::{
+    session_closed, session_create_failure, session_created, session_exec, session_exec_failure,
+    session_exec_status, session_failure, session_read, session_recover, session_sent, sessions,
+};
+pub use ops::{
+    CreateOptions, Created, CreationStatus, ExecOptions, Info, Recover, SendOptions, close, create,
+    exec, list, read, recover, send,
+};
+pub use remote::protocol::{
     ExecResult, HelperFailure, ListEntry, ReadResult, field, parse_exec, parse_list, parse_read,
 };
+pub use run::run;
 
-pub(crate) use scripts::{
+pub(crate) use remote::scripts::{
     SendKind, close as close_script, create as create_script, exec as exec_script,
     list as list_script, read as read_script, recover as recover_script, send as send_script,
 };

@@ -59,8 +59,8 @@ Use role names in review policy; particular model names do not belong here.
 | Risk | Default area | Required handling |
 | --- | --- | --- |
 | A | `domain/**`, `docs/CONTRACT.md`, `schemas/**`, process cleanup, transport/session protocols and scripts, exec cancellation, release semantics | Architecture review before implementation; name affected consumers and whether the change is compatible. |
-| B | `app/**`, `output/**`, file-tool execution and tunnel lifecycle | Implementation plus a high-level final review against contract and failure semantics. |
-| C | Help prose, fixtures, contract-neutral CLI wiring, documentation and mechanical refactors | The implementation agent may own the change under existing gates. |
+| B | A capability's `ops/**`/`dto`/`run` (exec, doctor, files, session), file-tool execution and tunnel lifecycle | Implementation plus a high-level final review against contract and failure semantics. |
+| C | Help prose (`dispatch/usage`), fixtures, `cli` primitives, contract-neutral dispatch wiring, documentation and mechanical refactors | The implementation agent may own the change under existing gates. |
 
 Any change to accepted argv, JSON shape, `error.code` or retryability, durable
 state, destructive behavior, cancellation/cleanup, or publication semantics is

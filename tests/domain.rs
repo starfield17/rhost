@@ -1,4 +1,5 @@
-use rhost::{domain::*, output};
+use rhost::domain::*;
+use rhost::wire;
 use serde_json::Value;
 
 fn streams() -> Result<ProcessOutput, DomainError> {
@@ -23,7 +24,7 @@ fn completion_and_interruption_are_independent() -> Result<(), Box<dyn std::erro
             10,
         )?;
         assert_eq!(result.process_status(), expected);
-        let wire = serde_json::to_value(output::exec("gpu", &result))?;
+        let wire = serde_json::to_value(wire::exec("gpu", &result))?;
         assert_eq!(wire["ok"], false);
         assert_eq!(wire["data"]["execution"]["status"], "completed");
         assert_eq!(wire["data"]["execution"]["exit_code"], 7);
@@ -56,7 +57,7 @@ fn cleanup_is_not_permission_to_retry() -> Result<(), Box<dyn std::error::Error>
             streams()?,
             10,
         )?;
-        let wire = serde_json::to_value(output::exec("gpu", &result))?;
+        let wire = serde_json::to_value(wire::exec("gpu", &result))?;
         assert_eq!(wire["error"]["retryable"], false);
         assert_eq!(wire["data"]["execution"]["status"], "unknown");
         assert!(wire["data"]["execution"].get("exit_code").is_none());
@@ -71,7 +72,7 @@ fn remote_nonzero_is_completed_and_delivery_failure_preserves_evidence()
     let result = ExecOutcome::completed(code, streams()?, 0);
     assert_eq!(result.process_status(), 255);
     assert_eq!(
-        serde_json::to_value(output::exec("gpu", &result))?["ok"],
+        serde_json::to_value(wire::exec("gpu", &result))?["ok"],
         true
     );
     let failed = ExecOutcome::output_failed(
@@ -80,7 +81,7 @@ fn remote_nonzero_is_completed_and_delivery_failure_preserves_evidence()
         streams()?,
         0,
     );
-    let wire = serde_json::to_value(output::exec("gpu", &failed))?;
+    let wire = serde_json::to_value(wire::exec("gpu", &failed))?;
     assert_eq!(wire["error"]["code"], "OUTPUT_WRITE_FAILED");
     assert_eq!(wire["data"]["execution"]["exit_code"], 255);
     Ok(())
@@ -116,7 +117,7 @@ fn busy_session_has_no_exit_and_no_stdout_alias() -> Result<(), Box<dyn std::err
         SessionRef::new("caller-name".into())?,
         PtyOutput(CapturedText::new(String::new(), 0)?),
     );
-    let wire = serde_json::to_value(output::session_exec("gpu", &result))?;
+    let wire = serde_json::to_value(rhost::session::session_exec("gpu", &result))?;
     assert_eq!(wire["data"]["session_id"], "canonical");
     assert_eq!(wire["data"]["session_ref"], "caller-name");
     assert_eq!(wire["data"]["execution"]["status"], "not_started");
@@ -136,7 +137,7 @@ fn dto_matches_independent_contract_fixture() -> Result<(), Box<dyn std::error::
         .ok_or("missing exec fixture")?;
     let result = ExecOutcome::completed(completion(0)?, streams()?, 0);
     assert_eq!(
-        serde_json::to_value(output::exec("gpu", &result))?,
+        serde_json::to_value(wire::exec("gpu", &result))?,
         fixture["result"]
     );
     Ok(())
@@ -155,7 +156,7 @@ fn failed_sink_is_not_retried() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let mut sink = BrokenSink(0);
-    assert!(output::version().write(&mut sink).is_err());
+    assert!(wire::version().write(&mut sink).is_err());
     assert_eq!(sink.0, 1);
     Ok(())
 }

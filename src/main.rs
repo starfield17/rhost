@@ -4,7 +4,7 @@
 //! socket and sessions to remote tmux, so this process may exit at any moment
 //! without taking state with it (AGENTS.md §4).
 #![forbid(unsafe_code)]
-use rhost::cli;
+use rhost::dispatch;
 use rhost::signals::Interrupt;
 use rhost::transport::{Client, Config};
 use std::io::Write;
@@ -25,7 +25,7 @@ fn main() -> ExitCode {
             return ExitCode::from(255);
         }
     };
-    let invocation = cli::parse_invocation(&argv);
+    let invocation = dispatch::parse_invocation(&argv);
     let client = Client::new(Config::default());
     let delivery = invocation.run(&client, &interrupt);
     ExitCode::from(if delivery.delivery_failed {

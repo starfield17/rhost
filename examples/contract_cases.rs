@@ -1,8 +1,8 @@
 //! Actual DTO cases for independent JSON Schema validation.
 use rhost::{
-    app::session::{Created, CreationStatus},
     domain::*,
-    output,
+    session::{Created, CreationStatus},
+    wire,
 };
 use serde::Serialize;
 fn emit<T: Serialize>(
@@ -23,12 +23,12 @@ fn pty() -> Result<PtyOutput, DomainError> {
 }
 pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let mut rows = Vec::new();
-    emit(&mut rows, output::version())?;
-    emit(&mut rows, output::usage("missing command"))?;
+    emit(&mut rows, wire::version())?;
+    emit(&mut rows, wire::usage("missing command"))?;
     for code in [0, 7, 255] {
         emit(
             &mut rows,
-            output::exec(
+            wire::exec(
                 "gpu",
                 &ExecOutcome::completed(completion(code)?, streams()?, 0),
             ),
@@ -46,7 +46,7 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
         ] {
             emit(
                 &mut rows,
-                output::exec(
+                wire::exec(
                     "gpu",
                     &ExecOutcome::interrupted(
                         CompletionEvidence::Missing,
@@ -60,7 +60,7 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
         }
         emit(
             &mut rows,
-            output::exec(
+            wire::exec(
                 "gpu",
                 &ExecOutcome::output_failed(
                     CompletionEvidence::Completed(completion(7)?),
@@ -78,7 +78,7 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     ] {
         emit(
             &mut rows,
-            output::exec(
+            wire::exec(
                 "gpu",
                 &ExecOutcome::interrupted(
                     CompletionEvidence::Completed(completion(7)?),
@@ -92,7 +92,7 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     }
     emit(
         &mut rows,
-        output::exec("gpu", &ExecOutcome::unknown(streams()?, 1)),
+        wire::exec("gpu", &ExecOutcome::unknown(streams()?, 1)),
     )?;
     for reason in [
         PreExecFailure::Usage,
@@ -105,39 +105,39 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     ] {
         emit(
             &mut rows,
-            output::exec("gpu", &ExecOutcome::not_started(reason, streams()?, 0)),
+            wire::exec("gpu", &ExecOutcome::not_started(reason, streams()?, 0)),
         )?;
     }
     let id = || SessionId::new("canonical-id".into());
     let reference = || SessionRef::new("caller-name".into());
     emit(
         &mut rows,
-        output::session_exec(
+        rhost::session::session_exec(
             "gpu",
             &SessionExecOutcome::completed(id()?, reference()?, completion(7)?, pty()?),
         ),
     )?;
     emit(
         &mut rows,
-        output::session_exec(
+        rhost::session::session_exec(
             "gpu",
             &SessionExecOutcome::busy(id()?, reference()?, pty()?),
         ),
     )?;
     emit(
         &mut rows,
-        output::session_exec(
+        rhost::session::session_exec(
             "gpu",
             &SessionExecOutcome::writer_busy(id()?, reference()?, pty()?),
         ),
     )?;
     emit(
         &mut rows,
-        output::session_exec("gpu", &SessionExecOutcome::not_found(reference()?, pty()?)),
+        rhost::session::session_exec("gpu", &SessionExecOutcome::not_found(reference()?, pty()?)),
     )?;
     emit(
         &mut rows,
-        output::session_exec(
+        rhost::session::session_exec(
             "gpu",
             &SessionExecOutcome::unhealthy(None, reference()?, pty()?),
         ),
@@ -145,7 +145,7 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     for preserved in [false, true] {
         emit(
             &mut rows,
-            output::session_exec(
+            rhost::session::session_exec(
                 "gpu",
                 &SessionExecOutcome::timed_out(
                     id()?,
@@ -164,7 +164,7 @@ pub fn cases() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     ] {
         emit(
             &mut rows,
-            output::session_create_failure(
+            rhost::session::session_create_failure(
                 "gpu",
                 &Created::failed(
                     "s_candidate",

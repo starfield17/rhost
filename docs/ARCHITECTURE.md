@@ -41,6 +41,27 @@ invalidating any persistence promise.
 - No package is installed automatically on the remote host.
 - New abstraction requires a second implementation that needs it.
 
+## Where code lives
+
+The tree is cut by capability, not by layer. One directory owns one reason to
+change, and a typical change touches that directory plus the shared surfaces it
+names:
+
+```text
+domain  transport  remote  wire   shared foundation
+cli                               flag/argv vocabulary, Sink, Failure
+dispatch                          whole-argv grammar, help prose, routing
+exec  doctor  hosts  connection   one vertical slice each
+files  session  tunnel            one capability each
+```
+
+`dispatch` is the composition root: it may depend on every capability, but it
+only wires them together. Here, "the CLI" is an orchestration layer — it parses
+argv and calls each capability's stable surface; it never reaches into a
+capability's internals, and a capability never depends on `dispatch`. See
+[src/AGENTS.md](../src/AGENTS.md) and the `ALLOWED` map in
+`scripts/check-structure.sh` for the enforced edges.
+
 ## Detailed design
 
 - [Runtime and foreground execution](architecture/runtime.md)

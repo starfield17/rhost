@@ -82,7 +82,7 @@
     "id": "HIST-RS-CLI-001",
     "origin": "769d81b",
     "contract": "WIRE-007",
-    "mechanism_test": "src/cli/usage.rs:every_page_describes_every_flag_it_accepts",
+    "mechanism_test": "src/dispatch/usage.rs:every_page_describes_every_flag_it_accepts",
     "conformance_test": "tests/cli.rs:help_lists_the_flags_each_command_accepts"
   },
   {
@@ -97,14 +97,14 @@
     "id": "HIST-RS-SESSION-001",
     "origin": "2611324",
     "contract": "SESSION-010",
-    "mechanism_test": "src/app/session/create.rs:silence_is_unknown_and_keeps_the_transport_cause",
+    "mechanism_test": "src/session/ops/create.rs:silence_is_unknown_and_keeps_the_transport_cause",
     "conformance_test": "tests/acceptance/session.rs:a_create_without_completion_evidence_reports_the_candidate_and_unknown"
   },
   {
     "id": "HIST-RS-SESSION-002",
     "origin": "2611324",
     "contract": "SESSION-010",
-    "mechanism_test": "src/app/session/create.rs:a_full_record_is_created_and_reports_the_resolved_cwd",
+    "mechanism_test": "src/session/ops/create.rs:a_full_record_is_created_and_reports_the_resolved_cwd",
     "conformance_test": "tests/live/session.rs:cwd_is_resolved_to_an_absolute_path_that_matches_the_session"
   },
   {
