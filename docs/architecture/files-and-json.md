@@ -30,6 +30,26 @@ file requires the hash last returned by `fs read`. `fs patch` always requires
 a matching hash. A missing required hash returns `HASH_REQUIRED`; a stale hash
 returns `FILE_CONFLICT`. Replacement is locked, same-directory and atomic.
 
+### Why the edit helper is an embedded interpreter script
+
+`fs read`/`write`/`patch` run a helper on the remote host. It is a Python program
+compiled into the rhost binary and executed by the target's own `python3`; rhost
+installs nothing there (AGENTS.md §5). The session helpers are generated shell
+scripts instead, so this difference is deliberate:
+
+- the remote architecture is unknown, so a Rust helper would need per-target
+  cross-compilation — which the release contract forbids — and rhost never ships
+  a binary to the target;
+- the edit helper moves structured binary data: base64 content and hashes in one
+  JSON request, one bounded JSON reply, under a `flock` and an atomic
+  same-directory replace. Shell plus coreutils would need a hand-rolled quoting
+  protocol to do the same;
+- a target that already has `python3` supplies that JSON pump with no install; a
+  target without it gets `REMOTE_DEPENDENCY_MISSING`, not a silent failure.
+
+The mechanism is deliberately not frozen (`docs/CONTRACT.md`): the helper's
+source language may change if a target without `python3` ever justifies it.
+
 ## Batch maintenance boundary
 
 `fs batch` is serial CLI orchestration over existing put/get operations, not a

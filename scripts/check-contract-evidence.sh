@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
 # check-contract-evidence.sh — current truth comes first.
 #
-# docs/CONTRACT.md is the semantic ledger. Its "Executable evidence" column has
-# always carried historical lineage (frozen Go tests under archive/); that
-# provenance is worth keeping, but a reader who wants to understand *today's*
-# invariant must not be sent to a frozen implementation first. This check makes
-# that a fact: every contract row must name at least one evidence target that is
-# NOT under archive/ and that exists in the tree. A row whose invariant genuinely
-# has no test yet may be exempted explicitly with `[no-active-test]`, which is
-# visible in the ledger rather than hidden.
+# docs/CONTRACT.md is the semantic ledger. Its "Executable evidence" column must
+# point at current, active evidence: every contract row has to name at least one
+# evidence target that exists in this tree. A row whose invariant genuinely has
+# no test yet may be exempted explicitly with `[no-active-test]`, which is
+# visible in the ledger rather than hidden. (Historical Go links were removed at
+# v4.4.1 when that tree moved to the read-only rhost-go-old repository.)
 #
 #	./scripts/check-contract-evidence.sh          # check
 #	./scripts/check-contract-evidence.sh -v       # also list rows and targets
@@ -63,23 +61,20 @@ for line in open(path, encoding="utf-8"):
         path_part = m.group(1) if m else target
         # Relative to docs/, so a `../x` or a bare path both resolve from docs/.
         base = os.path.normpath(os.path.join("docs", path_part))
-        not_archive = not base.startswith("archive/")
         exists = os.path.exists(base)
         if VERBOSE:
-            mark = "active" if not_archive else "frozen"
-            print(f"  {cid}: [{mark}] {target} exists={exists}")
-        if not_archive and exists:
+            print(f"  {cid}: {target} exists={exists}")
+        if exists:
             active.append(target)
     if not active:
-        print(f"{cid}: no active (non-archive) evidence link that exists")
+        print(f"{cid}: no evidence link that exists in this tree")
         HITS += 1
 
 if HITS:
     print(
-        "\nEvery contract row needs current evidence first. Add a link to the\n"
-        "active Rust test/source that asserts the invariant, keep any archive/\n"
-        "link as historical provenance, or mark the row `[no-active-test]` if the\n"
-        "invariant genuinely has no test yet.",
+        "\nEvery contract row needs a current evidence link. Add a link to the\n"
+        "active Rust test/source that asserts the invariant, or mark the row\n"
+        "`[no-active-test]` if the invariant genuinely has no test yet.",
         file=sys.stderr,
     )
     sys.exit(1)

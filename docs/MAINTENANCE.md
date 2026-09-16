@@ -83,7 +83,7 @@ an implementation fix. A misfire is recorded in `FRICTION.md`.
 `tests/fixtures/history.json` is the permanent engineering-memory index. A
 serious defect first found in real use, CI or live verification is complete only
 when its fix has a contract ID, regression evidence and a history row. The Rust
-test suite validates those links; the frozen Go corpus remains untouched.
+test suite validates those links against active Rust evidence.
 
 For a flaky test: record the first observation without weakening it; on the
 second observation create a standalone friction/tracker entry with platform,

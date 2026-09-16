@@ -3,6 +3,12 @@
 > Migration completed at v4.1.0. This document is frozen as historical evidence.
 > Current product semantics live in [CONTRACT.md](CONTRACT.md); compatibility,
 > toolchain, review and release policy lives in [MAINTENANCE.md](MAINTENANCE.md).
+>
+> Note added at v4.4.1: the `archive/` tree this record describes was split out
+> to the read-only `rhost-go-old` repository, and the `make build-reference` /
+> `make test-conformance` targets it names no longer exist. The historical text
+> is kept verbatim; treat its `archive/` paths and Go-target commands as a record
+> of how the migration was done, not as runnable instructions.
 
 ## Implemented
 

@@ -10,11 +10,13 @@ never environment maps, file contents or `session send --data` payloads.
 
 ## Repository boundaries
 
-Frozen Go packages under `archive/go-v3.1.0/internal/` own distinct capabilities: CLI parsing and
-rendering, application policy, OpenSSH transport, remote session protocol,
-and file operations. Remote scripts are generated or embedded by their owning
-package. `reference/` is read-only reference material and is not part of the
-product.
+The tree is cut by capability: `domain`, `transport`, `remote` and `wire` are the
+shared foundation, `cli` holds the flag/argv vocabulary, `dispatch` is the thin
+composition root, and each capability (`exec`, `doctor`, `hosts`, `connection`,
+`files`, `session`, `tunnel`, `audit`) owns its own grammar, use-cases and DTO.
+`reference/` is read-only reference material and is not part of the product. The
+archived Go v3.1.0 implementation lives in the read-only `rhost-go-old`
+repository, not in this tree.
 
 Durable state must remain outside the CLI process. A local daemon or remote
 runtime is justified only after a measured requirement cannot be met by
@@ -36,7 +38,7 @@ external-tool defaults refuse access, so it needs no SSH service or configured
 host and cannot accidentally contact one. `make check` covers Rust formatting,
 clippy, unit tests, independent DTO schema validation, domain boundaries,
 portability, the structure budget, native-live compilation and coverage,
-the release contract check and archive integrity.
+the release contract check and the contract-evidence check.
 The production Rust implementation covers every schema-v2 operation except
 `session attach`, which the schema requires to be a usage error; see the current
 [maintenance policy](../MAINTENANCE.md). Live suites are the gate that proves behavior across independent CLI processes on a real
@@ -45,8 +47,8 @@ exec, file and session workflows. The feature suites and `test-live-all`
 retain the exhaustive failure, persistence and transport cases. The native full
 suite is serial for deterministic ownership and cleanup, validates every JSON
 answer against schema v2, and runs the exact binary named by `RHOST_BIN`.
-The frozen Go harness is an optional historical comparison under
-`test-legacy-live-*`; it is not required by the Rust release gate.
+The Rust native live suites are the release gate; the archived Go harness is no
+longer part of this tree.
 
 Tracked examples and verification claims must remain host-independent.
 `scripts/check-portability.sh` enforces this.

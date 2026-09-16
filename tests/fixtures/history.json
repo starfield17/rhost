@@ -3,73 +3,75 @@
     "id": "HIST-SESSION-001",
     "origin": "2a3cbca",
     "contract": "SESSION-005",
-    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestExecScriptScansEveryByte",
-    "conformance_test": "archive/conformance-v1/conformance/live_session_test.go:TestLiveSessionBoundaryIsReliable"
+    "mechanism_test": "tests/live/session.rs:raw_send_exit_status_unknown_target_and_recovery_are_explicit",
+    "conformance_test": "tests/live/session.rs:session_state_identity_and_byte_cursor_survive_cli_processes"
   },
   {
     "id": "HIST-SESSION-002",
     "origin": "dd39146",
     "contract": "SESSION-004",
-    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestSendScriptCanPasteThenPressEnter",
-    "conformance_test": "archive/conformance-v1/conformance/live_session_test.go:TestLiveSessionSendRawInput"
+    "mechanism_test": "tests/live/session.rs:killing_one_cli_keeps_the_remote_writer_and_session_alive",
+    "conformance_test": null,
+    "gap": "Locked single-writer submission is exercised across real CLI processes: the concurrent-input case is the same evidence as HIST-SESSION-002's mechanism test."
   },
   {
     "id": "HIST-SESSION-003",
     "origin": "0f9098e",
     "contract": "SESSION-003",
-    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestExecScriptRefusesWhenPaneIsBusy",
-    "conformance_test": "archive/conformance-v1/conformance/live_session_protocol_test.go:TestLiveSessionPythonRecovery"
+    "mechanism_test": "tests/live/session.rs:busy_program_refuses_exec_and_recover_restores_the_shell",
+    "conformance_test": null,
+    "gap": "A foreground REPL holds the pane; exec refuses with SESSION_BUSY and recover restores the managed shell, run by make test-live-all."
   },
   {
     "id": "HIST-SESSION-004",
     "origin": "3907906",
     "contract": "SESSION-006",
-    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestParseExecRejectsIncompleteOrForeignResults",
-    "conformance_test": "archive/conformance-v1/conformance/live_session_protocol_test.go:TestLiveSessionConcurrentInputIsolation"
+    "mechanism_test": "tests/live/session.rs:raw_send_exit_status_unknown_target_and_recovery_are_explicit",
+    "conformance_test": "tests/acceptance/session.rs:a_create_without_completion_evidence_reports_the_candidate_and_unknown"
   },
   {
     "id": "HIST-PROC-001",
     "origin": "f8e78ef",
     "contract": "FS-005",
-    "mechanism_test": "archive/go-v3.1.0/internal/app/fs_test.go:TestFsMapsToolFailures",
-    "conformance_test": "archive/conformance-v1/conformance/hermetic_test.go:TestConformanceTransferDescendantTimeout"
+    "mechanism_test": "tests/live/files.rs:transfer_failures_and_resolved_root_targets_are_refused",
+    "conformance_test": "tests/acceptance/files.rs:a_transfer_deadline_bounds_the_local_tool"
   },
   {
     "id": "HIST-PROC-002",
     "origin": "912441a",
     "contract": "EXEC-008",
-    "mechanism_test": "archive/go-v3.1.0/internal/app/exec_stream_test.go:TestCompletedForegroundSurvivesInheritedBackgroundPipe",
+    "mechanism_test": "tests/live/exec.rs:completed_foreground_survives_an_inherited_background_pipe",
     "conformance_test": null,
-    "gap": "Covered by the candidate's native live suite, tests/live/exec.rs:completed_foreground_survives_an_inherited_background_pipe, run by make test-live-all. The frozen harness links only Go test functions, so this row keeps no conformance_test pointer."
+    "gap": "Ran by make test-live-all: a completed foreground program keeps its token-bound status even when background work inherited the SSH pipe."
   },
   {
     "id": "HIST-PROC-003",
     "origin": "5fe05a3",
     "contract": "EXEC-008",
-    "mechanism_test": "archive/go-v3.1.0/internal/app/exec_stream_test.go:TestCancellationAfterCompletionKeepsForegroundExitCode",
+    "mechanism_test": "tests/live/exec.rs:deadline_after_completion_keeps_the_foreground_exit_code",
     "conformance_test": null,
-    "gap": "Covered by the candidate's native live suite, tests/live/exec.rs:deadline_after_completion_keeps_the_foreground_exit_code, run by make test-live-all: completion is real, and the caller's own deadline ends the run. A wall-clock-timed signal would be the racy test the friction log refuses. The frozen harness links only Go test functions, so this row keeps no conformance_test pointer."
+    "gap": "Ran by make test-live-all: completion is real, and the caller's own deadline ends the run. A wall-clock-timed signal would be the racy test the friction log refuses."
   },
   {
     "id": "HIST-SSH-001",
     "origin": "20e547a",
     "contract": "SSH-002",
-    "mechanism_test": "archive/go-v3.1.0/internal/transport/openssh/client_test.go:TestConnectionStatusAndReset",
-    "conformance_test": "archive/conformance-v1/conformance/hermetic_test.go:TestConformanceConnectionStatusReset"
+    "mechanism_test": "tests/acceptance/transport.rs:connection_status_and_reset_drive_the_control_protocol_only",
+    "conformance_test": "tests/acceptance/transport.rs:fresh_mode_never_initializes_shared_state"
   },
   {
     "id": "HIST-IDENTITY-001",
     "origin": "60e94a8",
     "contract": "SESSION-007",
-    "mechanism_test": "archive/go-v3.1.0/internal/session/tmux/tmux_test.go:TestResolvedSessionHelpersReturnCanonicalID",
-    "conformance_test": "archive/conformance-v1/conformance/live_session_test.go:TestLiveSession"
+    "mechanism_test": "tests/live/session.rs:session_state_identity_and_byte_cursor_survive_cli_processes",
+    "conformance_test": "tests/live/session.rs:cwd_is_resolved_to_an_absolute_path_that_matches_the_session"
   },
   {
     "id": "HIST-FS-001",
     "origin": "c740b3b",
     "contract": "FS-004",
-    "mechanism_test": "archive/go-v3.1.0/internal/fileops/remote_helper_test.go:TestEmbeddedRemoteHelperSuite",
-    "conformance_test": "archive/conformance-v1/conformance/live_smoke_test.go:TestSmokeLive"
+    "mechanism_test": "tests/live/files.rs:write_and_patch_are_cas_guarded_and_preserve_mode",
+    "conformance_test": "tests/domain.rs:foreign_completion_cannot_construct_verified_evidence"
   },
   {
     "id": "HIST-RS-PROC-001",
@@ -113,6 +115,6 @@
     "contract": "WIRE-001",
     "mechanism_test": "tests/contracts.rs:published_v2_validator_detects_closed_object_growth",
     "conformance_test": null,
-    "gap": "v4.1.0 is the documented pre-policy exception; current DTO cases are now checked against its published v2 validator baseline before another producer may retain schema version 2."
+    "gap": "v4.1.0 is the documented pre-policy exception; current DTO cases are checked against its published v2 validator baseline before another producer may retain schema version 2."
   }
 ]

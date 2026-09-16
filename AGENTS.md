@@ -81,7 +81,7 @@ concepts in a generic adapter, no daemon until real usage justifies one
 
 ```bash
 make test-smoke                                           # complete local Rust black-box suite; no network or Go
-make check                                                # Rust fmt + clippy + tests + portability + structure + release contract + archive integrity
+make check                                                # Rust fmt + clippy + tests + portability + structure + live-suite map + release contract + contract evidence
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live              # native exec + doctor + transport
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-session      # native sessions
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all          # every native live suite, serial
@@ -94,19 +94,16 @@ or CI job's run-pattern to cover tests you weren't asked to run.
 
 - `docs/CONTRACT.md` is the semantic ledger; `schemas/result-v2.schema.json` is
   the active wire contract; `docs/MAINTENANCE.md` defines compatibility, MSRV,
-  release and change-risk policy. v1 remains Go wire history.
-- `archive/conformance-v1/conformance/` drives `RHOST_BIN`, imports no production packages, and
-  preserves the original live selectors. It is available through
-  `make test-conformance` and `test-legacy-live-*`, but is not part of the Rust
-  release gate. Native live targets require both `RHOST_TEST_HOST` and `RHOST_BIN`.
+  release and change-risk policy. Go is not part of this tree; the archived Go
+  v3.1.0 implementation lives in the read-only `rhost-go-old` repository.
 - `src/domain/` is pure; each capability's `dto` maps its values to schema v2
   (`src/wire/` owns the shared envelope). The Rust binary
   implements every v2 operation except `session attach`, which the schema makes a
   usage error. `docs/RUST_MIGRATION.md` is a frozen historical record.
 - `make check` also runs Rust fmt/clippy/tests, compiles and lints the feature-gated
-  native live crate, validates its frozen-corpus coverage map, and runs independent
-  DTO schema validation, domain boundary checks, the structure budget, the release
-  contract check and frozen corpus hashes. It needs Cargo, not Go.
+  native live crate, validates the frozen live-name coverage map, and runs independent
+  DTO schema validation, domain boundary checks, the structure policy, the release
+  contract check and contract-evidence check. It needs Cargo, not Go.
 - Contract/tests cannot be weakened to make an implementation pass. CI and the
   release verify job compare the changed range with `scripts/check-integrity.sh`
   (deleted tests, dropped assertions, new `#[ignore]`, removed gate steps or a
@@ -118,12 +115,13 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   semantics are Risk A: name affected consumers and get architecture review before
   implementation. See `docs/MAINTENANCE.md#change-risk` for the complete map.
 
-## Frozen legacy boundary
+## Archived legacy boundary
 
-All Go source, modules, version metadata, installers and old release workflows
-are immutable under archive/. Cargo.toml is the sole active binary version
-authority. New implementation and acceptance tests must be Rust. Do not edit
-the archive manifest to bless changes. make check needs no Go toolchain.
+The Go implementation, its modules, version metadata, installers and old release
+workflows were removed from this tree at v4.4.1 and now live in the read-only
+`rhost-go-old` repository. Nothing here builds or reads them; this tree has no Go
+toolchain requirement. Cargo.toml is the sole active binary version authority.
+New implementation and acceptance tests must be Rust.
 The current Rust binary implements the v2 operations except `session attach`.
 Live suites against a real remote host are a required **manual pre-release
 verification**, not a gate the release workflow enforces: the workflow has no

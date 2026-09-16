@@ -64,3 +64,53 @@ fn published_v410_validator_is_immutable() {
     ];
     assert_eq!(digest.as_slice(), &expected);
 }
+
+/// The active fixture set and the active schema must agree, and they must both
+/// line up with the hand-written DTO cases. This is the current-tree half of the
+/// guard the archived Go harness used to hold (against a *frozen* fixture, which
+/// is why it could only ever fail): every operation the active schema names has
+/// a case, and every active fixture envelope passes the active schema.
+#[test]
+fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dyn std::error::Error>>
+{
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schemas/result-v2.schema.json"))?;
+    let validator = jsonschema::validator_for(&schema)?;
+
+    let mut covered: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for case in contract_cases::cases()? {
+        if let Some(op) = case["operation"].as_str() {
+            covered.insert(op.to_string());
+        }
+    }
+
+    let fixtures: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("fixtures/result-v2-valid.json"))?;
+    for fixture in &fixtures {
+        let name = fixture["name"].as_str().unwrap_or("<unnamed>");
+        let result = &fixture["result"];
+        assert!(
+            validator.is_valid(result),
+            "active fixture {name} is rejected by the active schema: {result}"
+        );
+        let op = result["operation"].as_str().unwrap_or("<missing>");
+        assert_eq!(op, name, "fixture {name} carries operation {op}");
+        covered.insert(op.to_string());
+    }
+
+    let operations = schema["properties"]["operation"]["enum"]
+        .as_array()
+        .ok_or("schema has no operation enum")?;
+    let mut missing = Vec::new();
+    for op in operations {
+        let op = op.as_str().ok_or("operation enum is not a string")?;
+        if !covered.contains(op) {
+            missing.push(op.to_string());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "no DTO case or fixture covers these schema operations: {missing:?}"
+    );
+    Ok(())
+}

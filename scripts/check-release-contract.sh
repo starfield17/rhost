@@ -6,7 +6,7 @@
 # their checksums verified, before publication. The workflow must build exactly the four shipping
 # platform/runner pairs, the version taken from Cargo.toml (the sole version
 # authority), the artifact named, executed and summed the way a release expects,
-# no cross-compilation or write near the frozen archive, and every action pinned
+# no cross-compilation or write near the read-only reference tree, and every action pinned
 # to a commit. Manual dispatch rehearses without publishing; a matching version
 # tag may publish only after every native matrix job succeeds.
 #
@@ -56,7 +56,7 @@ require_once() {
 }
 
 # Something the workflow must never contain: a second version authority, a
-# cross-compiler, or a write into a frozen tree.
+# cross-compiler, or a write into the read-only reference tree.
 refuse() {
 	label=$1
 	pattern=$2
@@ -247,7 +247,7 @@ fi
 refuse "a second publisher" 'action-gh-release|actions/create-release|cargo publish|git tag |git push|docker push|npm publish'
 refuse "an unrelated write permission" 'id-token: write|packages: write'
 refuse "a cross-compiler" '\-\-target|qemu|cross build|\bzig\b'
-refuse "a frozen tree" 'archive/|reference/'
+refuse "a read-only reference tree" 'reference/'
 
 triggers=$(awk '
 	/^on:/ { inside = 1; next }

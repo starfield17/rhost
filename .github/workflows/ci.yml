@@ -20,15 +20,12 @@ jobs:
           rustup toolchain install "$rust_version" --profile minimal --component rustfmt --component clippy
           rustup override set "$rust_version"
       - run: make check
-      - name: Prevent frozen history or compatibility-baseline changes
+      - name: Prevent compatibility-baseline and measurement changes
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           if [ -n "$BASE" ] && [ "$BASE" != 0000000000000000000000000000000000000000 ]; then
             git fetch origin "$BASE"
-            if git cat-file -e "$BASE:archive/MANIFEST.json" 2>/dev/null; then
-              git diff --exit-code "$BASE" HEAD -- archive/
-            fi
             if git cat-file -e "$BASE:schemas/compat/result-v2-v4.1.0.schema.json" 2>/dev/null; then
               git diff --exit-code "$BASE" HEAD -- schemas/compat/result-v2-v4.1.0.schema.json
             fi
