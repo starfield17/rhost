@@ -32,4 +32,5 @@ jobs:
             if git cat-file -e "$BASE:schemas/compat/result-v2-v4.1.0.schema.json" 2>/dev/null; then
               git diff --exit-code "$BASE" HEAD -- schemas/compat/result-v2-v4.1.0.schema.json
             fi
+            ./scripts/check-integrity.sh "$BASE"
           fi

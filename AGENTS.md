@@ -106,8 +106,12 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   native live crate, validates its frozen-corpus coverage map, and runs independent
   DTO schema validation, domain boundary checks, the structure budget, the release
   contract check and frozen corpus hashes. It needs Cargo, not Go.
-- Contract/tests cannot be weakened to make an implementation pass. Record a
-  semantic conflict in `FRICTION.md`; resolve its acceptance change separately.
+- Contract/tests cannot be weakened to make an implementation pass. CI and the
+  release verify job compare the changed range with `scripts/check-integrity.sh`
+  (deleted tests, dropped assertions, new `#[ignore]`, removed gate steps or a
+  narrowed selector). A genuine acceptance change lands on its own, with no
+  `src/` in the range, under a `GateChange:` commit trailer. Record a semantic
+  conflict in `FRICTION.md`; resolve its acceptance change separately.
 - Contract/schema, domain, process cleanup, transport/session protocol and release
   semantics are Risk A: name affected consumers and get architecture review before
   implementation. See `docs/MAINTENANCE.md#change-risk` for the complete map.

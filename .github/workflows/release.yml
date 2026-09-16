@@ -15,6 +15,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The measurement check compares the tagged range with the previous
+          # tag, so the verify job needs tags and history.
+          fetch-depth: 0
       - name: Install declared Rust toolchain
         run: |
           rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
@@ -22,6 +26,12 @@ jobs:
           rustup component add --toolchain "$rust_version" rustfmt clippy
           rustup override set "$rust_version"
       - run: make check
+      - name: Prevent weakening the measurement between releases
+        run: |
+          # The tagged range is compared with the previous tag; a first release
+          # with no tag falls back to the parent commit.
+          base=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null || echo 'HEAD^')
+          ./scripts/check-integrity.sh "$base"
   native:
     needs: verify
     strategy:

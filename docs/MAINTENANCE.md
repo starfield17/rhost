@@ -60,6 +60,18 @@ Any change to accepted argv, JSON shape, `error.code` or retryability, durable
 state, destructive behavior, cancellation/cleanup, or publication semantics is
 Risk A regardless of its path.
 
+## Measurement integrity
+
+`scripts/check-integrity.sh BASE` fails when the changed range deletes a test
+file, drops the `#[test]` or assertion count, adds an `#[ignore]`, removes a
+`make check` prerequisite, or narrows a gate invocation. CI runs it against the
+pull request or push base; the release `verify` job runs it against the previous
+tag. It is heuristic, not a proof: it catches removal, not a weakened tolerance
+or a widened timeout. A measurement that is genuinely wrong is changed by itself
+— no `src/` in the same range — with a `GateChange: <reason>` commit trailer, so
+the acceptance change is one visible commit rather than a silent side effect of
+an implementation fix. A misfire is recorded in `FRICTION.md`.
+
 ## Regression memory and flaky tests
 
 `tests/fixtures/history.json` is the permanent engineering-memory index. A
