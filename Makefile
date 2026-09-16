@@ -7,7 +7,7 @@ export RHOST_REPO_ROOT := $(CURDIR)
 # a reproducible build does.
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-.PHONY: build build-release build-rust check rust-check test test-smoke stress-transfer-timeout fmt portability structure live-suite release-contract agent-package install-test build-reference test-conformance
+.PHONY: build build-release build-rust check rust-check test test-smoke stress-transfer-timeout fmt portability structure live-suite release-contract contract-evidence agent-package install-test build-reference test-conformance
 build:
 	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --bin rhost
 # The release candidate: the same locked, optimized, provenance-stamped build
@@ -20,7 +20,7 @@ fmt:
 	cargo fmt
 test:
 	cargo test --locked
-check: rust-check portability structure live-suite release-contract agent-package install-test
+check: rust-check portability structure live-suite release-contract contract-evidence agent-package install-test
 rust-check:
 	cargo fmt --check
 	cargo clippy --locked --all-targets -- -D warnings
@@ -40,6 +40,8 @@ live-suite:
 
 release-contract:
 	./scripts/check-release-contract.sh
+contract-evidence:
+	./scripts/check-contract-evidence.sh
 agent-package:
 	./scripts/check-agent-package.sh
 install-test:

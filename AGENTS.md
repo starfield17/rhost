@@ -99,7 +99,8 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   preserves the original live selectors. It is available through
   `make test-conformance` and `test-legacy-live-*`, but is not part of the Rust
   release gate. Native live targets require both `RHOST_TEST_HOST` and `RHOST_BIN`.
-- `src/domain/` is pure; `src/output/` maps domain values to v2. The Rust binary
+- `src/domain/` is pure; each capability's `dto` maps its values to schema v2
+  (`src/wire/` owns the shared envelope). The Rust binary
   implements every v2 operation except `session attach`, which the schema makes a
   usage error. `docs/RUST_MIGRATION.md` is a frozen historical record.
 - `make check` also runs Rust fmt/clippy/tests, compiles and lints the feature-gated
