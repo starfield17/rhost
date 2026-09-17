@@ -16,7 +16,8 @@
 //!
 //! One test crate, cut by capability: `support` is the harness, `exec` the
 //! foreground command, `files` the transfers, `edit` the remote editing surface
-//! and `transport` the connection and probe questions.
+//! `remote_fs` the embedded helper’s direct conformance oracle, and
+//! `transport` the connection and probe questions.
 #![cfg(unix)]
 
 mod audit;
@@ -24,6 +25,7 @@ mod edit;
 mod exec;
 mod files;
 mod hosts;
+mod remote_fs;
 mod session;
 mod support;
 mod transport;
