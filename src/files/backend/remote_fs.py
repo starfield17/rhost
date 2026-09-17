@@ -13,12 +13,13 @@ Rules this file has to keep, because the CLI and its tests rely on them:
 * the response stays inside the request's own `max_bytes`, so a large file can
   never make the CLI drain an unbounded stream;
 * nothing is written unless the request's hash precondition still holds;
+* `read`, `write` and `patch` name one exact regular file: they refuse a symbolic
+  link in any path component and never reread a pathname they already opened;
 * `resolve` intentionally follows symlinks because a destructive sync must know
   what its destination really names.
 """
 import base64
 import binascii
-import contextlib
 import errno
 import fcntl
 import hashlib
@@ -26,7 +27,6 @@ import json
 import os
 import stat
 import sys
-import tempfile
 
 # Editing limit, in bytes, for a whole file: writes hold the new body in memory
 # to hash and compare it. Reads are bounded by the caller's max_bytes instead.
@@ -78,22 +78,108 @@ def capacity(q):
     return cap
 
 
-def opened(path):
-    """Opens a regular file, refusing anything a symlink or device could hide."""
+def target_parts(path):
+    """The parent directory and exact basename to operate on together."""
+    parent, name = os.path.split(path)
+    if not name:
+        raise Failure('INVALID_TARGET', 'the filesystem root is not a file')
+    return parent, name
+
+
+def traversal_failure(exc, name):
+    if exc.errno == errno.ENOENT:
+        return Failure('FILE_NOT_FOUND', 'no such parent directory: %s' % name)
+    if exc.errno == errno.ELOOP:
+        return Failure('INVALID_TARGET', 'refusing a symbolic link: %s' % name)
+    if exc.errno in (errno.ENOTDIR, errno.EISDIR):
+        return Failure('INVALID_TARGET', 'not a traversable directory: %s' % name)
+    if exc.errno in (errno.EACCES, errno.EPERM):
+        return Failure('INVALID_TARGET', 'cannot traverse %s' % name)
+    return Failure('INTERNAL', 'cannot open %s: %s' % (name, exc.strerror))
+
+
+def open_directory(path, parents=False):
+    """Opens one exact directory without allowing symlinked path components.
+
+    Every component is opened relative to the fd already held. A caller that asked
+    for missing parents may create ENOENT components, never an entry that exists
+    but is a symlink, device or ordinary file.
+    """
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
     try:
-        handle = open(path, 'rb')
-    except FileNotFoundError:
-        raise Failure('FILE_NOT_FOUND', 'no such file: %s' % path)
-    except IsADirectoryError:
-        raise Failure('INVALID_TARGET', 'a directory is not a file: %s' % path)
-    except PermissionError:
-        raise Failure('INVALID_TARGET', 'cannot read %s' % path)
-    except OSError as e:
-        raise Failure('INVALID_TARGET', 'cannot read %s: %s' % (path, e.strerror))
-    if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-        handle.close()
+        for part in [part for part in path.split('/') if part and part != '.']:
+            try:
+                child = os.open(
+                    part, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY, dir_fd=fd)
+            except OSError as exc:
+                if not parents or exc.errno != errno.ENOENT:
+                    raise traversal_failure(exc, part)
+                try:
+                    os.mkdir(part, mode=0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                try:
+                    child = os.open(
+                        part, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY, dir_fd=fd)
+                except OSError as exc:
+                    raise traversal_failure(exc, part)
+            os.close(fd)
+            fd = child
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def target_failure(path, exc, changed=False):
+    if changed and exc.errno == errno.ENOENT:
+        return Failure('FILE_CONFLICT', 'target disappeared before replacement')
+    if changed and exc.errno == errno.ELOOP:
+        return Failure('FILE_CONFLICT', 'target became a symbolic link')
+    if exc.errno == errno.ENOENT:
+        return Failure('FILE_NOT_FOUND', 'no such file: %s' % path)
+    if exc.errno in (errno.ELOOP, errno.ENOTDIR):
+        return Failure('INVALID_TARGET', 'refusing a symbolic link or non-directory: %s' % path)
+    if exc.errno == errno.EISDIR:
+        return Failure('INVALID_TARGET', 'a directory is not a file: %s' % path)
+    if exc.errno in (errno.EACCES, errno.EPERM):
+        return Failure('INVALID_TARGET', 'cannot access %s' % path)
+    return Failure('INTERNAL', 'cannot access %s: %s' % (path, exc.strerror))
+
+
+def open_regular(path, directory, name, flags, changed=False):
+    """Opens the exact basename through its already-held parent directory."""
+    try:
+        fd = os.open(name, flags | os.O_NOFOLLOW, dir_fd=directory)
+    except OSError as exc:
+        raise target_failure(path, exc, changed)
+    if not stat.S_ISREG(os.fstat(fd).st_mode):
+        os.close(fd)
         raise Failure('INVALID_TARGET', 'not a regular file: %s' % path)
-    return handle
+    return fd
+
+
+def opened(path):
+    parent, name = target_parts(path)
+    directory = open_directory(parent)
+    try:
+        fd = open_regular(path, directory, name, os.O_RDONLY)
+    finally:
+        os.close(directory)
+    return os.fdopen(fd, 'rb')
+
+
+def temp_in_directory(directory):
+    """Allocates one temp under the locked parent fd, never by pathname guess."""
+    for _ in range(100):
+        name = '.rhost-write-%s' % os.urandom(8).hex()
+        try:
+            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=directory)
+            return fd, name
+        except FileExistsError:
+            continue
+    raise Failure('INTERNAL', 'could not allocate a unique temporary file')
 
 
 def read_record(pipe, cap):
@@ -217,9 +303,11 @@ def new_body(q, op, old):
 def write_or_patch(q, path):
     """Compare-and-swap write: hash-checked, locked, atomically replaced.
 
-    Three separate guarantees:
+    Four separate guarantees:
       * the parent-directory lock serialises rhost writers (it cannot lock an
         unrelated editor, so this is not a filesystem-wide compare-and-swap);
+      * all entries are resolved relative to the held parent fd, so an external
+        rename or symlink swap cannot silently move the operation elsewhere;
       * `if_hash` has to match the current content before *and* after the copy,
         so a concurrent edit surfaces as FILE_CONFLICT instead of being lost;
       * the replacement is a same-directory rename (or `link` when creating), so
@@ -227,27 +315,27 @@ def write_or_patch(q, path):
         as a fallback for a rename that did not happen.
     """
     op = q['op']
-    parent = os.path.dirname(path)
-    if op == 'write' and q.get('parents'):
-        os.makedirs(parent, mode=0o700, exist_ok=True)
-    if not os.path.isdir(parent):
-        raise Failure('FILE_NOT_FOUND', 'no such parent directory: %s' % parent)
-    with contextlib.ExitStack() as stack:
-        directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
-        stack.callback(os.close, directory)
+    parent, name = target_parts(path)
+    directory = open_directory(parent, op == 'write' and q.get('parents'))
+    try:
         fcntl.flock(directory, fcntl.LOCK_EX)
+        try:
+            info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            info = None
+        except OSError as exc:
+            raise target_failure(path, exc)
 
-        if os.path.islink(path):
-            raise Failure('INVALID_TARGET', 'refusing to write through a symbolic link: %s' % path)
-        exists = os.path.exists(path)
         old, mode = b'', 0o600
-        if exists:
-            info = os.stat(path)
+        if info is not None:
+            if stat.S_ISLNK(info.st_mode):
+                raise Failure('INVALID_TARGET', 'refusing to write through a symbolic link: %s' % path)
             if not stat.S_ISREG(info.st_mode):
                 raise Failure('INVALID_TARGET', 'target is not a regular file: %s' % path)
             if info.st_size > EDIT_LIMIT:
                 raise Failure('FILE_TOO_LARGE', 'editing limit is %d bytes' % EDIT_LIMIT)
-            with open(path, 'rb') as handle:
+            fd = open_regular(path, directory, name, os.O_RDONLY, changed=True)
+            with os.fdopen(fd, 'rb') as handle:
                 old = handle.read()
             mode = stat.S_IMODE(info.st_mode)
         asked = requested_mode(q)
@@ -257,46 +345,51 @@ def write_or_patch(q, path):
         expected = q.get('if_hash', '')
         if type(expected) is not str:
             raise Failure('CONFIG_INVALID', 'if_hash must be a string')
-        if exists and not expected:
+        if info is not None and not expected:
             raise Failure('HASH_REQUIRED', 'an existing file requires if_hash from fs read')
-        if (exists and expected != digest(old)) or (not exists and (expected or op == 'patch')):
+        if (info is not None and expected != digest(old)) or \
+                (info is None and (expected or op == 'patch')):
             raise Failure('FILE_CONFLICT', 'file changed or expected target is missing')
 
         data = new_body(q, op, old)
         if len(data) > EDIT_LIMIT:
             raise Failure('FILE_TOO_LARGE', 'editing limit is %d bytes' % EDIT_LIMIT)
 
-        descriptor, temporary = tempfile.mkstemp(prefix='.rhost-write-', dir=parent)
+        fd, temporary = temp_in_directory(directory)
         try:
-            with os.fdopen(descriptor, 'wb') as handle:
+            with os.fdopen(fd, 'wb') as handle:
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())
                 os.fchmod(handle.fileno(), mode)
-            if os.path.islink(path):
-                raise Failure('FILE_CONFLICT', 'target became a symbolic link')
-            if exists:
-                with open(path, 'rb') as handle:
+            if info is not None:
+                fd = open_regular(path, directory, name, os.O_RDONLY, changed=True)
+                with os.fdopen(fd, 'rb') as handle:
                     if digest(handle.read()) != expected:
                         raise Failure('FILE_CONFLICT', 'file changed before replacement')
-                os.replace(temporary, path)
+                os.rename(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
             else:
                 try:
                     # `link`, not `rename`: a concurrent creation of the same
                     # name fails loudly instead of replacing a file nobody read.
-                    os.link(temporary, path)
+                    os.link(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
                 except FileExistsError:
                     raise Failure('FILE_CONFLICT', 'target was concurrently created')
             os.fsync(directory)
         finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+            try:
+                os.unlink(temporary, dir_fd=directory)
+            except FileNotFoundError:
+                pass
 
-        with open(path, 'rb') as handle:
+        fd = open_regular(path, directory, name, os.O_RDONLY, changed=True)
+        with os.fdopen(fd, 'rb') as handle:
             verified = digest(handle.read(EDIT_LIMIT + 1))
         if verified != digest(data):
             raise Failure('FILE_CONFLICT', 'file changed during post-write verification')
         return {'path': path, 'sha256': verified, 'bytes': len(data)}
+    finally:
+        os.close(directory)
 
 
 def apply_patch(old, edits):
@@ -346,6 +439,8 @@ def resolve(q, path):
     `fs sync --delete` refuses broad destinations from the text the user typed,
     which cannot see that `/srv/app` is a symlink to `/`. This is the check on
     what the path actually names, and it runs only when the sync will prune.
+    Editing primitives use the opposite rule: they name an exact entry, never
+    the alias that happens to reach it.
     """
     actual = os.path.realpath(path)
     if not q.get('delete'):

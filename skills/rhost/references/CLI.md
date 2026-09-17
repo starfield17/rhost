@@ -207,7 +207,9 @@ after individual failures, and reports `data.items[]`, `data.succeeded`, and
 `fs read --max-bytes` defaults to 256 KiB and is capped at 8 MiB; a larger value
 is refused as `CONFIG_INVALID`. `fs write --mode` is three or four octal digits;
 when it is omitted a newly created file is `0600` and a replacement keeps the
-existing file's permissions.
+existing file's permissions. Editing names an exact regular file and refuses a
+symlink in any path component; `fs sync --delete` is separate because it resolves
+the destination before applying its destructive-safety checks.
 
 ## Tunnels and audit
 

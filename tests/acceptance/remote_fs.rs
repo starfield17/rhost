@@ -6,112 +6,13 @@
 //! stubbed SSH transport. The CLI acceptance suite remains the oracle for the
 //! public envelope; this oracle proves the helper's local semantics.
 
+use crate::remote_fs_support::{
+    ALPHA, GAMMA, X, ask, assert_no_write_temp, create, expect_error, mode, path_text, read_bytes,
+    sha256_hex,
+};
 use crate::support::{Harness, fail, python3_available};
-use rhost::files::backend::PROGRAM;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
-use std::process::{Command, Stdio};
-
-const ALPHA: &str = "YWxwaGEK";
-const GAMMA: &str = "Z2FtbWEK";
-const X: &str = "eAo=";
-
-fn ask(harness: &Harness, request: Value) -> Result<Value, String> {
-    let payload = serde_json::to_vec(&request).map_err(|error| fail("encode request", error))?;
-    let mut child = Command::new("python3")
-        .arg("-c")
-        .arg(PROGRAM)
-        .env("HOME", harness.path("home"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| fail("spawn embedded helper", error))?;
-    {
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or_else(|| "the helper has no stdin".to_string())?;
-        stdin
-            .write_all(&payload)
-            .map_err(|error| fail("send request", error))?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| fail("wait for helper", error))?;
-    let status = output
-        .status
-        .code()
-        .ok_or_else(|| "the helper exited by signal".to_string())?;
-    if status != 0 {
-        return Err(format!(
-            "the helper exited {status}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    serde_json::from_slice(&output.stdout).map_err(|error| {
-        fail(
-            "helper stdout is not one JSON answer",
-            format!(
-                "{error}; stderr={}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        )
-    })
-}
-
-fn expect_error(harness: &Harness, request: Value, wanted: &str) -> Result<(), String> {
-    let answer = ask(harness, request)?;
-    if answer.get("error").and_then(Value::as_str) == Some(wanted) {
-        return Ok(());
-    }
-    Err(format!("expected {wanted}, got {answer}"))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut text = String::with_capacity(64);
-    for byte in digest {
-        text.push_str(&format!("{byte:02x}"));
-    }
-    text
-}
-
-fn create(harness: &Harness, relative: &str, body: &[u8]) -> Result<String, String> {
-    let path = harness.path(relative);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| fail("prepare fixture", error))?;
-    }
-    std::fs::write(&path, body).map_err(|error| fail("write fixture", error))?;
-    Ok(path.to_string_lossy().into_owned())
-}
-
-fn read_bytes(path: &str) -> Result<Vec<u8>, String> {
-    std::fs::read(path).map_err(|error| fail("read result", error))
-}
-
-fn mode(path: &str) -> Result<u32, String> {
-    let metadata = std::fs::metadata(path).map_err(|error| fail("stat result", error))?;
-    Ok(metadata.permissions().mode() & 0o777)
-}
-
-fn path_text(harness: &Harness, relative: &str) -> String {
-    harness.path(relative).to_string_lossy().into_owned()
-}
-
-fn assert_no_write_temp(parent: &Path, context: &str) -> Result<(), String> {
-    for entry in std::fs::read_dir(parent).map_err(|error| fail("inspect parent", error))? {
-        let entry = entry.map_err(|error| fail("inspect parent entry", error))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with(".rhost-write-") {
-            return Err(format!("{context} left a helper temp: {name}"));
-        }
-    }
-    Ok(())
-}
+use std::os::unix::fs::{PermissionsExt, symlink};
 
 #[test]
 fn request_envelopes_are_checked_before_the_helper_touches_a_file() -> Result<(), String> {
@@ -417,6 +318,85 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
         }),
         "INVALID_TEXT",
     )
+}
+
+#[test]
+fn editing_refuses_a_symlinked_target_or_parent_without_following_it() -> Result<(), String> {
+    let harness = Harness::open("fs-helper-symlink")?;
+    if !python3_available() {
+        return Ok(());
+    }
+    let real = create(&harness, "link/real.txt", b"target\n")?;
+    let link = harness.path("link/final-link");
+    symlink(&real, &link).map_err(|error| fail("create symlink", error))?;
+    let link = link.to_string_lossy().into_owned();
+    let write = |target: &str| {
+        json!({
+            "op": "write", "path": target, "content": X,
+            "if_hash": "a".repeat(64), "max_bytes": 256 * 1024
+        })
+    };
+    for request in [
+        json!({"op": "read", "path": link, "max_bytes": 256 * 1024}),
+        write(&link),
+        json!({
+            "op": "patch", "path": link, "if_hash": "a".repeat(64),
+            "max_bytes": 256 * 1024, "edits": [{"start": 1, "end": 1, "text": "nope\n"}]
+        }),
+    ] {
+        expect_error(&harness, request, "INVALID_TARGET")?;
+    }
+    assert_eq!(read_bytes(&real)?, b"target\n");
+    assert_no_write_temp(harness.path("link").as_path(), "a refused symlinked target")?;
+
+    let real_dir = harness.path("parent-target");
+    std::fs::create_dir_all(&real_dir).map_err(|error| fail("prepare parent", error))?;
+    let nested = real_dir.join("nested.txt");
+    std::fs::write(&nested, b"nested\n").map_err(|error| fail("write nested", error))?;
+    let parent_link = harness.path("parent-link");
+    symlink(&real_dir, &parent_link).map_err(|error| fail("create directory link", error))?;
+    let nested_link = parent_link.join("nested.txt");
+    let nested_link = nested_link.to_string_lossy().into_owned();
+    for request in [
+        json!({"op": "read", "path": nested_link, "max_bytes": 256 * 1024}),
+        write(&nested_link),
+        json!({
+            "op": "patch", "path": nested_link, "if_hash": "a".repeat(64),
+            "max_bytes": 256 * 1024, "edits": [{"start": 1, "end": 1, "text": "nope\n"}]
+        }),
+    ] {
+        expect_error(&harness, request, "INVALID_TARGET")?;
+    }
+    assert_eq!(read_bytes(&nested.to_string_lossy())?, b"nested\n");
+    assert_no_write_temp(harness.path(".").as_path(), "a refused symlinked parent")?;
+    Ok(())
+}
+
+#[test]
+fn parents_are_created_only_when_no_symlink_shadows_a_component() -> Result<(), String> {
+    let harness = Harness::open("fs-helper-parents")?;
+    if !python3_available() {
+        return Ok(());
+    }
+    let real = harness.path("real-parent");
+    std::fs::create_dir_all(&real).map_err(|error| fail("prepare parent", error))?;
+    let link = harness.path("link-parent");
+    symlink(&real, &link).map_err(|error| fail("create parent link", error))?;
+    let target = link.join("created.txt");
+    let target = target.to_string_lossy().into_owned();
+    expect_error(
+        &harness,
+        json!({
+            "op": "write", "path": target, "content": X, "parents": true,
+            "max_bytes": 256 * 1024
+        }),
+        "INVALID_TARGET",
+    )?;
+    assert!(
+        !real.join("created.txt").exists(),
+        "parents must not be written through a symlinked component"
+    );
+    Ok(())
 }
 
 #[test]

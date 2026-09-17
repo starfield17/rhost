@@ -75,7 +75,10 @@ the managed shell is not proven usable.
 - `FILE_CONFLICT` means the file changed; read and merge again.
 - `FILE_NOT_FOUND`, `INVALID_TARGET`, `INVALID_TEXT`, `FILE_TOO_LARGE`, and
   `INVALID_PATCH` require inspecting or correcting the named input.
-- `SYNC_REJECTED` is a local safety refusal before transfer. Correct the target;
+- An editing `INVALID_TARGET` can also mean a symlink in any path component.
+  Supply the real file's path; rhost deliberately does not edit through aliases.
+- `SYNC_REJECTED` is a safety refusal before transfer. On the remote side it is
+  evaluated against the destination after symlink resolution. Correct the target;
   do not work around it with shell expansion.
 - `TRANSFER_FAILED` is a local scp/rsync failure after an attempted transfer.
   Inspect the tool diagnostic and actual destination before retrying.

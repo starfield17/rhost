@@ -181,3 +181,100 @@ fn transfer_failures_and_resolved_root_targets_are_refused() -> Result<(), Strin
     assert_eq!(refused.output.status.code(), Some(255));
     Ok(())
 }
+
+#[test]
+fn live_editing_refuses_symlinked_targets_and_parents_without_following_them() -> Result<(), String>
+{
+    let live = Live::new("fs-edit-symlink")?;
+    let host = live.host().to_string();
+    let remote = live.remote_dir()?;
+    let quoted = shell_quote(&remote);
+    let setup = live.exec(&format!(
+        "mkdir -p {quoted}/realdir && printf 'target\n' > {quoted}/realdir/nested.txt \
+         && ln -s realdir {quoted}/dirlink \
+         && ln -s {quoted}/realdir/nested.txt {quoted}/filelink"
+    ))?;
+    assert_eq!(
+        number(&setup.value, "/data/execution/exit_code")?,
+        0,
+        "{setup:?}"
+    );
+
+    let real = format!("{remote}/realdir/nested.txt");
+    let file_link = format!("{remote}/filelink");
+    let parent_link = format!("{remote}/dirlink/nested.txt");
+    let created_through_link = format!("{remote}/dirlink/new/file.txt");
+    let source = live.path("replacement.txt");
+    write(
+        &source,
+        b"replacement
+",
+    )?;
+
+    for path in [&file_link, &parent_link] {
+        live.error(
+            "INVALID_TARGET",
+            &["--json", "fs", "read", &host, path.as_str()],
+        )?;
+        live.error(
+            "INVALID_TARGET",
+            &[
+                "--json",
+                "fs",
+                "write",
+                &host,
+                path,
+                "--from",
+                &source.to_string_lossy(),
+            ],
+        )?;
+    }
+
+    let current = live.ok(&["--json", "fs", "read", &host, &real])?;
+    let hash = text(&current.value, "/data/sha256")?;
+    let document = live.path("symlink-patch.json");
+    let document_body =
+        format!(r#"{{"sha256":"{hash}","edits":[{{"start":1,"end":1,"text":"replacement\n"}}]}}"#);
+    write(&document, document_body.as_bytes())?;
+    live.error(
+        "INVALID_TARGET",
+        &[
+            "--json",
+            "fs",
+            "patch",
+            &host,
+            &file_link,
+            "--patch",
+            &document.to_string_lossy(),
+        ],
+    )?;
+    live.error(
+        "INVALID_TARGET",
+        &[
+            "--json",
+            "fs",
+            "write",
+            &host,
+            &created_through_link,
+            "--from",
+            &source.to_string_lossy(),
+            "--parents",
+        ],
+    )?;
+
+    let no_new_parent = live.exec(&format!(
+        "test ! -e {quoted}/realdir/new/file.txt && test ! -e {quoted}/dirlink/new/file.txt"
+    ))?;
+    assert_eq!(
+        number(&no_new_parent.value, "/data/execution/exit_code")?,
+        0,
+        "{no_new_parent:?}"
+    );
+    let final_read = live.ok(&["--json", "fs", "read", &host, &real])?;
+    assert_eq!(
+        text(&final_read.value, "/data/content")?,
+        "target
+"
+    );
+    live.cleanup_remote(&remote)
+}

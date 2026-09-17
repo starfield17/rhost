@@ -6,6 +6,7 @@
 
 use crate::hosts::{local_host, scp_stub};
 use crate::support::{Harness, envelope, fail, python3_available, want_code};
+use std::os::unix::fs::symlink;
 
 #[test]
 fn reading_and_writing_a_remote_file_needs_the_hash_it_was_read_with() -> Result<(), String> {
@@ -323,4 +324,84 @@ fn a_write_body_is_read_locally_and_bounded() -> Result<(), String> {
     assert_eq!(outcome.status, 255);
     want_code(&value, "CONFIG_INVALID")?;
     harness.assert_no_remote_tool("a missing write body")
+}
+
+#[test]
+fn the_editing_surface_refuses_symlinked_targets_without_reading_or_writing_through()
+-> Result<(), String> {
+    let harness = Harness::open("fs-edit-symlink")?;
+    local_host(&harness)?;
+    if !python3_available() {
+        return Ok(());
+    }
+    let root = harness.path("symlink");
+    std::fs::create_dir_all(&root).map_err(|error| fail("prepare symlink fixture", error))?;
+    let real = root.join("real.txt");
+    let replacement = root.join("replacement.txt");
+    let document = root.join("link-patch.json");
+    std::fs::write(&real, "alpha\n").map_err(|error| fail("write real", error))?;
+    std::fs::write(&replacement, "gamma\n").map_err(|error| fail("write body", error))?;
+    let link = root.join("link.txt");
+    symlink(&real, &link).map_err(|error| fail("create link", error))?;
+    let link = link.to_string_lossy().into_owned();
+    let replacement = replacement.to_string_lossy().into_owned();
+    let document_text = document.to_string_lossy().into_owned();
+    let (_, value) = envelope(
+        &harness,
+        &["fs", "read", "gpu", &real.to_string_lossy(), "--json"],
+    )?;
+    let hash = value["data"]["sha256"]
+        .as_str()
+        .ok_or_else(|| "read returned no hash".to_string())?
+        .to_string();
+    std::fs::write(
+        &document,
+        format!(
+            "{{\"sha256\":\"{hash}\",\"edits\":[{{\"start\":1,\"end\":1,\"text\":\"nope\\n\"}}]}}"
+        ),
+    )
+    .map_err(|error| fail("write patch", error))?;
+
+    for args in [
+        vec!["fs", "read", "gpu", link.as_str(), "--json"],
+        vec![
+            "fs",
+            "write",
+            "gpu",
+            link.as_str(),
+            "--from",
+            replacement.as_str(),
+            "--json",
+        ],
+        vec![
+            "fs",
+            "patch",
+            "gpu",
+            link.as_str(),
+            "--patch",
+            document_text.as_str(),
+            "--json",
+        ],
+    ] {
+        let arguments = args.to_vec();
+        let (outcome, value) = envelope(&harness, &arguments)?;
+        assert_eq!(outcome.status, 255, "{arguments:?}: {value}");
+        want_code(&value, "INVALID_TARGET")?;
+    }
+    assert_eq!(
+        std::fs::read_to_string(&real).map_err(|error| fail("read back", error))?,
+        "alpha\n"
+    );
+    for entry in std::fs::read_dir(&root).map_err(|error| fail("inspect link root", error))? {
+        let name = entry
+            .map_err(|error| fail("inspect link root entry", error))?
+            .file_name()
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            !name.starts_with(".rhost-write-"),
+            "a refused symlink edit left a helper temp: {name}"
+        );
+    }
+    Ok(())
 }

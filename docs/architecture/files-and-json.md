@@ -19,6 +19,12 @@ remain literal; paths are not reinterpreted as shell syntax.
 `fs put` and `fs write` do not create parent directories by default. Add
 `--parents` when directory creation is intended.
 
+`fs read`/`write`/`patch` name one exact regular file and refuse a symbolic link
+in any path component with `INVALID_TARGET`. `--parents` may create missing
+directories, but never through a symlinked component. Destructive sync is the
+deliberate exception: `fs sync --delete` resolves the destination with realpath
+first because it must know what that destination actually names.
+
 ## File operations
 
 Plain `put/get` use scp. Resume and checksum modes use rsync and verify the
@@ -28,7 +34,9 @@ remote digest. Directory `sync/mirror` never deletes without `--delete`.
 `fs write` may create a new file without `--if-hash`; replacing an existing
 file requires the hash last returned by `fs read`. `fs patch` always requires
 a matching hash. A missing required hash returns `HASH_REQUIRED`; a stale hash
-returns `FILE_CONFLICT`. Replacement is locked, same-directory and atomic.
+returns `FILE_CONFLICT`. Replacement locks the already-held parent directory
+and performs a dirfd-relative temp write, hash recheck, and rename (or link when
+creating); the final filesystem operation remains atomic.
 
 ### Why the remote filesystem helper is an embedded interpreter script
 

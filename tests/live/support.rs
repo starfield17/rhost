@@ -14,6 +14,7 @@ pub(crate) struct Live {
     root: PathBuf,
 }
 
+#[derive(Debug)]
 pub(crate) struct Answer {
     pub(crate) output: Output,
     pub(crate) value: serde_json::Value,

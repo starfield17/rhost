@@ -50,7 +50,7 @@ impl Harness {
             .chars()
             .filter(|character| character.is_ascii_alphanumeric() || *character == '-')
             .collect();
-        let root = std::env::temp_dir().join(format!(
+        let mut root = std::env::temp_dir().join(format!(
             "rhost-acceptance-{case}-{}-{}",
             std::process::id(),
             thread
@@ -60,6 +60,11 @@ impl Harness {
             std::fs::create_dir_all(root.join(directory))
                 .map_err(|error| fail("prepare scratch root", error))?;
         }
+        // The remote filesystem helper names exact directory components. Resolve
+        // the scratch root first so the harness itself is not a symlink (macOS'
+        // temporary directories often are), which lets editing cases exercise
+        // normal paths rather than tripping the policy under test.
+        root = std::fs::canonicalize(root).map_err(|error| fail("resolve scratch root", error))?;
         let harness = Self {
             stubs: root.join("stubs"),
             calls: root.join("calls"),
