@@ -6,7 +6,7 @@
 
 use super::super::backend;
 use super::super::backend::{Stop, Tools};
-use super::remote::{helper, internal, master_alive, remote_has_rsync, validation};
+use super::remote::{helper, master_alive, remote_has_rsync, validation};
 use super::transfer::run_tool;
 use super::{HELPER_TIMEOUT, Sync, SyncOptions};
 use crate::remote::Error;
@@ -71,14 +71,14 @@ pub(crate) fn resolve(
     delete: bool,
     timeout: Duration,
 ) -> Result<String, Error> {
-    let answer = helper(
+    let answer: backend::ResolveResult = helper(
         client,
         host,
-        &backend::resolve_request(path, delete),
+        &backend::Request::Resolve { path, delete },
         timeout.min(HELPER_TIMEOUT),
         exec::DEFAULT_JSON_CAPTURE,
     )?;
-    backend::resolved_path(&answer).map_err(internal)
+    Ok(answer.path)
 }
 
 /// Brings a remote directory in line with a local one.

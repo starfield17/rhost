@@ -7,12 +7,12 @@
 //! writing limits are enforced here too, so a hopeless request fails before it is
 //! encoded and sent.
 
-use super::remote::{helper, internal, validation};
+use super::super::backend::{DEFAULT_HELPER_BYTES, Edit, ReadResult, Request, WriteResult};
+use super::remote::{helper, validation};
 use super::{HELPER_TIMEOUT, MAX_HELPER_BYTES, Read, ReadOptions, Write, WriteOptions};
 use crate::remote::Error;
 use crate::remote::exec;
 use crate::transport::Client;
-use serde_json::Value;
 use std::time::Duration;
 
 /// A bounded page of a remote text file, plus the hash of the whole file.
@@ -30,19 +30,18 @@ pub fn read(client: &Client, options: &ReadOptions<'_>) -> Result<Read, Error> {
             "--start and --lines must be positive",
         ));
     }
-    let answer = helper(
+    let page: ReadResult = helper(
         client,
         options.host,
-        &super::super::backend::read_request(
-            options.path,
-            options.start,
-            options.lines,
-            options.max_bytes,
-        ),
+        &Request::Read {
+            path: options.path,
+            start: options.start,
+            lines: options.lines,
+            max_bytes: options.max_bytes,
+        },
         options.timeout.unwrap_or(HELPER_TIMEOUT),
         options.max_bytes,
     )?;
-    let page = super::super::backend::read_result(&answer).map_err(internal)?;
     Ok(Read {
         path: page.path,
         sha256: page.sha256,
@@ -78,24 +77,24 @@ pub fn write(client: &Client, options: &WriteOptions<'_>) -> Result<Write, Error
             ));
         }
     }
-    let answer = helper(
+    let answer: WriteResult = helper(
         client,
         options.host,
-        &super::super::backend::write_request(
-            options.path,
-            &options.content,
-            options.if_hash.as_deref().unwrap_or(""),
-            options.parents,
-            options.mode.as_deref(),
-        ),
+        &Request::Write {
+            path: options.path,
+            content: crate::base64::encode(&options.content),
+            if_hash: options.if_hash.as_deref().unwrap_or(""),
+            parents: options.parents,
+            file_mode: options.mode.as_deref(),
+            max_bytes: DEFAULT_HELPER_BYTES,
+        },
         options.timeout.unwrap_or(HELPER_TIMEOUT),
         exec::DEFAULT_JSON_CAPTURE,
     )?;
-    let written = super::super::backend::write_result(&answer).map_err(internal)?;
     Ok(Write {
-        path: written.path,
-        sha256: written.sha256,
-        bytes: written.bytes,
+        path: answer.path,
+        sha256: answer.sha256,
+        bytes: answer.bytes,
     })
 }
 
@@ -103,7 +102,7 @@ pub fn patch(
     client: &Client,
     host: &str,
     path: &str,
-    edits: Vec<Value>,
+    edits: Vec<Edit>,
     if_hash: Option<String>,
     max_bytes: usize,
     timeout: Option<Duration>,
@@ -121,18 +120,22 @@ pub fn patch(
             ));
         }
     };
-    let answer = helper(
+    let answer: WriteResult = helper(
         client,
         host,
-        &super::super::backend::patch_request(path, edits, &expected, max_bytes),
+        &Request::Patch {
+            path,
+            edits,
+            if_hash: &expected,
+            max_bytes,
+        },
         timeout.unwrap_or(HELPER_TIMEOUT),
         max_bytes,
     )?;
-    let written = super::super::backend::write_result(&answer).map_err(internal)?;
     Ok(Write {
-        path: written.path,
-        sha256: written.sha256,
-        bytes: written.bytes,
+        path: answer.path,
+        sha256: answer.sha256,
+        bytes: answer.bytes,
     })
 }
 

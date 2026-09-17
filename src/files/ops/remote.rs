@@ -6,13 +6,13 @@
 //! probe a transfer needs before it starts.
 
 use super::super::backend as helper_protocol;
-use super::super::backend::Refusal;
+use super::super::backend::{Answer, Refusal, Request};
 use super::PROBE_TIMEOUT;
 use crate::remote::Error;
 use crate::remote::exec;
 pub(crate) use crate::remote::{internal, run_remote};
 use crate::transport::{Client, MasterStatus};
-use serde_json::Value;
+use serde::de::DeserializeOwned;
 use std::time::Duration;
 
 /// A refusal that happened before anything ran: the caller can fix the
@@ -33,15 +33,19 @@ pub(crate) fn first_line(text: &str) -> String {
         .to_string()
 }
 
-/// Runs the embedded helper for one request. Its codes are trusted because they
-/// are a closed list, never because it said so.
-pub(crate) fn helper(
+/// Runs the embedded helper for one typed request and decodes only the answer
+/// shape this operation was asked for. Refusal codes are trusted because they
+/// are a closed list, never because the helper said so.
+pub(crate) fn helper<T>(
     client: &Client,
     host: &str,
-    request: &Value,
+    request: &Request<'_>,
     timeout: Duration,
     max_bytes: usize,
-) -> Result<Value, Error> {
+) -> Result<T, Error>
+where
+    T: DeserializeOwned,
+{
     let payload = serde_json::to_vec(request).map_err(|error| internal(error.to_string()))?;
     let (code, stdout, stderr) = run_remote(
         client,
@@ -63,42 +67,22 @@ pub(crate) fn helper(
             first_line(&stderr)
         )));
     }
-    let answer: Value = serde_json::from_str(stdout.trim()).map_err(|_| {
+    let answer: Answer<T> = serde_json::from_str(stdout.trim()).map_err(|_| {
         internal(format!(
-            "remote file helper returned no JSON: {}",
+            "remote file helper returned no usable answer: {}",
             first_line(&stderr)
         ))
     })?;
-    match helper_protocol::refusal(&answer) {
-        Some((code, message)) => match known_helper_code(&code) {
-            Some(known) => Err(Error::new(known, message)),
-            None => Err(internal(format!("unknown remote file error {code}"))),
+    match answer {
+        Answer::Done(result) => Ok(result),
+        Answer::Refused(refusal) => match helper_protocol::known_refusal_code(&refusal.error) {
+            Some(known) => Err(Error::new(known, refusal.message())),
+            None => Err(internal(format!(
+                "unknown remote file error {}",
+                refusal.error
+            ))),
         },
-        None => Ok(answer),
     }
-}
-
-/// The refusal codes the helper may use. Anything else is the remote inventing
-/// an error, which is `INTERNAL` here rather than a code an agent might branch
-/// on.
-pub(crate) fn known_helper_code(code: &str) -> Option<&'static str> {
-    const CODES: [&str; 12] = [
-        "CONFIG_INVALID",
-        "FILE_CONFLICT",
-        "HASH_REQUIRED",
-        "FILE_NOT_FOUND",
-        "FILE_TOO_LARGE",
-        "INVALID_PATCH",
-        "INVALID_TARGET",
-        "INVALID_TEXT",
-        "SYNC_REJECTED",
-        "REMOTE_DEPENDENCY_MISSING",
-        "INTERNAL",
-        "USAGE_ERROR",
-    ];
-    CODES
-        .into_iter()
-        .find(|known| known.eq_ignore_ascii_case(code))
 }
 
 /// The capability question `fs sync` cannot work without. Asking first keeps

@@ -304,7 +304,7 @@ pub(crate) fn run(
                     &path,
                     edits,
                     carried,
-                    256 * 1024,
+                    super::backend::DEFAULT_HELPER_BYTES,
                     fs_timeout(timeout_nanos),
                 );
                 match &result {
