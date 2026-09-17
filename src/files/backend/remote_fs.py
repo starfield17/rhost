@@ -1,4 +1,4 @@
-"""One-shot remote file operations for `rhost fs read/write/patch`.
+"""One-shot remote filesystem operations for `rhost fs`.
 
 The program is embedded in the rhost binary and executed by a *remote* python3:
 nothing is installed there, and a missing interpreter is reported as a
@@ -12,7 +12,9 @@ Rules this file has to keep, because the CLI and its tests rely on them:
   becomes `INTERNAL`, never a guess;
 * the response stays inside the request's own `max_bytes`, so a large file can
   never make the CLI drain an unbounded stream;
-* nothing is written unless the request's hash precondition still holds.
+* nothing is written unless the request's hash precondition still holds;
+* `resolve` intentionally follows symlinks because a destructive sync must know
+  what its destination really names.
 """
 import base64
 import binascii

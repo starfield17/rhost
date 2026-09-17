@@ -24,8 +24,8 @@ local coding agent
 ```
 
 Direct execution needs remote `bash`, `setsid`, `ps`, and a base64 decoder.
-Optional operations need more: sessions use `tmux` and `flock`, text helpers use
-Python 3, and resumable or checksum-aware transfers use rsync. Run `rhost doctor
+Optional operations need more: sessions use `tmux` and `flock`, remote filesystem
+helpers use Python 3, and resumable or checksum-aware transfers use rsync. Run `rhost doctor
 <host> --json` when you need to see what a host supports.
 
 ## Install

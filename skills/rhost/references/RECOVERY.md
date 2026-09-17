@@ -50,7 +50,8 @@ disagree, so a new code cannot ship undocumented.
 
 - `REMOTE_DEPENDENCY_MISSING` names a feature dependency. Exec needs remote bash,
   setsid, ps, and a base64 decoder; sessions need tmux and flock; sync/mirror and
-  verified transfers need rsync; text editing needs python3. rhost never installs
+  verified transfers need rsync; remote filesystem helpers (text editing and
+  destructive-sync target resolution) need python3. rhost never installs
   them.
 - `SESSION_BUSY` means the requested exec was not submitted because another
   program owns the pane. Drive it with send/read or recover it explicitly.

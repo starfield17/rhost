@@ -31,7 +31,7 @@ use serde::{Deserialize, Serialize};
 
 /// The embedded helper. Its refusal codes are the CLI's own taxonomy, which is
 /// why the caller may trust a code but never an arbitrary message.
-pub const PROGRAM: &str = include_str!("remote_edit.py");
+pub const PROGRAM: &str = include_str!("remote_fs.py");
 
 /// A successful edit answer is small, so this is a ceiling rather than a request
 /// to read a whole file. `fs patch` returns the replacement's hash and length.
