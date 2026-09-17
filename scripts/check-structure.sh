@@ -35,11 +35,14 @@ cd "$(dirname "$0")/.."
 MAX_LINES=500
 
 files=$(git ls-files --cached --others --exclude-standard \
-	| grep -E '^(src|tests)/.*\.rs$' | sort -u || true)
+	| grep -E '^(src|tests)/.*\.(rs|py)$' | sort -u || true)
 if [ -z "$files" ]; then
-	echo "check-structure: no Rust sources found" >&2
+	echo "check-structure: no Rust or Python sources found" >&2
 	exit 2
 fi
+
+python_sources=$(git ls-files --cached --others --exclude-standard \
+	| grep -E '^src/.*\.py$' | sort -u || true)
 
 hits=0
 
@@ -55,6 +58,18 @@ while IFS= read -r f; do
 	fi
 done <<EOF
 $files
+EOF
+
+# The embedded remote filesystem helper is a tracked execution component, not a
+# string that may rot unnoticed. This checks only syntax; direct conformance
+# tests run the program and inspect its filesystem semantics.
+while IFS= read -r f; do
+	[ -n "$f" ] || continue
+	if ! python3 -c 'import sys; compile(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1], "exec")' "$f"; then
+		hits=$((hits + 1))
+	fi
+done <<EOF
+$python_sources
 EOF
 
 # `domain` is pure: values, transitions and evidence, never I/O or a wire
