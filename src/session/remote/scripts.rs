@@ -53,6 +53,7 @@ mod tests {
             exec("work", "true", Duration::from_secs(60), &"a".repeat(32)),
             send("work", SendKind::Data, "x"),
             recover("work", Duration::from_secs(30)),
+            close("work"),
         ] {
             assert!(
                 script.contains("flock -n 9 || { echo RHOST_ERR=locked; exit 0; }"),
@@ -65,6 +66,23 @@ mod tests {
             assert!(script.contains("command -v tmux >/dev/null 2>&1"));
             assert!(script.contains("command -v flock >/dev/null 2>&1"));
         }
+    }
+
+    #[test]
+    fn send_and_close_only_report_success_after_their_effects_are_checked() {
+        for script in [
+            send("work", SendKind::Data, "text"),
+            send("work", SendKind::DataEnter, "text"),
+            send("work", SendKind::Key, "C-c"),
+        ] {
+            assert!(script.contains("RHOST_ERR=inputuncertain"), "{script}");
+            assert!(script.find("RHOST_ERR=inputuncertain") < script.find("RHOST_OK=sent"));
+        }
+        assert!(send("work", SendKind::Data, "text").contains("RHOST_ERR=inputfailed"));
+        let script = close("work");
+        assert!(script.contains("RHOST_ERR=closefailed"), "{script}");
+        assert!(script.contains("flock -n 9"), "{script}");
+        assert!(script.find("RHOST_ERR=closefailed") < script.find("RHOST_OK=closed"));
     }
 
     #[test]

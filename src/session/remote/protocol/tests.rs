@@ -169,6 +169,8 @@ fn a_read_needs_consistent_cursors_and_decodes_its_page() {
         "RHOST_ID=s_ab\nRHOST_FROM=0\nRHOST_FROM=0\nRHOST_NEXT=0\nRHOST_SIZE=0\n\n",
         "RHOST_ID=s_ab\nRHOST_FROM=0\nRHOST_NEXT=0\nRHOST_SIZE=0\nRHOST_WHAT=1\n\n",
         "RHOST_FROM=0\nRHOST_NEXT=0\nRHOST_SIZE=0\n\n",
+        "RHOST_ID=s_ab\nRHOST_FROM=4\nRHOST_NEXT=10\nRHOST_SIZE=20\naGVsbG8=\n",
+        "RHOST_ID=s_ab\nRHOST_FROM=4\nRHOST_NEXT=8\nRHOST_SIZE=20\naGVsbG8=\n",
     ] {
         assert_eq!(
             parse_read(broken).err(),

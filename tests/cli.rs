@@ -102,6 +102,77 @@ fn help_names_concrete_defaults_and_file_flags() -> Result<(), Box<dyn std::erro
 }
 
 #[test]
+fn boolean_flags_before_the_command_route_to_the_right_parser()
+-> Result<(), Box<dyn std::error::Error>> {
+    for flag in ["--fresh", "--stream"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+            .args([flag, "exec", "--help"])
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{flag}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8(output.stdout)?.contains("Run one exact shell program"),
+            "{flag} was routed to the root page"
+        );
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+        .args(["--cwd", "--json", "exec", "--help"])
+        .output()?;
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8(output.stdout)?.contains("Run one exact shell program"),
+        "a valued flag's argument is not a JSON request"
+    );
+    Ok(())
+}
+
+#[test]
+fn timeouts_reject_subnanosecond_values_and_overflow_without_ssh()
+-> Result<(), Box<dyn std::error::Error>> {
+    for duration in ["0.1ns", "999999999999999999999999999999s"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+            .args([
+                "exec",
+                "gpu",
+                "--json",
+                "--command",
+                "true",
+                "--timeout",
+                duration,
+            ])
+            .output()?;
+        assert_eq!(output.status.code(), Some(255), "{duration}");
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(value["error"]["code"], "USAGE_ERROR", "{duration}: {value}");
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+        .args([
+            "exec",
+            "gpu",
+            "--json",
+            "--command",
+            "true",
+            "--timeout",
+            "0.000000001s",
+            "--max-output-bytes",
+            "-1",
+        ])
+        .output()?;
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("max-output-bytes"),
+        "an exact nanosecond must parse: {value}"
+    );
+    Ok(())
+}
+
+#[test]
 fn release_waits_for_four_native_platforms_before_publication() {
     let workflow = include_str!("../.github/workflows/release.yml");
     for platform in ["darwin_amd64", "darwin_arm64", "linux_amd64", "linux_arm64"] {

@@ -32,7 +32,7 @@ for argument in "$@"; do
 done
 case "$*" in
   *"-O check"*)
-    if [ "$mode" = "uncertain" ]; then
+    if [ "$mode" = "uncertain" ] || [ "$mode" = "uncertain-exit-fail" ]; then
       echo "Control socket connect($socket): Permission denied" >&2
       exit 255
     fi
@@ -44,6 +44,10 @@ case "$*" in
     exit 255
     ;;
   *"-O exit"*)
+    if [ "$mode" = "uncertain-exit-fail" ]; then
+      echo "Control socket refused exit" >&2
+      exit 255
+    fi
     if [ -n "$socket" ]; then
       rm -f "$socket"
     fi

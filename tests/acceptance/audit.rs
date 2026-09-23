@@ -4,7 +4,7 @@
 //! Logging is fail-open, so these cases check both halves: an entry appears
 //! without the caller asking for one, and a trail that cannot be written never
 //! changes the answer to the operation itself.
-use crate::support::{Harness, envelope, run, want_code};
+use crate::support::{Harness, envelope, fail, run, want_code};
 
 /// A stub that makes any submission fail before it runs. That is enough to prove
 /// the trail records what happened, without a stub fabricating completion
@@ -153,6 +153,35 @@ fn a_corrupt_line_is_skipped_and_a_trail_that_cannot_be_written_stays_fail_open(
         "a write that did not land is reported: {:?}",
         outcome.stderr
     );
+    Ok(())
+}
+
+#[test]
+fn invalid_utf8_does_not_hide_valid_audit_entries_or_change_the_filtered_tail() -> Result<(), String>
+{
+    let harness = Harness::open("audit-invalid-utf8")?;
+    let path = harness.path("state/v4/audit.jsonl");
+    let parent = path.parent().ok_or("audit path has no parent")?;
+    std::fs::create_dir_all(parent).map_err(|error| fail("audit directory", error))?;
+    let make = |host: &str, operation: &str| {
+        format!(
+            "{{\"time\":\"now\",\"host\":\"{host}\",\"operation\":\"{operation}\",\"duration_ms\":1,\"ok\":true}}\n"
+        )
+    };
+    let mut body = make("gpu", "first").into_bytes();
+    body.extend_from_slice(b"\xff\n");
+    body.extend_from_slice(make("other", "middle").as_bytes());
+    body.extend_from_slice(make("gpu", "last").as_bytes());
+    std::fs::write(&path, body).map_err(|error| fail("audit fixture", error))?;
+    let (outcome, value) = envelope(
+        &harness,
+        &["audit", "--json", "--host", "gpu", "--limit", "1"],
+    )?;
+    assert_eq!(outcome.status, 0, "{value}");
+    assert_eq!(entry_count(&value), 1, "{value}");
+    assert_eq!(value["data"]["entries"][0]["operation"], "last");
+    let (_, all) = envelope(&harness, &["audit", "--json", "--limit", "0"])?;
+    assert_eq!(entry_count(&all), 3, "{all}");
     Ok(())
 }
 

@@ -99,6 +99,25 @@ fn an_empty_config_discovers_no_hosts_and_says_so() -> Result<(), String> {
 }
 
 #[test]
+fn an_unreadable_config_path_reports_incomplete_discovery() -> Result<(), String> {
+    let harness = Harness::open("hosts-config-error")?;
+    std::fs::remove_dir_all(harness.path("home/.ssh"))
+        .map_err(|error| format!("remove fixture: {error}"))?;
+    harness.write("home/.ssh", "not a directory", None)?;
+    let (outcome, value) = envelope(&harness, &["hosts", "--json"])?;
+    assert_eq!(outcome.status, 0, "{value}");
+    assert_eq!(value["data"]["config_found"], false);
+    assert_eq!(value["data"]["complete"], false);
+    assert!(
+        value["data"]["warnings"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty()),
+        "{value}"
+    );
+    Ok(())
+}
+
+#[test]
 fn discovered_aliases_are_concrete_sorted_and_matched_by_both_renderings() -> Result<(), String> {
     let harness = Harness::open("hosts-list")?;
     harness.write(

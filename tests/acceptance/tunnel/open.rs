@@ -1,6 +1,6 @@
-//! What `tunnel open` must refuse, and what it must prove before it records a
-//! forward: a dedicated master that answers control-protocol requests, and a
-//! socket the record's id can be resolved back to.
+//! What `tunnel open` must refuse, and what it must prove before returning an
+//! alive forward: a dedicated master that answers control-protocol requests,
+//! and a socket the prewritten record's id can be resolved back to.
 
 use super::*;
 
@@ -107,8 +107,8 @@ fn tunnel_open_refuses_an_impossible_forward_before_anything_else() -> Result<()
     harness.assert_no_remote_tool("refused tunnels")
 }
 
-/// `open` returns an id, and that id has to mean the same thing to the next
-/// process: the record is only written once the dedicated master answered.
+/// `open` returns an id only after the dedicated master answered, and the
+/// prewritten record lets the next process find it.
 #[test]
 fn tunnel_open_starts_one_dedicated_master_and_records_the_id_it_reports() -> Result<(), String> {
     let harness = tunnel_master("tunnel-open", "present")?;
@@ -302,6 +302,48 @@ fn tunnel_open_that_cannot_prove_its_master_leaves_no_record() -> Result<(), Str
             );
         }
     }
+    Ok(())
+}
+
+#[test]
+fn uncertain_master_cleanup_keeps_a_discoverable_record() -> Result<(), String> {
+    let harness = tunnel_master("tunnel-open-cleanup-uncertain", "uncertain-exit-fail")?;
+    let (outcome, value) = envelope(
+        &harness,
+        &[
+            "tunnel",
+            "open",
+            "gpu",
+            "--json",
+            "--kind",
+            "local",
+            "--listen",
+            "localhost:8080",
+            "--destination",
+            "localhost:80",
+        ],
+    )?;
+    assert_eq!(outcome.status, 255, "{value}");
+    want_code(&value, "TUNNEL_FAILED")?;
+    assert_eq!(value["error"]["retryable"], false, "{value}");
+    assert_eq!(
+        state_files(&harness)?.len(),
+        1,
+        "the master may still exist"
+    );
+    assert!(std::path::Path::new(&master_socket(&harness)?).exists());
+
+    harness.write("tunnel-mode", "present", None)?;
+    let (_, listed) = envelope(&harness, &["tunnel", "list", "--json"])?;
+    let rows = listed["data"]["tunnels"]
+        .as_array()
+        .ok_or("missing tunnels")?;
+    assert_eq!(rows.len(), 1, "{listed}");
+    assert_eq!(rows[0]["status"], "alive");
+    let id = rows[0]["tunnel_id"].as_str().ok_or("missing id")?;
+    let (outcome, closed) = envelope(&harness, &["tunnel", "close", id, "--json"])?;
+    assert_eq!(outcome.status, 0, "{closed}");
+    assert!(state_files(&harness)?.is_empty());
     Ok(())
 }
 /// The exposure guard is the one local decision that changes who else can reach

@@ -87,6 +87,32 @@ fn a_get_into_an_existing_directory_names_the_file_it_created() -> Result<(), St
 }
 
 #[test]
+fn scp_success_without_a_landing_file_is_a_transfer_failure() -> Result<(), String> {
+    let harness = Harness::open("fs-get-no-file")?;
+    harness.stub("scp", "exit 0")?;
+    let missing = harness.path("missing.txt");
+    let directory = harness.path("downloads");
+    std::fs::create_dir_all(&directory).map_err(|error| fail("fixture", error))?;
+    for destination in [&missing, &directory] {
+        let (outcome, value) = envelope(
+            &harness,
+            &[
+                "fs",
+                "get",
+                "gpu",
+                "/srv/app/model.py",
+                &destination.to_string_lossy(),
+                "--json",
+            ],
+        )?;
+        assert_eq!(outcome.status, 255, "{value}");
+        want_code(&value, "TRANSFER_FAILED")?;
+        assert_eq!(value["error"]["retryable"], false);
+    }
+    Ok(())
+}
+
+#[test]
 fn path_mistakes_and_dangerous_targets_never_reach_a_transfer_tool() -> Result<(), String> {
     let harness = Harness::open("fs-refusals")?;
     harness.stub("ssh", "exit 255")?;
