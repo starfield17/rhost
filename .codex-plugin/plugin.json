@@ -1,6 +1,6 @@
 {
   "name": "rhost",
-  "version": "4.4.2",
+  "version": "4.4.3",
   "description": "Operate SSH-reachable hosts through the installed rhost CLI.",
   "author": {
     "name": "starfield17",
