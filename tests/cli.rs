@@ -132,7 +132,7 @@ fn boolean_flags_before_the_command_route_to_the_right_parser()
 #[test]
 fn timeouts_reject_subnanosecond_values_and_overflow_without_ssh()
 -> Result<(), Box<dyn std::error::Error>> {
-    for duration in ["0.1ns", "999999999999999999999999999999s"] {
+    for duration in ["", "+", "-", "0.1ns", "999999999999999999999999999999s"] {
         let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
             .args([
                 "exec",
@@ -148,27 +148,29 @@ fn timeouts_reject_subnanosecond_values_and_overflow_without_ssh()
         let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
         assert_eq!(value["error"]["code"], "USAGE_ERROR", "{duration}: {value}");
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
-        .args([
-            "exec",
-            "gpu",
-            "--json",
-            "--command",
-            "true",
-            "--timeout",
-            "0.000000001s",
-            "--max-output-bytes",
-            "-1",
-        ])
-        .output()?;
-    let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    assert!(
-        value["error"]["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("max-output-bytes"),
-        "an exact nanosecond must parse: {value}"
-    );
+    for duration in ["0", "0.000000001s", "1m30s", ".5ms", "1µs"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+            .args([
+                "exec",
+                "gpu",
+                "--json",
+                "--command",
+                "true",
+                "--timeout",
+                duration,
+                "--max-output-bytes",
+                "-1",
+            ])
+            .output()?;
+        let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+        assert!(
+            value["error"]["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("max-output-bytes"),
+            "a representable duration must parse: {duration}: {value}"
+        );
+    }
     Ok(())
 }
 
