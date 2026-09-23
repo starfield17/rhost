@@ -7,7 +7,8 @@
 //! carries on. `RHOST_AUDIT=0` (or false/no/off) turns it off entirely.
 
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
+use std::collections::VecDeque;
+use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -165,16 +166,46 @@ pub fn summarize(command: &str) -> String {
 /// does not parse is skipped rather than making the whole trail unreadable, which
 /// matters because other processes append to it while it is being read.
 pub fn read(path: &Path) -> io::Result<Vec<Entry>> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
+    read_selected(path, "", 0)
+}
+
+/// Reads matching entries in file order, retaining only the requested tail.
+/// Invalid JSON or UTF-8 damages one line, not the rest of the trail.
+pub(crate) fn read_selected(path: &Path, host: &str, limit: usize) -> io::Result<Vec<Entry>> {
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => return Err(error),
     };
-    Ok(text
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str::<Entry>(line).ok())
-        .collect())
+    let mut reader = BufReader::new(file);
+    let mut line = Vec::new();
+    let mut all = Vec::new();
+    let mut tail = VecDeque::new();
+    loop {
+        line.clear();
+        if reader.read_until(b'\n', &mut line)? == 0 {
+            break;
+        }
+        let Ok(entry) = serde_json::from_slice::<Entry>(&line) else {
+            continue;
+        };
+        if !host.is_empty() && entry.host != host {
+            continue;
+        }
+        if limit == 0 {
+            all.push(entry);
+        } else {
+            if tail.len() == limit {
+                tail.pop_front();
+            }
+            tail.push_back(entry);
+        }
+    }
+    Ok(if limit == 0 {
+        all
+    } else {
+        tail.into_iter().collect()
+    })
 }
 
 pub fn filter_host(entries: Vec<Entry>, host: &str) -> Vec<Entry> {

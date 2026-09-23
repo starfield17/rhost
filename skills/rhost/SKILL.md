@@ -5,6 +5,13 @@ description: Run commands and perform explicit file, session, tunnel, or diagnos
 
 # rhost
 
+For first use, choose a target that already works with `ssh`, then run
+`rhost doctor <host> --json` and inspect `data.capabilities` before relying
+on an optional operation. `ok:true` means the probe completed; it does not
+mean every capability is present. If a call fails, branch on `error.code`
+and consult [references/RECOVERY.md](references/RECOVERY.md) before retrying
+a mutation.
+
 Use the same shell program you would run locally and add the remote context:
 
 ```bash

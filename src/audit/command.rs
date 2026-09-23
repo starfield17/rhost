@@ -66,7 +66,7 @@ pub struct Audit {
 
 pub fn run(sink: &mut Sink, limit: usize, host: &str, json: bool) -> u8 {
     let path = trail::path(&config::v4_state_dir());
-    let entries = match trail::read(&path) {
+    let entries = match trail::read_selected(&path, host, limit) {
         Ok(entries) => entries,
         Err(error) => {
             return crate::cli::Failure::new(
@@ -78,12 +78,6 @@ pub fn run(sink: &mut Sink, limit: usize, host: &str, json: bool) -> u8 {
             .deliver(sink, json);
         }
     };
-    let entries = if host.is_empty() {
-        entries
-    } else {
-        trail::filter_host(entries, host)
-    };
-    let entries = trail::keep_last(entries, limit);
     if json {
         sink.envelope(&dto::audit(&path, &entries));
         return 0;

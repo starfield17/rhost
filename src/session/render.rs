@@ -31,9 +31,6 @@ pub(crate) fn session_list(sink: &mut Sink, rows: &[ops::Info]) {
 /// clean; the envelope carries the same bytes plus the cursor.
 pub(crate) fn session_output(sink: &mut Sink, content: &str) {
     sink.text(content);
-    if !content.is_empty() && !content.ends_with('\n') {
-        sink.line("");
-    }
 }
 
 /// A missing name or cwd reads as a dash rather than as an empty column.

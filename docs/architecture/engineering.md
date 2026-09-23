@@ -41,14 +41,15 @@ portability, the structure budget, native-live compilation and coverage,
 the release contract check and the contract-evidence check.
 The production Rust implementation covers every schema-v2 operation except
 `session attach`, which the schema requires to be a usage error; see the current
-[maintenance policy](../MAINTENANCE.md). Live suites are the gate that proves behavior across independent CLI processes on a real
+[maintenance policy](../MAINTENANCE.md). Live suites provide manual evidence of behavior across independent CLI processes on a real
 remote Linux host. `test-live-smoke` is the frequent, bounded check of the main
 exec, file and session workflows. The feature suites and `test-live-all`
 retain the exhaustive failure, persistence and transport cases. The native full
 suite is serial for deterministic ownership and cleanup, validates every JSON
 answer against schema v2, and runs the exact binary named by `RHOST_BIN`.
-The Rust native live suites are the release gate; the archived Go harness is no
-longer part of this tree.
+The Rust native live suites are a documented manual pre-release step, not an
+automated release-workflow gate; the archived Go harness is no longer part of
+this tree.
 
 Tracked examples and verification claims must remain host-independent.
 `scripts/check-portability.sh` enforces this.

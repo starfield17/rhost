@@ -2,9 +2,9 @@
 //! that names it.
 //!
 //! The record is a pointer, never the durable thing itself — the forward belongs
-//! to its OpenSSH master (AGENTS.md §4). It is written only after that master
-//! answered, so an id a caller keeps always names something that was up at least
-//! once, and it is deleted only by `close`.
+//! to its OpenSSH master (AGENTS.md §4). The record is committed before the
+//! master starts, so a process exit during startup leaves a way to inspect a
+//! possible forward.
 
 use crate::config;
 use serde::{Deserialize, Serialize};
@@ -129,6 +129,8 @@ pub enum Fault {
     Invalid(String),
     NotFound(String),
     Transport(String),
+    /// A side effect may still exist; repeating the operation could compound it.
+    Uncertain(String),
 }
 
 /// The directory records live in, under this version's own state namespace.
@@ -245,9 +247,8 @@ pub fn read(id: &str) -> Result<Record, Fault> {
     Ok(record)
 }
 
-/// Writes one record user-only, refusing a symlinked path rather than following
-/// it: a record is a pointer, and a pointer someone else can redirect is worse
-/// than none.
+/// Publishes one complete user-only record before a master can start. A hard
+/// link makes publication atomic and refuses to replace an existing id.
 pub fn write(record: &Record) -> Result<(), Fault> {
     let path = record_path(&record.tunnel_id);
     if is_symlink(&path) {
@@ -255,22 +256,31 @@ pub fn write(record: &Record) -> Result<(), Fault> {
             "tunnel record path is a symlink".to_string(),
         ));
     }
+    let temporary = root().join(format!(".{}.tmp", record.tunnel_id));
     let mut body = serde_json::to_vec(record)
         .map_err(|error| Fault::Transport(format!("encode tunnel record: {error}")))?;
     body.push(b'\n');
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(&path)
-        .map_err(|error| Fault::Transport(format!("write {}: {error}", path.display())))?;
-    file.write_all(&body)
-        .and_then(|()| file.flush())
-        .map_err(|error| Fault::Transport(format!("write {}: {error}", path.display())))?;
-    // The mode is proved, not assumed: a record names a socket to signal.
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
-        .map_err(|error| Fault::Transport(format!("restrict {}: {error}", path.display())))?;
+    let result = (|| -> io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&temporary)?;
+        file.write_all(&body)?;
+        file.flush()?;
+        file.sync_all()?;
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
+        fs::hard_link(&temporary, &path)?;
+        let _ = fs::remove_file(&temporary);
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = fs::remove_file(&temporary);
+        return Err(Fault::Transport(format!(
+            "publish {}: {error}",
+            path.display()
+        )));
+    }
     Ok(())
 }
 

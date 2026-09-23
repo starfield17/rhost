@@ -56,7 +56,9 @@ disagree, so a new code cannot ship undocumented.
 - `SESSION_BUSY` means the requested exec was not submitted because another
   program owns the pane. Drive it with send/read or recover it explicitly.
 - `SESSION_UNHEALTHY` means the helper, lock, pane, or completion evidence was not
-  reliable. Read the pane first, then recover if interruption is intended.
+  reliable. After `session send`, read the pane before repeating input. After
+  `session close`, inspect `session list` before another close. Recover only
+  when interruption of a still-running pane is intended.
 - `SESSION_NOT_FOUND` never silently recreates state. Create a new session only
   when losing the previous state is acceptable.
 - A `session create` that reached the host but did not return its full record
@@ -82,8 +84,11 @@ the managed shell is not proven usable.
   do not work around it with shell expansion.
 - `TRANSFER_FAILED` is a local scp/rsync failure after an attempted transfer.
   Inspect the tool diagnostic and actual destination before retrying.
-- `TUNNEL_FAILED` leaves forward state uncertain. Preserve the record and inspect
-  again. `TUNNEL_NOT_FOUND` means no record exists for that canonical ID.
+- `TUNNEL_FAILED` leaves forward state uncertain. A failed `tunnel open` may
+  retain a record when its master could still be running; inspect `tunnel list`
+  before opening another forward. Preserve the record until the named master
+  can be checked or closed. `TUNNEL_NOT_FOUND` means no record exists for that
+  canonical ID.
 
 ## Safe recovery sequence
 

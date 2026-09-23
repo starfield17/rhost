@@ -131,7 +131,10 @@ pub fn close(client: &Client, host: &str, reference: &str, timeout: Duration) ->
         return Err(session_error(failure));
     }
     if !stdout.contains("RHOST_OK=closed") {
-        return Err(unhealthy("session close was not confirmed"));
+        return Err(Error::new(
+            "SESSION_UNHEALTHY",
+            "session close was not confirmed; inspect session list before retrying",
+        ));
     }
     Ok(())
 }

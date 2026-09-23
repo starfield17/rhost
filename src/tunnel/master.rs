@@ -11,6 +11,7 @@ use crate::transport::run as run_transport;
 use crate::transport::{Recorder, Run, RunFailure, Spec, StdinSource};
 use std::io;
 use std::path::Path;
+use std::thread;
 use std::time::{Duration, Instant};
 
 /// How long ssh may take to authenticate, bind the forward and hand it to a
@@ -22,6 +23,7 @@ const START_TIMEOUT: Duration = Duration::from_secs(30);
 /// this machine: a master that cannot answer in this long is not worth waiting
 /// for.
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(15);
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What one control exchange established.
 pub enum Control {
@@ -52,8 +54,8 @@ impl Master<'_> {
     /// `ExitOnForwardFailure=yes` is what makes a refused bind an error here
     /// instead of a master that is up with no forward; the `check` afterwards is
     /// what makes `alive` an observation rather than a hope that ssh returned
-    /// quickly enough. A failure at either step takes the half-started master
-    /// down again.
+    /// quickly enough. The caller owns cleanup using the record it published
+    /// before invoking this method.
     pub fn start(
         &self,
         socket: &Path,
@@ -84,8 +86,13 @@ impl Master<'_> {
         args.push("--".into());
         args.push(host.into());
         let (diagnostic, run) = self.capture(&args, START_TIMEOUT);
+        if run.timed_out {
+            return Err(Fault::Uncertain(format!(
+                "tunnel startup timed out: {}",
+                complaint(&run, &diagnostic)
+            )));
+        }
         if run.exit != Some(0) {
-            let _ = self.exit(socket, host);
             return Err(Fault::Transport(format!(
                 "cannot open tunnel: {}",
                 complaint(&run, &diagnostic)
@@ -93,13 +100,10 @@ impl Master<'_> {
         }
         match self.check(socket, host) {
             Control::Answered => Ok(()),
-            other => {
-                let _ = self.exit(socket, host);
-                Err(Fault::Transport(format!(
-                    "tunnel started but its OpenSSH master is not answering: {}",
-                    reason(&other)
-                )))
-            }
+            other => Err(Fault::Transport(format!(
+                "tunnel started but its OpenSSH master is not answering: {}",
+                reason(&other)
+            ))),
         }
     }
 
@@ -111,6 +115,30 @@ impl Master<'_> {
     /// shared connection and every other tunnel keep running.
     pub fn exit(&self, socket: &Path, host: &str) -> Control {
         self.control(socket, host, "exit")
+    }
+
+    /// An accepted exit request is followed by a bounded check for socket
+    /// removal. Until then another process could still reach the master.
+    pub fn stop(&self, socket: &Path, host: &str) -> Result<(), String> {
+        match self.exit(socket, host) {
+            Control::SocketAbsent => return Ok(()),
+            Control::Uncertain(reason) => return Err(reason),
+            Control::Answered => {}
+        }
+        let deadline = Instant::now() + STOP_TIMEOUT;
+        loop {
+            match std::fs::symlink_metadata(socket) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(format!("inspect {}: {error}", socket.display())),
+                Ok(_) if Instant::now() >= deadline => {
+                    return Err(format!(
+                        "OpenSSH accepted exit but control socket {} remains",
+                        socket.display()
+                    ));
+                }
+                Ok(_) => thread::sleep(Duration::from_millis(50)),
+            }
+        }
     }
 
     fn control(&self, socket: &Path, host: &str, action: &str) -> Control {

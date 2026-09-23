@@ -99,6 +99,14 @@ pub(super) fn session_error(failure: HelperFailure) -> Error {
         HelperFailure::InputFailed => {
             Error::new("SESSION_UNHEALTHY", "could not submit command input to session").retryable()
         }
+        HelperFailure::InputUncertain => Error::new(
+            "SESSION_UNHEALTHY",
+            "session input may have been submitted; inspect the pane before retrying",
+        ),
+        HelperFailure::CloseFailed => Error::new(
+            "SESSION_UNHEALTHY",
+            "session close was not confirmed; inspect session list before retrying",
+        ),
         HelperFailure::Busy => Error::new(
             "SESSION_BUSY",
             "session foreground is not the managed shell; use session send/read, or session recover",

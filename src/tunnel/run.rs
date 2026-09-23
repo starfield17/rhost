@@ -86,5 +86,6 @@ fn fault_failure(operation: &'static str, host: &str, fault: Fault) -> Failure {
         Fault::Transport(message) => {
             Failure::new(operation, host, "TUNNEL_FAILED", message).retryable()
         }
+        Fault::Uncertain(message) => Failure::new(operation, host, "TUNNEL_FAILED", message),
     }
 }

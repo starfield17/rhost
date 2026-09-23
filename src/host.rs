@@ -48,7 +48,13 @@ pub fn aliases_from(home: &Path) -> Discovery {
     match std::fs::symlink_metadata(&base) {
         Ok(_) => discovery.config_found = true,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(_) => return discovery,
+        Err(_) => {
+            discovery.complete = false;
+            discovery
+                .warnings
+                .push("could not inspect the OpenSSH client config file".into());
+            return discovery;
+        }
     }
     // `ssh` is the authority for everything else: a missing user config is an
     // empty answer, not an error, and no host is contacted either way.

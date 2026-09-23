@@ -27,7 +27,7 @@ pub enum Command {
 /// what refuses a flag that belongs to a sibling operation.
 static TUNNEL_FLAGS: &[FlagSpec] = &[
     JSON,
-    FlagSpec::value("kind", false, "forward kind (local or remote)"),
+    FlagSpec::value("kind", false, "forward kind (local, reverse or socks)"),
     FlagSpec::value("listen", false, "address to listen on"),
     FlagSpec::value("destination", false, "forward destination host:port"),
     FlagSpec::long("allow-exposure", "permit binding a non-loopback address"),

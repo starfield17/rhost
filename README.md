@@ -55,7 +55,21 @@ and the commit and UTC build date stamped in so `rhost version --json` names
 what the binary was built from. `make build` is the faster debug build for
 development; it stamps the same provenance but is not the release candidate.
 
-## Start with an ordinary command
+## First use
+
+Use a target that already works with OpenSSH. Probe it once to see which
+operations its installed tools support, then run an ordinary command:
+
+```bash
+rhost doctor gpu --json
+rhost exec gpu --command 'uname -a'
+```
+
+For `doctor`, `ok:true` means the probe completed. Inspect
+`data.capabilities` and `data.state_dir_writable` before relying on an
+optional operation. On failure, branch on `error.code` and use the
+[recovery guide](skills/rhost/references/RECOVERY.md) before retrying a
+mutation.
 
 Use any target that already works with `ssh`: an OpenSSH config alias,
 `user@example-host`, or a bare hostname.
@@ -242,15 +256,13 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
 ```
 
 `test-smoke` is the complete local Rust black-box suite and cannot contact a
-real host. `test-live-all` is the serial, Rust-native real-SSH suite, and a
-required manual pre-release verification; the release workflow does not run it,
-because no CI-reachable host is provisioned. The
-frozen Go harness remains available only through `make test-conformance` and the
-explicitly named `test-legacy-live-*` targets; it is historical evidence, not a
-Rust release dependency.
+real host. `test-live-all` is the serial, Rust-native real-SSH suite and the
+documented manual pre-release verification; the release workflow does not run it
+because no CI-reachable host is provisioned. The historical Go implementation
+and its harness live in the read-only `rhost-go-old` repository.
 
 Live suites always take their target and binary from `RHOST_TEST_HOST` and
-`RHOST_BIN`; the repository has no machine-specific default. The v1 schema is
-retained as wire history. Current command availability is defined by `rhost
+`RHOST_BIN`; the repository has no machine-specific default. The v1 schema
+is archived with the Go implementation. Current command availability is defined by `rhost
 --help`, and ongoing compatibility and release policy is defined in
 [`docs/MAINTENANCE.md`](docs/MAINTENANCE.md).

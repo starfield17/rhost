@@ -96,8 +96,21 @@ pub fn close(name_or_id: &str) -> String {
         "RHOST_RESOLVE {} || {{ echo RHOST_ERR=nosession; exit 0; }}\n",
         shell::quote(name_or_id)
     ));
-    out.push_str("tmux kill-session -t \"$RHOST_TMUX\" 2>/dev/null\n");
-    out.push_str("rm -rf \"$RHOST_DIR\"\n");
+    out.push_str(TMUX_PREFLIGHT);
+    out.push_str(FLOCK_PREFLIGHT);
+    out.push_str("DIR=\"$RHOST_DIR\"; TMUX=\"$RHOST_TMUX\"; LOCK=\"$DIR/lock\"\n");
+    out.push_str("exec 9>\"$LOCK\" || { echo RHOST_ERR=closefailed; exit 0; }\n");
+    out.push_str("flock -n 9 || { echo RHOST_ERR=locked; exit 0; }\n");
+    out.push_str("if tmux has-session -t \"$TMUX\" 2>/dev/null; then\n");
+    out.push_str(
+        "  tmux kill-session -t \"$RHOST_TMUX\" 2>/dev/null || { echo RHOST_ERR=closefailed; exit 0; }\n",
+    );
+    out.push_str("fi\n");
+    out.push_str(
+        "tmux has-session -t \"$TMUX\" 2>/dev/null && { echo RHOST_ERR=closefailed; exit 0; }\n",
+    );
+    out.push_str("rm -rf \"$RHOST_DIR\" || { echo RHOST_ERR=closefailed; exit 0; }\n");
+    out.push_str("[ ! -e \"$DIR\" ] || { echo RHOST_ERR=closefailed; exit 0; }\n");
     out.push_str("echo RHOST_OK=closed\n");
     out
 }

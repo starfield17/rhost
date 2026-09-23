@@ -12,8 +12,9 @@ use crate::cli::{Help, ParsedCommand, Rejection, Scope, find_command, parse, wan
 /// Parses a whole argv. `--json` is recognised before anything can fail, because
 /// a parse failure has to be delivered in the form the caller asked for.
 pub fn parse_invocation(argv: &[String]) -> super::Invocation {
-    let json = wants_json(argv);
-    let Some(at) = find_command(argv) else {
+    let routing_flags = super::usage::routing_flags();
+    let json = wants_json(argv, &routing_flags);
+    let Some(at) = find_command(argv, &routing_flags) else {
         return super::Invocation {
             command: root(argv, json),
             json,

@@ -1,6 +1,6 @@
 //! `io`: inject input into a session's pane, and read its log back.
 
-use super::errors::{helper_failure, is_supported_key, run_helper, session_error, unhealthy};
+use super::errors::{helper_failure, is_supported_key, run_helper, session_error};
 use super::shared::FIELD_CAPTURE;
 use crate::remote::Error;
 use crate::session::{self, SendKind};
@@ -62,7 +62,10 @@ pub fn send(client: &Client, options: &SendOptions<'_>, timeout: Duration) -> Re
         return Err(session_error(failure));
     }
     if !stdout.contains("RHOST_OK=sent") {
-        return Err(unhealthy("injected input was not confirmed"));
+        return Err(Error::new(
+            "SESSION_UNHEALTHY",
+            "injected input was not confirmed; inspect the pane before retrying",
+        ));
     }
     Ok(())
 }

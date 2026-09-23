@@ -115,6 +115,6 @@ Use explicit REPL input to exit it; recover never types an exit command.
 
 Incremental reads also carry `from`, `next` and `more`. Agents branch on
 `error.code`, never on `error.message`. The authoritative Rust machine-readable
-contract is `schemas/result-v2.schema.json`. The frozen v1 schema remains wire
-history only; current command availability is defined by `rhost --help`.
+contract is `schemas/result-v2.schema.json`. The frozen v1 schema is archived
+with the historical Go implementation; current command availability is defined by `rhost --help`.
 `session attach` is recognized but always returns a v2 `USAGE_ERROR`.

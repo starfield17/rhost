@@ -38,18 +38,18 @@ pub fn send(name_or_id: &str, kind: SendKind, payload: &str) -> String {
     out.push_str("stty -echo < \"$TTY\" 2>/dev/null || { echo RHOST_ERR=notty; exit 0; }\n");
     if kind == SendKind::Key {
         out.push_str(&format!(
-            "tmux send-keys -t \"$TMUX:0.0\" {}\n",
+            "tmux send-keys -t \"$TMUX:0.0\" {} || {{ echo RHOST_ERR=inputuncertain; exit 0; }}\n",
             shell::quote(payload)
         ));
     } else {
         out.push_str(&format!(
-            "printf '%s' '{}' | base64 -d | tmux load-buffer -b \"$BUF\" -\n",
+            "printf '%s' '{}' | base64 -d | tmux load-buffer -b \"$BUF\" - || {{ echo RHOST_ERR=inputfailed; exit 0; }}\n",
             base64::encode(payload.as_bytes())
         ));
-        out.push_str("tmux paste-buffer -b \"$BUF\" -t \"$TMUX:0.0\" 2>/dev/null\n");
-        out.push_str("tmux delete-buffer -b \"$BUF\" 2>/dev/null\n");
+        out.push_str("tmux paste-buffer -b \"$BUF\" -t \"$TMUX:0.0\" 2>/dev/null || { echo RHOST_ERR=inputuncertain; exit 0; }\n");
+        out.push_str("tmux delete-buffer -b \"$BUF\" 2>/dev/null || { echo RHOST_ERR=inputuncertain; exit 0; }\n");
         if kind == SendKind::DataEnter {
-            out.push_str("tmux send-keys -t \"$TMUX:0.0\" Enter\n");
+            out.push_str("tmux send-keys -t \"$TMUX:0.0\" Enter || { echo RHOST_ERR=inputuncertain; exit 0; }\n");
         }
     }
     out.push_str("echo RHOST_OK=sent\n");

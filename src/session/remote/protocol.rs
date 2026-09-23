@@ -33,6 +33,8 @@ pub enum HelperFailure {
     Timeout,
     Locked,
     InputFailed,
+    InputUncertain,
+    CloseFailed,
     Busy,
     UnknownForeground,
     NoTty,
@@ -54,6 +56,8 @@ impl HelperFailure {
             "timeout" => Self::Timeout,
             "locked" => Self::Locked,
             "inputfailed" => Self::InputFailed,
+            "inputuncertain" => Self::InputUncertain,
+            "closefailed" => Self::CloseFailed,
             "busy" => Self::Busy,
             "unknownfg" => Self::UnknownForeground,
             "notty" => Self::NoTty,
@@ -75,6 +79,8 @@ impl HelperFailure {
             Self::Timeout => "timeout",
             Self::Locked => "locked",
             Self::InputFailed => "inputfailed",
+            Self::InputUncertain => "inputuncertain",
+            Self::CloseFailed => "closefailed",
             Self::Busy => "busy",
             Self::UnknownForeground => "unknownfg",
             Self::NoTty => "notty",
@@ -297,6 +303,9 @@ pub fn parse_read(stdout: &str) -> Result<ReadResult, HelperFailure> {
         return Err(HelperFailure::Protocol);
     }
     let data = base64::decode(&encoded).ok_or(HelperFailure::Protocol)?;
+    if next - from != data.len() as u64 {
+        return Err(HelperFailure::Protocol);
+    }
     Ok(ReadResult {
         id: id.to_string(),
         from,

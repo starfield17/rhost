@@ -292,9 +292,34 @@ pub fn get(
             .to_string_lossy()
             .to_string();
     }
-    let size = std::fs::metadata(&effective)
-        .map(|metadata| metadata.len())
-        .unwrap_or(0);
+    let metadata = std::fs::metadata(&effective).map_err(|error| {
+        Error::new(
+            "TRANSFER_FAILED",
+            format!(
+                "scp reported success but {} cannot be inspected: {error}",
+                effective
+            ),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(Error::new(
+            "TRANSFER_FAILED",
+            format!(
+                "scp reported success but {} is not a regular file",
+                effective
+            ),
+        ));
+    }
+    std::fs::File::open(&effective).map_err(|error| {
+        Error::new(
+            "TRANSFER_FAILED",
+            format!(
+                "scp reported success but {} cannot be read: {error}",
+                effective
+            ),
+        )
+    })?;
+    let size = metadata.len();
     Ok(Transfer {
         source,
         destination: effective,

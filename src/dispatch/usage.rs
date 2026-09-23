@@ -160,6 +160,22 @@ fn flags(scope: Scope, leaf: &str) -> &'static [FlagSpec] {
     }
 }
 
+/// Flag arities known to the whole-argv router. The leaf parser remains the
+/// authority on which flags a particular command accepts.
+pub(super) fn routing_flags() -> Vec<FlagSpec> {
+    let mut registered = Vec::new();
+    registered.extend_from_slice(ROOT_FLAGS_ALL);
+    registered.extend_from_slice(exec_flags());
+    registered.extend_from_slice(doctor_flags());
+    registered.extend_from_slice(audit::AUDIT_FLAGS);
+    for scope in [Scope::Session, Scope::Tunnel, Scope::Fs] {
+        for leaf in leaves(scope) {
+            registered.extend_from_slice(flags(scope, leaf.name));
+        }
+    }
+    registered
+}
+
 /// The page for a group leaf, or the group's overview when the name is not a
 /// leaf this group knows. A parser asks for this before it validates anything
 /// else, so `rhost session bogus --help` still explains the group.

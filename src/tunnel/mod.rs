@@ -125,12 +125,6 @@ pub fn open(client: &Client, request: &Request<'_>) -> Result<Tunnel, Fault> {
         ssh_bin: client.ssh_bin(),
         options: &options,
     };
-    master.start(
-        &socket,
-        request.kind.flag(),
-        &request.forward(),
-        request.host,
-    )?;
     let tunnel = Tunnel {
         id,
         host: request.host.to_string(),
@@ -139,14 +133,33 @@ pub fn open(client: &Client, request: &Request<'_>) -> Result<Tunnel, Fault> {
         destination: request.destination.clone(),
         status: Status::Alive,
     };
-    match record::write(&tunnel.record()) {
+    record::write(&tunnel.record())?;
+    match master.start(
+        &socket,
+        request.kind.flag(),
+        &request.forward(),
+        request.host,
+    ) {
         Ok(()) => Ok(tunnel),
-        Err(error) => {
-            // An id nobody can look up again is not a tunnel: take it down
-            // rather than leave a forward running that no record names.
-            let _ = master.exit(&socket, request.host);
-            Err(error)
-        }
+        Err(start_error) => match master.stop(&socket, request.host) {
+            Ok(()) if !matches!(&start_error, Fault::Uncertain(_)) => {
+                record::remove(&tunnel.id).map_err(|error| {
+                    Fault::Uncertain(format!(
+                        "tunnel {} did not start, but its record could not be removed: {error:?}",
+                        tunnel.id
+                    ))
+                })?;
+                Err(start_error)
+            }
+            Ok(()) => Err(Fault::Uncertain(format!(
+                "tunnel {} startup was uncertain; its record remains for inspection",
+                tunnel.id
+            ))),
+            Err(reason) => Err(Fault::Uncertain(format!(
+                "tunnel {} may still be running after startup failed: {reason}",
+                tunnel.id
+            ))),
+        },
     }
 }
 
@@ -189,9 +202,9 @@ pub fn close(client: &Client, id: &str) -> Result<String, Fault> {
     let socket = record::socket(&stored.tunnel_id);
     match master.check(&socket, &stored.host) {
         Control::Answered => {
-            if let Control::Uncertain(reason) = master.exit(&socket, &stored.host) {
-                return Err(Fault::Transport(reason));
-            }
+            master
+                .stop(&socket, &stored.host)
+                .map_err(Fault::Uncertain)?;
         }
         Control::SocketAbsent => {}
         Control::Uncertain(reason) => return Err(Fault::Transport(reason)),
