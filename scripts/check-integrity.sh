@@ -9,7 +9,7 @@
 # disappears, or a runner/selector narrows.
 #
 # A deliberate acceptance change is still allowed, but only as a change to the
-# measurements alone — no `src/` in the same range — carrying a commit message
+# measurements alone — no `src/` in that commit — carrying a commit message
 # trailer:
 #
 #	GateChange: <why the measurement is genuinely wrong>
@@ -42,18 +42,13 @@ if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
 	exit 2
 fi
 
-# A pure measurement change is allowed when it is the whole diff and it says so.
-src_touched=$(git diff --name-only "$BASE"...HEAD -- src | grep -c . || true)
-trailers=$(git log --format='%B' "$BASE"..HEAD | grep -cE '^GateChange: .' || true)
-
-VERBOSE=$verbose SRC_TOUCHED=$src_touched TRAILERS=$trailers python3 - "$BASE" <<'PY'
+VERBOSE=$verbose python3 - "$BASE" <<'PY'
 import os, re, subprocess, sys
 
 BASE = sys.argv[1]
 VERBOSE = os.environ.get("VERBOSE") == "1"
-SRC_TOUCHED = int(os.environ.get("SRC_TOUCHED", "0"))
-TRAILERS = int(os.environ.get("TRAILERS", "0"))
 HITS = 0
+DECLARED = 0
 
 
 def git(*args):
@@ -90,24 +85,6 @@ def counts(ref):
     }
 
 
-before, after = counts(BASE), counts("HEAD")
-
-if VERBOSE:
-    print(f"  BASE {BASE}: {before}")
-    print(f"  HEAD      : {after}")
-
-# Deletions and drops. A file that moves is not a deletion, so compare sets of
-# module paths rather than raw counts alone.
-for label, key in (("test files", "test_files"),
-                   ("`#[test]` attributes", "test_attrs"),
-                   ("assertion macro calls", "assertions")):
-    if after[key] < before[key]:
-        report(f"{label}: {before[key]} -> {after[key]} (a measurement was removed)")
-
-if after["ignores"] > before["ignores"]:
-    report(f"`#[ignore]` attributes: {before['ignores']} -> {after['ignores']}"
-           " (a measurement was disabled)")
-
 # The gate itself: `make check` may gain prerequisites, never lose one.
 def check_prerequisites(ref):
     makefile = git("show", f"{ref}:Makefile")
@@ -115,18 +92,11 @@ def check_prerequisites(ref):
     return set(match.group(1).split()) if match else set()
 
 
-lost = check_prerequisites(BASE) - check_prerequisites("HEAD")
-if lost:
-    report(f"`make check` prerequisites removed: {' '.join(sorted(lost))}")
-
 # A runner or selector that narrows stops covering what it used to. Compare the
 # gate-bearing lines as multisets so dropping one of two copies is visible.
 PATTERNS = (r"cargo\s+(?:test|nextest)", r"make\s+(?:check|test-smoke)",
             r"\./scripts/check-[a-z-]+\.sh")
-gate_paths = [p for p in git("ls-tree", "-r", "--name-only", BASE).splitlines()
-              if re.search(r"^(Makefile|scripts/check-.*\.sh|\.github/workflows/.*\.ya?ml)$", p)]
-
-def gate_lines(ref):
+def gate_lines(ref, gate_paths):
     lines = set()
     for path in gate_paths:
         if subprocess.run(["git", "cat-file", "-e", f"{ref}:{path}"],
@@ -143,12 +113,52 @@ def gate_lines(ref):
     return lines
 
 
-for line in sorted(gate_lines(BASE) - gate_lines("HEAD")):
-    report(f"gate invocation removed or narrowed: {line}")
+def findings(before_ref, after_ref):
+    found = []
+    before, after = counts(before_ref), counts(after_ref)
+    if VERBOSE:
+        print(f"  {before_ref[:10]}: {before}")
+        print(f"  {after_ref[:10]}: {after}")
+    for label, key in (("test files", "test_files"),
+                       ("`#[test]` attributes", "test_attrs"),
+                       ("assertion macro calls", "assertions")):
+        if after[key] < before[key]:
+            found.append(f"{label}: {before[key]} -> {after[key]}")
+    if after["ignores"] > before["ignores"]:
+        found.append(f"`#[ignore]` attributes: {before['ignores']} -> {after['ignores']}")
+    lost = check_prerequisites(before_ref) - check_prerequisites(after_ref)
+    if lost:
+        found.append(f"`make check` prerequisites removed: {' '.join(sorted(lost))}")
+    gate_paths = [p for p in git("ls-tree", "-r", "--name-only", before_ref).splitlines()
+                  if re.search(r"^(Makefile|scripts/check-.*\.sh|\.github/workflows/.*\.ya?ml)$", p)]
+    for line in sorted(gate_lines(before_ref, gate_paths) - gate_lines(after_ref, gate_paths)):
+        found.append(f"gate invocation removed or narrowed: {line}")
+    return found
 
-# A range that touched `src/` while also weakening a measurement is exactly the
-# failure the rule exists for; a measurement-only range may declare the change.
-if HITS and not (SRC_TOUCHED == 0 and TRAILERS):
+
+# Check each actual change, so a later implementation commit does not invalidate
+# a separately reviewed GateChange, and additions cannot hide an earlier drop.
+# Merge commits repeat their constituent changes; their non-merge ancestors are
+# checked individually. The repository uses a linear release history today.
+for commit in git("rev-list", "--reverse", f"{BASE}..HEAD").splitlines():
+    parents = git("rev-list", "--parents", "-n", "1", commit).split()[1:]
+    if len(parents) != 1:
+        continue
+    change = findings(parents[0], commit)
+    if not change:
+        continue
+    message = git("log", "-1", "--format=%B", commit)
+    declared = any(re.match(r"^GateChange: .+", line) for line in message.splitlines())
+    src_touched = bool(git("diff", "--name-only", parents[0], commit, "--", "src").strip())
+    if declared and not src_touched:
+        DECLARED += len(change)
+        if VERBOSE:
+            print(f"  {commit[:10]}: {len(change)} declared measurement change(s)")
+    else:
+        for detail in change:
+            report(f"{commit[:10]}: {detail}")
+
+if HITS:
     print("""
 Found measurement-integrity violations.
 
@@ -158,9 +168,7 @@ acceptance change first, on its own, with a `GateChange:` trailer in the commit
 message. See docs/MAINTENANCE.md.""", file=sys.stderr)
     sys.exit(1)
 
-if HITS:
-    print(f"check-integrity: {HITS} measurement change(s) declared with GateChange and no src/ in range")
-else:
-    print(f"check-integrity: OK ({after['test_attrs']} tests, "
-          f"{after['assertions']} assertions, no measurement weakened)")
+after = counts("HEAD")
+print(f"check-integrity: OK ({after['test_attrs']} tests, "
+      f"{after['assertions']} assertions, {DECLARED} declared measurement change(s))")
 PY

@@ -108,7 +108,7 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   release verify job compare the changed range with `scripts/check-integrity.sh`
   (deleted tests, dropped assertions, new `#[ignore]`, removed gate steps or a
   narrowed selector). A genuine acceptance change lands on its own, with no
-  `src/` in the range, under a `GateChange:` commit trailer. Record a semantic
+  `src/` in that commit, under a `GateChange:` commit trailer. Record a semantic
   conflict in `FRICTION.md`; resolve its acceptance change separately, as a
   measurement-only commit with a `GateChange:` trailer.
 - Contract/schema, domain, process cleanup, transport/session protocol and release

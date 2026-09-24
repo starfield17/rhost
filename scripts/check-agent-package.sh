@@ -53,6 +53,16 @@ grep -Fq 'rhost <command> --help' skills/rhost/SKILL.md \
 grep -Eq 'symlinked|symlink' skills/rhost/SKILL.md \
   || fail "SKILL.md must warn that a symlinked skill drifts from the binary"
 
+# The documented connection window is a product promise. Read the transport's
+# one default rather than maintaining a second numeric value in this check.
+persist=$(sed -n 's/^const CONTROL_PERSIST: \&str = "\([^"]*\)";$/\1/p' src/transport/openssh.rs)
+[[ "$persist" =~ ^[0-9]+m$ ]] || fail "CONTROL_PERSIST must be a minute duration"
+minutes=${persist%m}
+grep -Fq "${minutes}-minute persistence" skills/rhost/SKILL.md \
+  || fail "SKILL.md persistence window differs from CONTROL_PERSIST"
+grep -Fq "ControlPersist=${persist}" skills/rhost/references/CLI.md \
+  || fail "CLI.md persistence window differs from CONTROL_PERSIST"
+
 # RECOVERY.md claims to cover every `error.code` the binary can return. Make
 # that a fact: take the authoritative set from the active schema, require a
 # recovery entry for each, and refuse a code the schema does not define. A

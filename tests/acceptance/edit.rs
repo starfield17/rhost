@@ -9,6 +9,59 @@ use crate::support::{Harness, envelope, fail, python3_available, want_code};
 use std::os::unix::fs::symlink;
 
 #[test]
+fn an_unusable_remote_python_is_a_dependency_failure_before_any_edit() -> Result<(), String> {
+    let harness = Harness::open("fs-python-unusable")?;
+    local_host(&harness)?;
+    // Keep this SSH stand-in below the login shell. The bash stand-in restores
+    // the fixture PATH after that shell's startup files have run.
+    harness.stub(
+        "ssh",
+        "for argument in \"$@\"; do remote=\"$argument\"; done\nexec /bin/bash -c \"$remote\"",
+    )?;
+    harness.stub(
+        "bash",
+        &format!(
+            "if [ \"$1\" = -lc ]; then shift; exec /bin/bash -lc \"export PATH={}:{}; $1\"; fi\nexec /bin/bash \"$@\"",
+            harness.path("stubs").display(),
+            crate::support::SYSTEM_PATH,
+        ),
+    )?;
+    harness.stub("python3", "exit 42")?;
+    let source = harness.path("source.txt");
+    let target = harness.path("remote/new.txt");
+    std::fs::write(&source, "contents\n").map_err(|error| fail("source", error))?;
+    std::fs::create_dir_all(harness.path("remote")).map_err(|error| fail("parent", error))?;
+
+    let (_, doctor) = envelope(&harness, &["doctor", "gpu", "--json"])?;
+    assert_eq!(
+        doctor["data"]["capabilities"]["python3"],
+        true,
+        "{doctor}; calls: {}",
+        harness.calls_text()
+    );
+
+    let (outcome, answer) = envelope(
+        &harness,
+        &[
+            "fs",
+            "write",
+            "gpu",
+            &target.to_string_lossy(),
+            "--from",
+            &source.to_string_lossy(),
+            "--json",
+        ],
+    )?;
+    assert_eq!(outcome.status, 255);
+    want_code(&answer, "REMOTE_DEPENDENCY_MISSING")?;
+    assert!(
+        !target.exists(),
+        "the failing interpreter must not edit a file"
+    );
+    Ok(())
+}
+
+#[test]
 fn reading_and_writing_a_remote_file_needs_the_hash_it_was_read_with() -> Result<(), String> {
     let harness = Harness::open("fs-edit")?;
     local_host(&harness)?;

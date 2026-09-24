@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # check-structure.sh — keep the source shape from rotting.
 #
-# Three rules, all mechanical. They exist because an agent can only change one
+# Four rules, all mechanical. They exist because an agent can only change one
 # part of a repository safely if that part is small enough to read and if the
 # direction of a dependency is a fact rather than a convention.
 #
@@ -12,6 +12,8 @@
 #      allowlist below, and the resulting graph must be acyclic. The allowlist is
 #      the single source of truth; src/AGENTS.md describes the modules it guards
 #      and does not repeat the edges.
+#   4. Runtime dependencies: adding a direct crate outside the reviewed set is
+#      an architecture change, including build and target-specific dependencies.
 #
 #	./scripts/check-structure.sh          # check
 #	./scripts/check-structure.sh -v       # also list file sizes and the graph
@@ -78,6 +80,44 @@ EOF
 found=$(grep -HnE 'use (crate|std)::(io|fs|process|net|env|time)\b|use serde\b' src/domain/*.rs 2>/dev/null || true)
 if [ -n "$found" ]; then
 	printf '%s\n  (domain must not reach outside itself)\n' "$found"
+	hits=$((hits + 1))
+fi
+
+# Cargo owns TOML interpretation. Inspect the active package through locked
+# metadata so target-specific and build dependencies cannot hide in another
+# section of the manifest. Development-only dependencies do not ship in rhost.
+metadata=$(cargo metadata --locked --no-deps --format-version 1) || {
+	echo "check-structure: cannot read locked Cargo metadata" >&2
+	exit 2
+}
+if ! RHOST_CARGO_METADATA="$metadata" python3 - <<'PY'
+import json, os, sys
+
+packages = json.loads(os.environ["RHOST_CARGO_METADATA"])["packages"]
+owned = [package for package in packages if package["name"] == "rhost"]
+if len(owned) != 1:
+    raise SystemExit("check-structure: expected one rhost package")
+allowed = {"serde", "serde_json", "sha2", "signal-hook"}
+actual = set()
+problems = []
+for dependency in owned[0]["dependencies"]:
+    name = dependency["name"]
+    kind = dependency["kind"]
+    target = dependency["target"]
+    if kind == "dev":
+        continue
+    if kind is None and target is None and name in allowed:
+        actual.add(name)
+    else:
+        problems.append(f"{name} (kind={kind}, target={target})")
+if actual != allowed:
+    problems.append(f"runtime set {sorted(actual)} differs from {sorted(allowed)}")
+if problems:
+    for problem in problems:
+        print(f"check-structure: unreviewed Cargo dependency: {problem}")
+    sys.exit(1)
+PY
+then
 	hits=$((hits + 1))
 fi
 
