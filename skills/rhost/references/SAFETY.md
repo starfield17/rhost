@@ -26,6 +26,13 @@ diagnostic verbosity only.
 - Foreground transfer interruption can leave partial effects. Inspect both ends
   before retrying.
 
+Direct `ssh` and `scp` on a minimal host use OpenSSH's authentication and host-key
+policy, but do not add rhost's hash-guarded compare-and-swap, atomic replacement,
+symlink refusal, or destructive-sync destination checks. Inspect the exact path
+and current content before a mutation, and verify the result afterward. If the
+task requires those guarantees, report that the required rhost operation is
+unavailable rather than recreating it with an unguarded shell command.
+
 ## Sessions and tunnels
 
 Session writers share a remote lock. Do not bypass `SESSION_BUSY` or

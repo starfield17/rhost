@@ -118,6 +118,13 @@ disconnect.
 - Use `connection` and `doctor` for diagnosis. Never replay a mutation as a
   connectivity test.
 
+If a remote dependency is missing, use the operations the host still supports.
+For a host without bash, the agent's local command tool can run OpenSSH directly:
+use a one-shot `ssh` command for repeatable work, or an SSH login in a local PTY
+when interaction is needed. This is outside rhost's JSON and session contract;
+see [references/CLI.md](references/CLI.md) for examples and
+[references/SAFETY.md](references/SAFETY.md) for the limits.
+
 A timeout, cancellation, missing completion, or output-delivery failure does not
 prove a remote side effect did not happen. Inspect `data.execution` and
 `data.cleanup`, then check the operation's actual remote result before retrying.

@@ -71,6 +71,17 @@ For session results, use `data.execution.status`, `data.session_preserved`, and
 PTY content under `data.output`. A timeout with `session_preserved:false` means
 the managed shell is not proven usable.
 
+When a dependency is missing, keep using rhost operations whose dependencies
+are present. If python3 is missing, do not repeat a failed `fs read`, `fs write`,
+or `fs patch` through the same helper. If bash is missing, `rhost exec` and
+`rhost session` are not a shell fallback. The agent can instead use its local
+command tool to run OpenSSH: prefer a one-shot `ssh` command for work that can
+finish in one invocation, and use a direct SSH login in a local PTY when commands
+need interactive input or stepwise inspection. Use local `scp` for a file copy
+only if the host supports the required transfer service. These direct tools do
+not produce rhost's JSON evidence or file-editing guarantees; see
+[CLI.md](CLI.md) and [SAFETY.md](SAFETY.md).
+
 ## Files and tunnels
 
 - `HASH_REQUIRED` asks for the SHA-256 from a fresh `fs read` before replacement.

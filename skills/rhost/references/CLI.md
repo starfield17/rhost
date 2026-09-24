@@ -142,6 +142,33 @@ and `data.control_path`. `data.capability_paths` uses the same keys as
 tool to — the same `command -v` answer a real run would get — or `null` when the
 tool is absent. A failed probe reports both maps empty.
 
+## Direct OpenSSH on a minimal host
+
+If a host lacks a dependency for the requested rhost operation, an agent with a
+local command tool can use the system OpenSSH client. These commands run on the
+local machine; they do not invoke `rhost exec` or its remote bash wrapper:
+
+```bash
+ssh user@example-host 'sh -c "uname -a"'
+ssh user@example-host                    # run this in a local PTY for an interactive login
+scp ./local-file user@example-host:/path/to/file
+scp user@example-host:/path/to/file ./local-file
+```
+
+Prefer one-shot SSH commands when the next step does not need a live shell. For
+interactive exploration, allocate a local PTY and keep the SSH process open;
+the login uses the target account's shell, which may be `sh` or `ash`. If remote
+PTY allocation must be forced, use `ssh -tt user@example-host`. The ordinary
+remote shell state ends with that SSH connection; this is not a durable
+`rhost session`. `rhost session attach` remains
+unavailable. For file bytes, use `scp` only when the host supports SFTP or the
+required scp service, and inspect both source and destination after a failed
+transfer. A PTY is not a reliable byte-transfer channel.
+
+Direct OpenSSH output is terminal text and exit status, not a schema-v2 JSON
+envelope. Do not infer rhost completion or cleanup evidence from a shell prompt.
+See [SAFETY.md](SAFETY.md) before replacing or deleting files this way.
+
 ## Sessions
 
 ```bash
