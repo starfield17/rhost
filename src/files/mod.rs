@@ -5,7 +5,7 @@
 //! local-tool and remote-helper rules are `backend`, and the schema-v2 view is
 //! `dto`.
 
-pub mod backend;
+mod backend;
 pub mod command;
 mod dto;
 mod input;

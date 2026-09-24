@@ -24,7 +24,7 @@
 pub mod command;
 mod dto;
 mod ops;
-pub mod remote;
+mod remote;
 mod render;
 mod run;
 

@@ -18,9 +18,9 @@
 //!   JSON request and must reply with one bounded JSON document, under a `flock`
 //!   and an atomic same-directory replace — logic that POSIX shell plus
 //!   coreutils cannot express without inventing a fragile quoting protocol;
-//! * an already-present `python3` on the target gives exactly that JSON pump
-//!   with no install step, and a host without it is reported as
-//!   `REMOTE_DEPENDENCY_MISSING`, never as a silent failure.
+//! * an already-present, capable `python3` on the target gives exactly that JSON
+//!   pump with no install step. Missing or unusable interpreter support is
+//!   reported as `REMOTE_DEPENDENCY_MISSING` before a file is touched.
 //!
 //! `docs/CONTRACT.md` explicitly leaves the helper's source language unfrozen, so
 //! this can change later if a target without python3 ever justifies it. The
@@ -37,11 +37,31 @@ pub const PROGRAM: &str = include_str!("remote_fs.py");
 /// to read a whole file. `fs patch` returns the replacement's hash and length.
 pub const DEFAULT_HELPER_BYTES: usize = 256 * 1024;
 
-/// The remote command that runs the helper. A host without python3 exits 127,
-/// which the caller reports as a missing dependency rather than a tool failure.
+/// This runs on the target's Python, not on the developer's interpreter. It uses
+/// only old Python syntax so even a too-old interpreter can refuse cleanly. The
+/// checks cover features every operation may need; filesystem-specific failures
+/// during an operation remain operation failures, not dependency guesses.
+const PYTHON_PREFLIGHT: &str = r#"import fcntl, os, sys
+required = (os.open, os.stat, os.mkdir, os.unlink, os.link, os.rename)
+ready = (sys.version_info >= (3, 5)
+         and hasattr(fcntl, 'flock')
+         and hasattr(os, 'O_NOFOLLOW')
+         and hasattr(os, 'O_DIRECTORY')
+         and all(fn in os.supports_dir_fd for fn in required)
+         and os.stat in os.supports_follow_symlinks
+         and hasattr(os.stat('.'), 'st_mtime_ns')
+         and hasattr(os.stat('.'), 'st_ctime_ns')
+         and hasattr(os.urandom(1), 'hex'))
+if not ready:
+    sys.exit(1)"#;
+
+/// The remote command that runs the helper. Exit 127 means no python3; exit
+/// 126 means the interpreter cannot satisfy the helper's runtime requirements.
+/// The preflight and request stay in one invocation, before any helper action.
 pub fn command() -> String {
     format!(
-        "command -v python3 >/dev/null 2>&1 || exit 127; python3 -c {}",
+        "command -v python3 >/dev/null 2>&1 || exit 127; python3 -c {} >/dev/null 2>&1 || exit 126; python3 -c {}",
+        crate::shell::quote(PYTHON_PREFLIGHT),
         crate::shell::quote(PROGRAM)
     )
 }
@@ -197,6 +217,10 @@ mod tests {
         assert!(
             command.contains("command -v python3 >/dev/null 2>&1 || exit 127;"),
             "the helper must refuse to run without python3: {command}"
+        );
+        assert!(
+            command.contains("|| exit 126; python3 -c"),
+            "an unusable interpreter must fail before the helper: {command}"
         );
         // The program is compiled in, never read from a remote path.
         assert!(

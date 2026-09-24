@@ -27,16 +27,15 @@ pub use args::{
     validate_transfer_paths,
 };
 pub use changes::{
-    Action, CHANGE_MARKER, Change, parse_changes, path_base, path_needs_quoting,
-    remote_parent_command,
+    Action, Change, parse_changes, path_base, path_needs_quoting, remote_parent_command,
 };
-pub use sync::{SyncPlan, SyncRequest, pull_args, push_args, reject_sync_target};
+pub use sync::{SyncRequest, pull_args, push_args, reject_sync_target};
 // The two submodules below reach a process and a remote helper. They are private
 // so a caller names the capability, not the internal split: changing the runner
 // or the helper protocol must not require finding every deep import.
 pub(crate) use remote::Answer;
 pub use remote::{
-    DEFAULT_HELPER_BYTES, Edit, PROGRAM, ReadResult, Request, ResolveResult, WriteResult, command,
+    DEFAULT_HELPER_BYTES, Edit, ReadResult, Request, ResolveResult, WriteResult, command,
     known_refusal_code, output_budget,
 };
 pub use runner::{DEFAULT_TIMEOUT, Outcome, Stop, Tools, run};

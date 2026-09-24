@@ -34,7 +34,7 @@ Format:
 
 - Constraint: a live test that fails once must be recorded without weakening it
   (docs/MAINTENANCE.md#regression-memory-and-flaky-tests), and live suites are
-  the release gate.
+  required manual pre-release verification.
 - What happened: on the v4.4.1 pre-release `make test-live-all`,
   `session::raw_send_exit_status_unknown_target_and_recovery_are_explicit` timed
   out on `sh -c 'exit 4'` with `REMOTE_COMMAND_TIMEOUT`, on real remote host
@@ -43,10 +43,10 @@ Format:
   23/23.
 - Current workaround: none; the test was left unchanged (no widened timeout, no
   retry), and the release proceeded on the clean re-run.
-- Proposed resolution: first observation only. On a second occurrence, create a
-  standalone entry with platform, elapsed time and process evidence; on a third,
-  a deterministic reproducer (a per-command session-exec budget that assumes the
-  pane is warm is the leading suspect).
+- Proposed resolution: run the isolated session case repeatedly on a real
+  target, recording elapsed time and process evidence. Compare a cold pane with
+  a warm pane; a per-command budget that assumes a warm pane is the leading
+  suspect. Keep the entry until the observation is explained or fixed.
 
 
 An entry appears here only when one of the three triggers above actually

@@ -37,3 +37,19 @@ Unknown execution has no numeric exit code.
 
 The detailed contracts and their rationale live in
 [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Observable acceptance
+
+- A foreground command reports the remote exit status and separate bounded
+  stdout/stderr in one v2 JSON envelope; transport uncertainty does not invent
+  successful completion. The local acceptance suite covers classification,
+  and the native exec/transport suites verify it over SSH.
+- A session created on a remote tmux server remains discoverable after the CLI
+  exits. The native session suite verifies a second invocation against the same
+  target; the CLI process has no durable session map.
+- A file replacement requires the previously observed content hash, and an
+  unusable target interpreter refuses before an edit. The local file acceptance
+  suite covers both; the native file suite verifies actual remote operations.
+
+The native suites are manual pre-release verification because CI has no SSH
+target. Release CI checks the local contract and build artifacts separately.

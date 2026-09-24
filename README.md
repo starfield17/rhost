@@ -25,8 +25,10 @@ local coding agent
 
 Direct execution needs remote `bash`, `setsid`, `ps`, and a base64 decoder.
 Optional operations need more: sessions use `tmux` and `flock`, remote filesystem
-helpers use Python 3, and resumable or checksum-aware transfers use rsync. Run `rhost doctor
-<host> --json` when you need to see what a host supports.
+helpers require Python 3.5 or newer with the needed filesystem features, and
+resumable or checksum-aware transfers use rsync. Run `rhost doctor <host>
+--json` to see which commands resolve; helper readiness is checked on the
+target when a file operation runs.
 
 ## Install
 
@@ -70,6 +72,9 @@ For `doctor`, `ok:true` means the probe completed. Inspect
 optional operation. On failure, branch on `error.code` and use the
 [recovery guide](skills/rhost/references/RECOVERY.md) before retrying a
 mutation.
+`data.capabilities.python3` means the command was found, not that the remote
+filesystem helper can run; an unusable interpreter produces
+`REMOTE_DEPENDENCY_MISSING` before a file edit.
 
 Use any target that already works with `ssh`: an OpenSSH config alias,
 `user@example-host`, or a bare hostname.

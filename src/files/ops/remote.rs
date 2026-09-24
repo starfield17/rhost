@@ -55,10 +55,10 @@ where
         timeout,
         helper_protocol::output_budget(max_bytes),
     )?;
-    if code == 127 {
+    if code == 126 || code == 127 {
         return Err(Error::new(
             "REMOTE_DEPENDENCY_MISSING",
-            "this operation needs remote python3; rhost reports it, it does not install it",
+            "this operation needs remote Python 3.5 or newer with fcntl and directory-relative filesystem support; rhost does not install it",
         ));
     }
     if code != 0 {

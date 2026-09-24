@@ -12,7 +12,7 @@
 //! public envelope; this oracle proves the helper's local semantics.
 
 use crate::support::{Harness, fail};
-use rhost::files::backend::PROGRAM;
+const PROGRAM: &str = include_str!("../../src/files/backend/remote_fs.py");
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::io::Write;

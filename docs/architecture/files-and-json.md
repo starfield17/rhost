@@ -53,8 +53,17 @@ scripts instead, so this difference is deliberate:
   JSON request, one bounded JSON reply, under a `flock` and an atomic
   same-directory replace. Shell plus coreutils would need a hand-rolled quoting
   protocol to do the same;
-- a target that already has `python3` supplies that JSON pump with no install; a
-  target without it gets `REMOTE_DEPENDENCY_MISSING`, not a silent failure.
+- a target with a usable `python3` supplies that JSON pump with no install;
+  missing or unusable interpreter support gets `REMOTE_DEPENDENCY_MISSING`
+  before the helper touches a file.
+
+The helper requires Python 3.5 or newer plus the target's `fcntl.flock`,
+directory-relative filesystem operations, no-follow flags, nanosecond stat
+fields, and byte hex conversion. Each helper invocation checks these on the
+target before running the request. `doctor` reports whether `python3` resolves
+in its execution environment; `data.capabilities.python3` is not a readiness
+claim for this helper. A later operation can still fail for ordinary filesystem
+reasons such as permissions or a changed path.
 
 The mechanism is deliberately not frozen (`docs/CONTRACT.md`): the helper's
 source language may change if a target without `python3` ever justifies it. Its
@@ -73,7 +82,10 @@ and recovery guidance, not evidence of external usage. Retain the published
 manifest and aggregate semantics for compatibility; prefer put/get for new
 callers. Do not add concurrency, dependency graphs, rollback or a versioned
 workflow language without demonstrated requirements that existing operations
-cannot meet. Removal would require a major-version compatibility review.
+cannot meet. Removal would require a major-version compatibility review. Treat
+v5 as the first removal candidate; retain it if an external caller reports a
+concrete need for the ordered per-entry report that separate put/get calls
+cannot meet. The repository does not collect usage telemetry.
 
 A completed run emits `ok:true`; inspect `data.failed` and each `data.items[]`
 entry. Any entry failure sets process status 255; subsequent entries still run.

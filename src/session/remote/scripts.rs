@@ -34,6 +34,9 @@ pub use io::{SendKind, read, send};
 pub use lifecycle::{close, list, recover};
 
 #[cfg(test)]
+mod behavior_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::base64;

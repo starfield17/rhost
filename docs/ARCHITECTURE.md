@@ -52,7 +52,7 @@ domain  transport  remote  wire   shared foundation
 cli                               flag/argv vocabulary, Sink, Failure
 dispatch                          whole-argv grammar, help prose, routing
 exec  doctor  hosts  connection   one vertical slice each
-files  session  tunnel            one capability each
+files  session  tunnel  audit     one capability each
 ```
 
 `dispatch` is the composition root: it may depend on every capability, but it
@@ -71,3 +71,40 @@ capability's internals, and a capability never depends on `dispatch`. See
 
 [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) is the shorter product-level
 description.
+
+## Frames for contested paths
+
+### OpenSSH adapter
+
+- Default: invoke system OpenSSH and keep persistent work in OpenSSH, remote
+  tmux, or remote files. Rival: embed an SSH stack or run a resident service.
+- Breakpoint: a required operation that system tools cannot support with the
+  documented guarantees, demonstrated by a reproducible case and reviewed as
+  a product change.
+- Invariant and check: direct runtime dependencies stay within the reviewed
+  allowlist in `scripts/check-structure.sh`; `make structure` fails on additions.
+  Live persistence still requires the manual remote suites before release.
+- Oracle: the user's OpenSSH configuration and a real target, not a local
+  substitute for authentication or host-key behavior.
+
+### Remote filesystem helper
+
+- Default: one embedded Python helper executed by the target's interpreter.
+  Rival: a shipped native helper or generated shell program.
+- Breakpoint: evidence of a supported target lacking a usable interpreter that
+  cannot meet the file contract through existing tools. Record the case before
+  changing the helper language; `fs batch` has its own compatibility decision.
+- Invariant and check: the target must pass the helper's runtime preflight
+  before any edit; the unusable-interpreter acceptance test requires
+  `REMOTE_DEPENDENCY_MISSING`. `doctor` reports command presence only.
+- Oracle: the target interpreter and filesystem features, not the developer's
+  local `python3`.
+
+### One-shot helper protocols
+
+The exec wrapper, session helper, and filesystem helper are separate wire
+protocols with one invocation-specific request and one bounded answer each.
+Their shared invariant is that completion evidence belongs to the current
+invocation. The transport, session, and filesystem acceptance tests exercise
+that evidence and the corresponding refusal paths. A new helper protocol needs
+its own Frame and evidence binding before it is added.

@@ -11,6 +11,10 @@ on an optional operation. `ok:true` means the probe completed; it does not
 mean every capability is present. If a call fails, branch on `error.code`
 and consult [references/RECOVERY.md](references/RECOVERY.md) before retrying
 a mutation.
+`data.capabilities.python3` reports command presence; filesystem helper
+readiness is checked on the target when a file operation runs. This skill also
+covers `rhost audit --json`, the local JSON Lines trail (see
+[references/CLI.md](references/CLI.md)).
 
 Use the same shell program you would run locally and add the remote context:
 

@@ -40,7 +40,8 @@ with the capability that owns it.
   on a sibling capability; the one declared exception is `doctor -> connection`,
   which reuses the shared master DTO.
 - `dispatch` may depend on every capability because wiring is its whole job; it
-  holds no capability behavior. `main` depends only on `dispatch`.
+  holds no capability behavior. `main` also uses `transport` and `signals` for
+  process setup and shutdown; the `ALLOWED` map is authoritative.
 - `domain/`: validated identities, completion evidence, execution/session states
   and CAS intents. No serde, crate-level dependencies, I/O, environment, process,
   thread or network access. Standalone rustc compilation and `pure_domain_boundary`

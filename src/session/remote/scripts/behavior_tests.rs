@@ -1,7 +1,7 @@
 //! Exercise the generated session helper in bash with failing tmux commands.
 //! This uses local stand-ins for tools; no SSH target or real pane is needed.
 
-use rhost::session::remote::scripts::{SendKind, close, send};
+use super::{SendKind, close, send};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;

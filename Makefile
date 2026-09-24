@@ -7,7 +7,7 @@ export RHOST_REPO_ROOT := $(CURDIR)
 # a reproducible build does.
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-.PHONY: build build-release build-rust check rust-check test test-smoke stress-transfer-timeout fmt portability structure live-suite release-contract contract-evidence agent-package install-test
+.PHONY: build build-release check rust-check test test-smoke stress-acceptance fmt portability structure live-suite release-contract contract-evidence agent-package install-test
 build:
 	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --bin rhost
 # The release candidate: the same locked, optimized, provenance-stamped build
@@ -15,7 +15,6 @@ build:
 # `make build`. `make build` stays the debug build for everyday work.
 build-release:
 	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --release --bin rhost
-build-rust: build
 fmt:
 	cargo fmt
 test:
@@ -51,11 +50,11 @@ test-smoke:
 	cargo test --locked --test acceptance
 
 STRESS_RUNS ?= 50
-stress-transfer-timeout:
+stress-acceptance:
 	@case "$(STRESS_RUNS)" in ''|*[!0-9]*|0) echo "STRESS_RUNS must be a positive integer" >&2; exit 2 ;; esac
 	@i=0; while [ "$$i" -lt "$(STRESS_RUNS)" ]; do \
 		i=$$((i + 1)); \
-		echo "stress-transfer-timeout: acceptance run $$i/$(STRESS_RUNS)"; \
+		echo "stress-acceptance: acceptance run $$i/$(STRESS_RUNS)"; \
 		cargo test --locked --test acceptance || exit; \
 	done
 
@@ -106,6 +105,3 @@ test-live-all:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" >&2; exit 1)
 	@test -n "$(RHOST_BIN)" || (echo "set RHOST_BIN to an explicit binary" >&2; exit 1)
 	cargo test --locked --features live-tests --test live -- --nocapture --test-threads=1
-
-.PHONY: test-live-rust
-test-live-rust: test-live-all
