@@ -7,7 +7,7 @@ export RHOST_REPO_ROOT := $(CURDIR)
 # a reproducible build does.
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-.PHONY: build build-release check rust-check test test-smoke stress-acceptance fmt portability structure live-suite release-contract contract-evidence agent-package install-test
+.PHONY: build build-release clean check rust-check test test-smoke stress-acceptance fmt portability structure live-suite release-contract contract-evidence agent-package install-test
 build:
 	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --bin rhost
 # The release candidate: the same locked, optimized, provenance-stamped build
@@ -15,6 +15,11 @@ build:
 # `make build`. `make build` stays the debug build for everyday work.
 build-release:
 	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --release --bin rhost
+# Nothing under target/ is authoritative: git owns the source, the release
+# workflow owns published binaries, and Cargo.lock reproduces every artifact.
+# Remove all of it, current and old; follow with `make build` to rebuild.
+clean:
+	cargo clean
 fmt:
 	cargo fmt
 test:
