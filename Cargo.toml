@@ -32,7 +32,7 @@ expect_used = "deny"
 
 [dev-dependencies]
 regex = "1"
-jsonschema = { version = "0.56", default-features = false }
+jsonschema = { version = "0.57", default-features = false }
 
 # Keep target/ small: the dev/test profiles do not need DWARF, and skipping
 # incremental caches costs only seconds on this crate while removing their
