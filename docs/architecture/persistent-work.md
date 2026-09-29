@@ -18,6 +18,10 @@ send/read rather than an unrepresentable attached terminal.
 Use `--data 'python3 -i' --enter` to paste text and press Enter in one
 operation. Incremental reads use byte cursors and return UTF-8 content.
 
+`session exec` and `session recover` accept fractional timeout values. Their
+remote helper uses a whole-second clock and rounds a fraction up to the next
+second, so the remote budget never truncates below the requested duration.
+
 The tmux helper is an internal line protocol. Successful `session exec` responses
 carry one resolved `RHOST_ID`, exactly one `RHOST_TOKEN`, `RHOST_EXIT`, and base64-encoded `RHOST_OUTPUT`;
 `session read` responses carry exactly one non-negative `RHOST_FROM`, `RHOST_NEXT`,
