@@ -41,7 +41,10 @@ curl -fsSL https://raw.githubusercontent.com/starfield17/rhost/main/scripts/inst
 ```
 
 By default the binary goes to `~/.local/bin`. Set `RHOST_INSTALL_DIR` to choose
-another directory, or `RHOST_VERSION` to pin a published release.
+another directory, or `RHOST_VERSION` to pin a published release. If the chosen
+directory is not on your `PATH`, the installer says so and prints the exact
+`export PATH=...` line that fixes it; a shell that is already open may need
+`rehash` (zsh) or `hash -r` (bash) afterwards.
 
 To build from source with Rust 1.85 or newer:
 

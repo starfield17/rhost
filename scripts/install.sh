@@ -68,5 +68,13 @@ mv "$install_tmp/$asset" "$install_dir/rhost"
 echo "installed $install_dir/rhost"
 case ":$PATH:" in
   *":$install_dir:"*) ;;
-  *) echo "note: $install_dir is not on your PATH" ;;
+  *)
+    # The binary landed correctly but the shell cannot find it yet. Name the fix
+    # instead of only the problem, and keep it generic: whatever the directory
+    # turns out to be, one PATH line resolves it.
+    echo "note: $install_dir is not on your PATH, so 'rhost' does not resolve yet"
+    echo "      make it resolve:  export PATH=\"$install_dir:\$PATH\"  (put it in your shell startup file)"
+    echo "      refresh an open shell:  rehash  (zsh) or  hash -r  (bash)"
+    echo "      or install into a directory already on your PATH:  RHOST_INSTALL_DIR=<that-directory> ./scripts/install.sh"
+    ;;
 esac

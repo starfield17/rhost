@@ -56,10 +56,16 @@ for platform in \
 do
   set -- $platform
   : > "$tmp/curl.log"
+  install_out="$tmp/install-out.$3"
   run_install "$tmp/$3" RHOST_VERSION=v1.2.3 \
-    RHOST_TEST_UNAME_S="$1" RHOST_TEST_UNAME_M="$2" >/dev/null
+    RHOST_TEST_UNAME_S="$1" RHOST_TEST_UNAME_M="$2" >"$install_out" 2>&1
   grep -q "/download/v1.2.3/rhost_1.2.3_$3$" "$tmp/curl.log"
   grep -q 'verified binary' "$tmp/$3/rhost"
+  # None of these directories is on PATH, so each run must end with the fix,
+  # not just the observation: the warning plus the export line for that exact
+  # directory.
+  grep -q 'not on your PATH' "$install_out"
+  grep -qF "export PATH=\"$tmp/$3:" "$install_out"
 done
 
 : > "$tmp/curl.log"
@@ -81,5 +87,20 @@ if run_install "$tmp/unsupported" RHOST_VERSION=1.2.3 \
   echo "unsupported OS unexpectedly installed" >&2
   exit 1
 fi
+
+# A directory that already is on PATH installs silently: no warning, no PATH
+# advice. $fake is on the PATH run_install hands to the installer.
+if run_install "$fake" RHOST_VERSION=1.2.3 RHOST_TEST_UNAME_S=Linux \
+  RHOST_TEST_UNAME_M=x86_64 >"$tmp/onpath.out" 2>&1; then
+  grep -q 'verified binary' "$fake/rhost"
+  if grep -q 'not on your PATH' "$tmp/onpath.out"; then
+    echo "installer warned about a directory that is already on PATH" >&2
+    exit 1
+  fi
+else
+  echo "installing into a PATH directory failed" >&2
+  exit 1
+fi
+rm -f "$fake/rhost"
 
 echo "test-install: OK"
