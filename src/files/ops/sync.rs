@@ -38,7 +38,14 @@ fn summarize(
     options: &SyncOptions<'_>,
     outcome: &backend::Outcome,
 ) -> Sync {
-    let (changes, notes) = backend::parse_changes(&outcome.stdout_text());
+    let (changes, mut notes) = backend::parse_changes(&outcome.stdout_text());
+    if options.dry_run {
+        for note in &mut notes {
+            if let Some(path) = note.strip_prefix("created directory ") {
+                *note = format!("would create directory {path}");
+            }
+        }
+    }
     let mut sync = Sync {
         source: source.to_string(),
         destination: destination.to_string(),

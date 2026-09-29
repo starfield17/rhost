@@ -48,7 +48,8 @@ remote process group. Execution timeout always uses
   was matched and its managed process group was confirmed empty; side effects
   and detached work are outside that claim.
 - `data.cleanup.status == "unconfirmed"`: the managed group was not proven
-  stopped. Both states remain `error.retryable:false`.
+  stopped. Inspect the matching remote process tree before another submission.
+  Both states remain `error.retryable:false`.
 - `data.cleanup.status == "not_attempted"`: no cleanup was warranted, including
   when foreground completion had already been observed.
 
@@ -57,6 +58,8 @@ actual effect. Missing completion evidence without a specific connection-stage
 diagnosis is `REMOTE_EXECUTION_UNKNOWN`, not `SSH_UNREACHABLE`.
 
 `SSH_UNREACHABLE` is reserved for SSH connectivity and transport failures.
+An explicit OpenSSH connection-stage `Operation not permitted` is a local
+environment refusal under that code; the error message carries the SSH line.
 Cancellation uses `REMOTE_COMMAND_CANCELLED`. Output sink failure uses
 `OUTPUT_WRITE_FAILED` and triggers the same cleanup attempt.
 

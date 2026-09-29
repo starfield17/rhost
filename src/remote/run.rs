@@ -93,7 +93,7 @@ pub(crate) fn run_remote_partial(
         fresh: false,
     };
     let outcome = exec::execute_captured(client, command, &request, stdin)
-        .map_err(|error| internal(error.to_string()))?;
+        .map_err(|error| Error::new(error.code(), error.to_string()))?;
     let output = outcome.output();
     let stdout = output.stdout.content().to_string();
     let stderr = output.stderr.content().to_string();

@@ -285,7 +285,10 @@ fn a_transfer_deadline_bounds_the_local_tool() -> Result<(), String> {
 #[test]
 fn a_sync_reports_the_plan_the_tool_printed_and_only_deletes_when_asked() -> Result<(), String> {
     let harness = Harness::open("fs-sync")?;
-    harness.stub("rsync", &rsync_stub("exit 0"))?;
+    harness.stub(
+        "rsync",
+        &rsync_stub("printf '%s\\n' 'created directory /srv/app'\nexit 0"),
+    )?;
     local_host(&harness)?;
     let tree = harness.path("tree");
     std::fs::create_dir_all(&tree).map_err(|e| fail("fixture", e))?;
@@ -329,6 +332,10 @@ fn a_sync_reports_the_plan_the_tool_printed_and_only_deletes_when_asked() -> Res
             .contains("warning"),
         "a tool's own words are kept, not dropped: {value}"
     );
+    assert_eq!(
+        value["data"]["notes"][1], "would create directory /srv/app",
+        "{value}"
+    );
     let rsync = harness.tool_calls("rsync");
     assert_eq!(rsync.len(), 1, "one rsync invocation");
     let arguments = &rsync[0].args;
@@ -345,6 +352,19 @@ fn a_sync_reports_the_plan_the_tool_printed_and_only_deletes_when_asked() -> Res
             .any(|a| a.contains("--exclude") || a == ".git"),
         "{arguments:?}"
     );
+    let (_, applied) = envelope(
+        &harness,
+        &[
+            "fs",
+            "sync",
+            "gpu",
+            &tree.to_string_lossy(),
+            "/srv/app",
+            "--json",
+        ],
+    )?;
+    assert_eq!(applied["data"]["dry_run"], false);
+    assert_eq!(applied["data"]["notes"][1], "created directory /srv/app");
     Ok(())
 }
 

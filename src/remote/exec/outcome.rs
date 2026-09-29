@@ -172,6 +172,16 @@ enum Verdict {
 /// runs with no completion at all.
 fn classify(output: &ProcessOutput, exit: Option<i32>) -> Verdict {
     let lower = output.stderr.content().to_lowercase();
+    if exit == Some(255)
+        && lower.lines().any(|line| {
+            (line.starts_with("ssh: connect to host ")
+                || line.starts_with("ssh: connect to address "))
+                && line.contains(" port ")
+                && line.ends_with(": operation not permitted")
+        })
+    {
+        return Verdict::NotStarted(PreExecFailure::Connection);
+    }
     // The wrapper itself could not start. Quote the offending line's meaning by
     // name rather than the first stderr line, which is often an unrelated
     // banner when ssh runs at a higher log level.

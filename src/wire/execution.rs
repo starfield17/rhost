@@ -70,9 +70,49 @@ pub struct ExecDto<'a> {
 
 /// The stable code and message an exec outcome carries, factored out so the
 /// human status line and the JSON error payload cannot drift apart (AGENTS.md §6).
-pub fn exec_diagnostic(result: &domain::ExecOutcome) -> Option<(&'static str, &'static str)> {
-    let (code, message, _) = failure_parts(result.failure()?)?;
-    Some((code, message))
+pub fn exec_diagnostic(result: &domain::ExecOutcome) -> Option<(&'static str, String)> {
+    let reason = result.failure()?;
+    let (code, base, _) = failure_parts(reason)?;
+    Some((code, diagnostic_message(result, reason, base)))
+}
+
+fn diagnostic_message(
+    result: &domain::ExecOutcome,
+    reason: ExecFailure,
+    base: &'static str,
+) -> String {
+    if matches!(
+        reason,
+        ExecFailure::BeforeSubmission(PreExecFailure::Connection)
+    ) {
+        let stderr = result.output().stderr.content();
+        if let Some(line) = stderr.lines().find(|line| {
+            let lower = line.to_ascii_lowercase();
+            (lower.starts_with("ssh: connect to host ")
+                || lower.starts_with("ssh: connect to address "))
+                && lower.contains(" port ")
+                && lower.ends_with(": operation not permitted")
+        }) {
+            let detail: String = line
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .take(240)
+                .collect();
+            return format!(
+                "local execution environment denied outbound SSH before command submission: {detail}"
+            );
+        }
+    }
+    if matches!(reason, ExecFailure::ExecutionUnknown)
+        || (result.cleanup() == CleanupEvidence::Unconfirmed
+            && matches!(
+                reason,
+                ExecFailure::Interrupted(_) | ExecFailure::OutputWriteFailed
+            ))
+    {
+        return format!("{base}; inspect the remote process tree before retrying");
+    }
+    base.to_string()
 }
 
 fn failure_parts(reason: domain::ExecFailure) -> Option<(&'static str, &'static str, bool)> {
@@ -124,10 +164,11 @@ fn failure_parts(reason: domain::ExecFailure) -> Option<(&'static str, &'static 
 }
 
 pub fn exec<'a>(host: &str, result: &'a domain::ExecOutcome) -> Envelope<ExecDto<'a>> {
-    let failure = result
-        .failure()
-        .and_then(failure_parts)
-        .map(|(code, message, retryable)| error(code, message, retryable));
+    let failure = result.failure().and_then(|reason| {
+        let (code, base, retryable) = failure_parts(reason)?;
+        let message = diagnostic_message(result, reason, base);
+        Some(error(code, &message, retryable))
+    });
     let signal = match result.failure() {
         Some(ExecFailure::Interrupted(Interruption::Cancelled(CancelSignal::Int))) => {
             Some("SIGINT")

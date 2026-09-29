@@ -116,8 +116,8 @@ pub fn run(
     ) {
         Ok(outcome) => outcome,
         Err(reason) => {
-            timer.failed("INTERNAL");
-            return Failure::new("exec", &command.host, "INTERNAL", reason.to_string())
+            timer.failed(reason.code());
+            return Failure::new("exec", &command.host, reason.code(), reason.to_string())
                 .deliver(sink, json);
         }
     };

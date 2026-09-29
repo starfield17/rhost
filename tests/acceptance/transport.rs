@@ -205,6 +205,28 @@ fn a_failed_probe_reports_the_connection_it_knew_and_no_capabilities() -> Result
     Ok(())
 }
 
+#[test]
+fn a_local_ssh_permission_denial_is_visible_in_doctor_diagnostics() -> Result<(), String> {
+    let harness = Harness::open("doctor-local-denial")?;
+    let diagnostic = "ssh: connect to host example-host port 22: Operation not permitted";
+    harness.stub(
+        "ssh",
+        &format!("printf '%s\\n' {} >&2\nexit 255", shell_quote(diagnostic)),
+    )?;
+    let (outcome, value) = envelope(&harness, &["doctor", "gpu", "--json"])?;
+    assert_eq!(outcome.status, 255);
+    want_code(&value, "SSH_UNREACHABLE")?;
+    assert_eq!(value["error"]["retryable"], true);
+    assert_eq!(value["data"]["online"], false);
+    let message = value["error"]["message"].as_str().unwrap_or("");
+    assert!(message.contains("local execution environment denied outbound SSH"));
+    assert!(message.contains(diagnostic));
+    let human = run(&harness, &["doctor", "gpu"])?;
+    assert_eq!(human.status, 255);
+    assert!(human.stderr.contains(message), "{:?}", human.stderr);
+    Ok(())
+}
+
 /// A completed probe reports the path this execution environment resolves each
 /// capability to, under the same key set as `capabilities`, and the human view
 /// names it. A host stand-in runs the probe exactly as a real one would.
@@ -324,6 +346,12 @@ fn transport_diagnostics_are_classified_without_fabricating_completion() -> Resu
             false,
         ),
         (
+            "unattributed-permission-error",
+            "Operation not permitted",
+            "REMOTE_EXECUTION_UNKNOWN",
+            false,
+        ),
+        (
             "authentication",
             "Permission denied (publickey).",
             "SSH_AUTH_FAILED",
@@ -338,6 +366,12 @@ fn transport_diagnostics_are_classified_without_fabricating_completion() -> Resu
         (
             "connection-refused",
             "ssh: connect to host example-host port 22: Connection refused",
+            "SSH_UNREACHABLE",
+            true,
+        ),
+        (
+            "local-denial",
+            "ssh: connect to host example-host port 22: Operation not permitted",
             "SSH_UNREACHABLE",
             true,
         ),
@@ -373,6 +407,11 @@ fn transport_diagnostics_are_classified_without_fabricating_completion() -> Resu
         )?;
         assert_eq!(outcome.status, 255, "{name}");
         want_code(&value, want).map_err(|error| format!("{name} {error}"))?;
+        if name == "local-denial" {
+            let message = value["error"]["message"].as_str().unwrap_or("");
+            assert!(message.contains("local execution environment denied outbound SSH"));
+            assert!(message.contains(diagnostic));
+        }
         assert_eq!(
             value["error"]["retryable"],
             serde_json::Value::Bool(retryable),

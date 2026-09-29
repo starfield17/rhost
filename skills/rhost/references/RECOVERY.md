@@ -20,8 +20,16 @@ disagree, so a new code cannot ship undocumented.
   nothing needs inspecting — but do not retry the same argv unchanged.
 - `CONFIG_INVALID` means local input was well-formed as argv but not as a value:
   an empty or invalid `--command`, a path or `--cwd` that cannot be used, a
-  malformed `--manifest`, or a transfer operand that names the wrong side. It is
-  not retryable. Fix the value and resubmit; no remote state changed.
+  malformed `--manifest`, a transfer operand that names the wrong side, or a
+  local rhost directory that cannot be used safely. It is not retryable. Fix
+  the value or directory and resubmit; no remote command was submitted. For a
+  local directory error, point both roots at private writable storage, for
+  example:
+
+  ```bash
+  scratch=$(mktemp -d)
+  export RHOST_CACHE_DIR="$scratch/cache" RHOST_STATE_DIR="$scratch/state"
+  ```
 - `INTERNAL` means a local invariant failed — a nonce that could not be drawn, a
   capture or rendering step that should not fail, or a use-case result that
   reached the renderer in an impossible shape. It is not retryable and proves
@@ -32,17 +40,26 @@ disagree, so a new code cannot ship undocumented.
 ## Execution and transport
 
 - `SSH_UNREACHABLE` proves a connection-stage failure and may be retryable, but
-  never proves an earlier side effect is safe to replay.
+  never proves an earlier side effect is safe to replay. If the diagnostic says
+  the local execution environment denied outbound SSH, restore that permission
+  before trying again; changing the remote host will not fix a local refusal.
 - `SSH_AUTH_FAILED`, `HOST_KEY_FAILED`, and `HOST_UNKNOWN` require correcting
   local OpenSSH identity, trust, or target configuration. Never disable host-key
   checking.
 - `SSH_CONTROL_FAILED` leaves shared-master state unknown. Inspect it again; do
   not delete sockets manually.
 - `REMOTE_EXECUTION_UNKNOWN` means no invocation-bound completion was observed.
-  It is not known success and is not retryable.
+  It is not known success and is not retryable. Inspect the remote process tree
+  and the operation's effects before resubmitting.
 - `REMOTE_COMMAND_TIMEOUT` and `REMOTE_COMMAND_CANCELLED` may have remote effects.
   `data.cleanup.status == "confirmed_stopped"` proves only that the matched
   managed process group stopped; it does not undo effects or cover detached work.
+  For `unconfirmed`, once SSH is available, use a read-only probe such as
+  `rhost exec gpu --command 'ps -eo pid,ppid,pgid,sid,args'` and match the exact
+  command and its children. Check PID, parent and process-group identity before
+  sending a signal to the verified task. Avoid broad name-based kills, then
+  inspect the task's actual side effects before resubmitting it. If the CLI was
+  forcibly killed, it may have had no chance to attempt remote cleanup.
 - `OUTPUT_WRITE_FAILED` means local delivery failed. Preserve any available
   execution evidence and inspect remote state before another mutation.
 

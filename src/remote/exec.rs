@@ -104,14 +104,25 @@ impl<'a> Cancel<'a> {
 
 #[derive(Debug)]
 pub enum ExecError {
+    /// A private local directory could not be prepared, before SSH ran.
+    LocalState(String),
     /// The run happened but cannot be described. Not a connectivity claim.
     Internal(String),
+}
+
+impl ExecError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::LocalState(_) => "CONFIG_INVALID",
+            Self::Internal(_) => "INTERNAL",
+        }
+    }
 }
 
 impl std::fmt::Display for ExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Internal(reason) => write!(f, "{reason}"),
+            Self::LocalState(reason) | Self::Internal(reason) => write!(f, "{reason}"),
         }
     }
 }
@@ -189,7 +200,7 @@ pub fn execute_stream(
             &mut stdout,
             &mut stderr,
         )
-        .map_err(|error| ExecError::Internal(error.to_string()))?;
+        .map_err(|error| ExecError::LocalState(error.to_string()))?;
     let output = process_output(stdout.body(), stdout.total(), stderr.body(), stderr.total())?;
     let ended = decide(
         client,
@@ -233,7 +244,7 @@ pub fn execute_captured(
             stdin,
             request.fresh,
         )
-        .map_err(|error| ExecError::Internal(error.to_string()))?;
+        .map_err(|error| ExecError::LocalState(error.to_string()))?;
     let (stdout_body, code) = match parse_marker(&captured.stdout, &nonce) {
         Some((body, code)) => (body.to_vec(), Some(code)),
         None => (captured.stdout.clone(), None),

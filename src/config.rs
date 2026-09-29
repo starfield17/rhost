@@ -16,7 +16,11 @@ pub const APP_NAME: &str = "rhost";
 pub struct UnsafeLocalState(pub String);
 impl std::fmt::Display for UnsafeLocalState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unsafe local rhost state: {}", self.0)
+        write!(
+            f,
+            "unsafe local rhost state: {}; set RHOST_CACHE_DIR and RHOST_STATE_DIR to writable private directories",
+            self.0
+        )
     }
 }
 impl std::error::Error for UnsafeLocalState {}

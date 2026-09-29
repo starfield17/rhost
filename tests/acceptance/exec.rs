@@ -140,6 +140,14 @@ fn a_cancelled_run_reports_the_signal_that_ended_it() -> Result<(), String> {
         "the reason must be observed, not guessed"
     );
     assert_eq!(value["error"]["retryable"], serde_json::Value::Bool(false));
+    assert_eq!(value["data"]["cleanup"]["status"], "unconfirmed");
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("inspect the remote process tree"),
+        "{value}"
+    );
     Ok(())
 }
 
@@ -229,6 +237,13 @@ fn an_unanswered_run_is_never_a_success_and_never_a_silent_zero() -> Result<(), 
         "a zero from ssh without completion is not the remote's zero"
     );
     want_code(&value, "REMOTE_EXECUTION_UNKNOWN")?;
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("inspect the remote process tree"),
+        "{value}"
+    );
     assert_eq!(value["error"]["retryable"], serde_json::Value::Bool(false));
     assert_eq!(
         value
@@ -244,6 +259,25 @@ fn an_unanswered_run_is_never_a_success_and_never_a_silent_zero() -> Result<(), 
         "an unknown exit carries no integer (WIRE-005): {}",
         value["data"]
     );
+    Ok(())
+}
+
+#[test]
+fn an_unsafe_local_control_directory_gives_a_recovery_hint() -> Result<(), String> {
+    let harness = Harness::open("unsafe-control-directory")?;
+    harness.stub("ssh", "exit 255")?;
+    let harness = harness.env("RHOST_CACHE_DIR", "/dev/null");
+    for args in [
+        vec!["exec", "gpu", "--json", "--command", "true"],
+        vec!["doctor", "gpu", "--json"],
+    ] {
+        let (outcome, value) = envelope(&harness, &args)?;
+        assert_eq!(outcome.status, 255, "{value}");
+        want_code(&value, "CONFIG_INVALID")?;
+        let message = value["error"]["message"].as_str().unwrap_or("");
+        assert!(message.contains("RHOST_CACHE_DIR"), "{value}");
+        assert!(message.contains("RHOST_STATE_DIR"), "{value}");
+    }
     Ok(())
 }
 

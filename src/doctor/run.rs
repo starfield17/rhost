@@ -32,8 +32,8 @@ pub fn run(sink: &mut Sink, client: &Client, command: &Doctor, json: bool) -> u8
     let probe = match app::probe(client, &options) {
         Ok(probe) => probe,
         Err(reason) => {
-            timer.failed("INTERNAL");
-            return Failure::new("doctor", &command.host, "INTERNAL", reason.to_string())
+            timer.failed(reason.code());
+            return Failure::new("doctor", &command.host, reason.code(), reason.to_string())
                 .deliver(sink, json);
         }
     };

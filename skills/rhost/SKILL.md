@@ -131,7 +131,8 @@ see [references/CLI.md](references/CLI.md) for examples and
 
 A timeout, cancellation, missing completion, or output-delivery failure does not
 prove a remote side effect did not happen. Inspect `data.execution` and
-`data.cleanup`, then check the operation's actual remote result before retrying.
+`data.cleanup`; when cleanup is unconfirmed, inspect the matching remote process
+tree before retrying. Then check the operation's actual remote result.
 
 Read [references/CLI.md](references/CLI.md) for command and JSON details,
 [references/RECOVERY.md](references/RECOVERY.md) after a failed call — it holds
