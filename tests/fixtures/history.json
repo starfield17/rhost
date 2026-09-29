@@ -116,5 +116,27 @@
     "mechanism_test": "tests/contracts.rs:published_v2_validator_detects_closed_object_growth",
     "conformance_test": null,
     "gap": "v4.1.0 is the documented pre-policy exception; current DTO cases are checked against its published v2 validator baseline before another producer may retain schema version 2."
+  },
+  {
+    "id": "HIST-RS-SSH-002",
+    "origin": "b421592",
+    "contract": "SSH-001",
+    "mechanism_test": "tests/acceptance/transport.rs:transport_diagnostics_are_classified_without_fabricating_completion",
+    "conformance_test": "tests/acceptance/transport.rs:a_local_ssh_permission_denial_is_visible_in_doctor_diagnostics"
+  },
+  {
+    "id": "HIST-RS-EXEC-001",
+    "origin": "b421592",
+    "contract": "EXEC-007",
+    "mechanism_test": "tests/acceptance/exec.rs:a_cancelled_run_reports_the_signal_that_ended_it",
+    "conformance_test": "tests/domain.rs:cleanup_is_not_permission_to_retry"
+  },
+  {
+    "id": "HIST-RS-FS-002",
+    "origin": "b421592",
+    "contract": "FS-005",
+    "mechanism_test": "tests/acceptance/files.rs:a_sync_reports_the_plan_the_tool_printed_and_only_deletes_when_asked",
+    "conformance_test": null,
+    "gap": "One black-box case compares preview and applied notes; there is no independent remote scenario for rsync's directory notice."
   }
 ]
