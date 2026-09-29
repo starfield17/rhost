@@ -50,6 +50,9 @@ ships in a binary minor or major release, never a patch.
   runtime dependency set. Adding a runtime dependency requires architecture
   review. Do not add another dependency manager or supply-chain tool without a
   concrete need.
+- Repository checks and the local release installer require Python 3.11+;
+  CI selects that version explicitly. The standalone installer stays a
+  single-file `curl | bash` entry whose implementation runs in Python.
 
 ## Change risk
 

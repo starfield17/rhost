@@ -128,6 +128,15 @@ def main() -> int:
             check("not on your PATH" in result.stdout and f'export PATH="{target}:' in result.stdout,
                   f"{suffix}: missing PATH advice")
         (root / "requests.log").write_text("")
+        stable = run(root, root / "stable", mode, RHOST_TEST_UNAME_S="Linux",
+                     RHOST_TEST_UNAME_M="x86_64")
+        check(stable.returncode == 0, stable.stderr)
+        requests = (root / "requests.log").read_text()
+        check("/releases/latest" in requests and "/download/v9.8.7/" in requests,
+              "stable release lookup lost")
+        if mode == "python":
+            check("api.github.com" not in requests, "stable release used the REST API")
+        (root / "requests.log").write_text("")
         pre = run(root, root / "prerelease", mode, RHOST_TEST_LATEST_FAIL="1",
                   RHOST_TEST_UNAME_S="Linux", RHOST_TEST_UNAME_M="x86_64")
         check(pre.returncode == 0, pre.stderr)
@@ -144,6 +153,16 @@ def main() -> int:
                           RHOST_TEST_UNAME_S="Unsupported", RHOST_TEST_UNAME_M="x86_64")
         check(unsupported.returncode != 0, "unsupported OS installed")
         if mode == "python":
+            (root / "requests.log").write_text("")
+            pinned = run(root, root / "pinned", mode, RHOST_VERSION="1.2.3")
+            check(pinned.returncode == 0, pinned.stderr)
+            check("/releases/latest" not in (root / "requests.log").read_text() and
+                  "api.github.com" not in (root / "requests.log").read_text(),
+                  "explicit version queried release discovery")
+            on_path = run(root, root / "bin", mode, RHOST_VERSION="1.2.3",
+                          PATH=f"{root / 'bin'}:{os.environ['PATH']}")
+            check(on_path.returncode == 0 and "not on your PATH" not in on_path.stdout,
+                  "installer warned about an installation directory already on PATH")
             limited = run(root, root / "limited", mode, RHOST_TEST_LATEST_FAIL="1",
                           RHOST_TEST_API_RATE_LIMIT="1")
             check(limited.returncode != 0 and "403" in limited.stderr and

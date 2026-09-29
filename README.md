@@ -32,7 +32,8 @@ target when a file operation runs.
 
 ## Install
 
-The release installer supports macOS and Linux on amd64 and arm64. It verifies
+The release installer requires local Python 3.11+ and supports macOS and Linux
+on amd64 and arm64. It verifies
 the downloaded binary against the published SHA-256 file before atomically
 replacing an existing installation.
 
@@ -45,6 +46,8 @@ another directory, or `RHOST_VERSION` to pin a published release. If the chosen
 directory is not on your `PATH`, the installer says so and prints the exact
 `export PATH=...` line that fixes it; a shell that is already open may need
 `rehash` (zsh) or `hash -r` (bash) afterwards.
+The default version lookup uses GitHub's stable-release redirect. If the lookup
+fails, set `RHOST_VERSION` to a known release to skip it.
 
 To build from source with Rust 1.85 or newer:
 
