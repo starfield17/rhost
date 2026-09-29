@@ -158,7 +158,7 @@ ALLOWED = {
     "exec": {"audit", "cli", "domain", "remote", "shell", "signals", "stdio",
              "transport", "wire"},
     "hosts": {"cli", "host", "wire"},
-    "connection": {"audit", "cli", "remote", "transport", "wire"},
+    "connection": {"audit", "cli", "transport", "wire"},
     "doctor": {"audit", "cli", "connection", "domain", "remote", "transport", "wire"},
     "files": {"audit", "base64", "cli", "config", "domain", "remote", "shell", "transport",
              "wire"},

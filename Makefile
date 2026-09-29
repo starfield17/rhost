@@ -7,7 +7,7 @@ export RHOST_REPO_ROOT := $(CURDIR)
 # a reproducible build does.
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE   ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-.PHONY: build build-release clean check rust-check test test-smoke stress-acceptance fmt portability structure live-suite release-contract contract-evidence agent-package install-test
+.PHONY: build build-release clean check rust-check test test-smoke stress-acceptance fmt portability structure live-suite release-contract contract-evidence agent-package install-test check-integrity
 build:
 	RHOST_BUILD_COMMIT="$(COMMIT)" RHOST_BUILD_DATE="$(DATE)" cargo build --locked --bin rhost
 # The release candidate: the same locked, optimized, provenance-stamped build
@@ -50,6 +50,9 @@ agent-package:
 	./scripts/check-agent-package.sh
 install-test:
 	./scripts/test-install.sh
+BASE ?= HEAD^
+check-integrity:
+	./scripts/check-integrity.sh $(BASE)
 test-smoke:
 	@command -v python3 >/dev/null 2>&1 || (echo "test-smoke requires python3 for the embedded remote-helper paths" >&2; exit 1)
 	cargo test --locked --test acceptance
