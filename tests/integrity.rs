@@ -26,9 +26,14 @@ impl Fixture {
             .join("scripts")
             .join("check-integrity.sh");
         let script = fixture.root.join("scripts/check-integrity.sh");
+        let python_source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("scripts")
+            .join("check-integrity.py");
+        let python_script = fixture.root.join("scripts/check-integrity.py");
         std::fs::create_dir_all(script.parent().ok_or("script has no parent")?)
             .map_err(|error| error.to_string())?;
         std::fs::copy(source, script).map_err(|error| error.to_string())?;
+        std::fs::copy(python_source, python_script).map_err(|error| error.to_string())?;
         fixture.write(
             "Makefile",
             "check: rust-check\nrust-check:\n\tcargo test --locked\n",
@@ -102,7 +107,12 @@ fn additions_cannot_hide_deleted_tests_or_assertions() -> Result<(), String> {
     let deleted = Fixture::new("deleted-test")?;
     deleted.write("tests/one.rs", "#[test] fn one() { assert!(true); }\n")?;
     deleted.commit(
-        &["Makefile", "scripts/check-integrity.sh", "tests/one.rs"],
+        &[
+            "Makefile",
+            "scripts/check-integrity.sh",
+            "scripts/check-integrity.py",
+            "tests/one.rs",
+        ],
         "baseline",
     )?;
     deleted.remove("tests/one.rs")?;
@@ -120,6 +130,7 @@ fn additions_cannot_hide_deleted_tests_or_assertions() -> Result<(), String> {
         &[
             "Makefile",
             "scripts/check-integrity.sh",
+            "scripts/check-integrity.py",
             "tests/one.rs",
             "tests/two.rs",
         ],
@@ -141,7 +152,14 @@ fn duplicate_gate_invocations_cannot_be_dropped() -> Result<(), String> {
         "Makefile",
         "check: rust-check\nrust-check:\n\tcargo test --locked\n\tcargo test --locked\n",
     )?;
-    fixture.commit(&["Makefile", "scripts/check-integrity.sh"], "baseline")?;
+    fixture.commit(
+        &[
+            "Makefile",
+            "scripts/check-integrity.sh",
+            "scripts/check-integrity.py",
+        ],
+        "baseline",
+    )?;
     fixture.write(
         "Makefile",
         "check: rust-check\nrust-check:\n\tcargo test --locked\n",

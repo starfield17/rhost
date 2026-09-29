@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Compare each commit with its parent for measurement losses."""
+import collections
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+os.chdir(ROOT)
+args = sys.argv[1:]
+VERBOSE = bool(args and args[0] in ("-v", "--verbose"))
+if VERBOSE:
+    args.pop(0)
+if len(args) != 1:
+    print(f"usage: {sys.argv[0]} [-v] <BASE>", file=sys.stderr)
+    sys.exit(2)
+BASE = args[0]
+if subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{BASE}^{{commit}}"], capture_output=True).returncode:
+    print(f"check-integrity: BASE '{BASE}' is not a commit in this repository", file=sys.stderr)
+    sys.exit(2)
+
+HITS = 0
+DECLARED = 0
+
+
+def git(*args):
+    return subprocess.run(["git", *args], capture_output=True, text=True).stdout
+
+
+def report(message):
+    global HITS
+    print(message)
+    HITS += 1
+
+
+def tracked(ref, pattern):
+    out = git("ls-tree", "-r", "--name-only", ref)
+    return [line for line in out.splitlines()
+            if re.search(pattern, line) and line.endswith(".rs")]
+
+
+def count(ref, paths, pattern):
+    total = 0
+    for path in paths:
+        blob = git("show", f"{ref}:{path}")
+        total += len(re.findall(pattern, blob))
+    return total
+
+
+def counts(ref):
+    sources = tracked(ref, r"^(tests/|src/)")
+    return {
+        "test_files": sum(path.startswith("tests/") for path in sources),
+        "test_attrs": count(ref, sources, r"#\[test\]"),
+        "assertions": count(ref, sources, r"\bassert(?:_eq|_ne|_matches)?!|\bpanic!\s*\("),
+        "ignores": count(ref, sources, r"#\[ignore"),
+    }
+
+
+def file_counts(ref, path):
+    blob = git("show", f"{ref}:{path}")
+    return {
+        "test_attrs": len(re.findall(r"#\[test\]", blob)),
+        "assertions": len(re.findall(r"\bassert(?:_eq|_ne|_matches)?!|\bpanic!\s*\(", blob)),
+        "ignores": len(re.findall(r"#\[ignore", blob)),
+    }
+
+
+def changed_tests(before_ref, after_ref):
+    """Compare each changed test-bearing file, including recognized renames."""
+    found = []
+    diff = git("diff", "--name-status", "-M", before_ref, after_ref,
+               "--", "tests", "src")
+    for line in diff.splitlines():
+        parts = line.split("\t")
+        status = parts[0]
+        old = parts[1]
+        new = parts[2] if status.startswith("R") else old
+        if status.startswith("D"):
+            if old.startswith("tests/") and old.endswith(".rs"):
+                found.append(f"test file deleted: {old}")
+            continue
+        if status.startswith("R") and old.startswith("tests/") and not new.startswith("tests/"):
+            found.append(f"test file moved out of tests/: {old} -> {new}")
+            continue
+        if not old.endswith(".rs") or not new.endswith(".rs") or status.startswith("A"):
+            continue
+        before = file_counts(before_ref, old)
+        if not old.startswith("tests/") and before["test_attrs"] == 0:
+            continue
+        after = file_counts(after_ref, new)
+        for label, key in (("`#[test]` attributes", "test_attrs"),
+                           ("assertions", "assertions")):
+            if after[key] < before[key]:
+                found.append(f"{new}: {label}: {before[key]} -> {after[key]}")
+        if after["ignores"] > before["ignores"]:
+            found.append(f"{new}: `#[ignore]` attributes: "
+                         f"{before['ignores']} -> {after['ignores']}")
+    return found
+
+
+# The gate itself: `make check` may gain prerequisites, never lose one.
+def check_prerequisites(ref):
+    makefile = git("show", f"{ref}:Makefile")
+    match = re.search(r"^check:(.*)$", makefile, re.M)
+    return set(match.group(1).split()) if match else set()
+
+
+# A runner or selector that narrows stops covering what it used to. Compare the
+# gate-bearing lines as multisets so dropping one of two copies is visible.
+PATTERNS = (r"cargo\s+(?:test|nextest)", r"make\s+(?:check|test-smoke)",
+            r"\./scripts/check-[a-z-]+\.sh")
+def gate_lines(ref, gate_paths):
+    lines = collections.Counter()
+    for path in gate_paths:
+        if subprocess.run(["git", "cat-file", "-e", f"{ref}:{path}"],
+                          capture_output=True).returncode:
+            continue
+        for line in git("show", f"{ref}:{path}").splitlines():
+            stripped = line.strip()
+            # A comment may name a gate without running it; only real
+            # invocations are compared.
+            if stripped.startswith("#"):
+                continue
+            if any(re.search(p, stripped) for p in PATTERNS):
+                lines[re.sub(r"\s+", " ", stripped)] += 1
+    return lines
+
+
+def findings(before_ref, after_ref):
+    found = changed_tests(before_ref, after_ref)
+    before, after = counts(before_ref), counts(after_ref)
+    if VERBOSE:
+        print(f"  {before_ref[:10]}: {before}")
+        print(f"  {after_ref[:10]}: {after}")
+    for label, key in (("test files", "test_files"),
+                       ("`#[test]` attributes", "test_attrs"),
+                       ("assertion macro calls", "assertions")):
+        if after[key] < before[key]:
+            found.append(f"{label}: {before[key]} -> {after[key]}")
+    if after["ignores"] > before["ignores"]:
+        found.append(f"`#[ignore]` attributes: {before['ignores']} -> {after['ignores']}")
+    lost = check_prerequisites(before_ref) - check_prerequisites(after_ref)
+    if lost:
+        found.append(f"`make check` prerequisites removed: {' '.join(sorted(lost))}")
+    gate_paths = [p for p in git("ls-tree", "-r", "--name-only", before_ref).splitlines()
+                  if re.search(r"^(Makefile|scripts/check-.*\.(?:sh|py)|\.github/workflows/.*\.ya?ml)$", p)]
+    lost_lines = gate_lines(before_ref, gate_paths) - gate_lines(after_ref, gate_paths)
+    for line, lost_count in sorted(lost_lines.items()):
+        found.append(f"gate invocation removed or narrowed ({lost_count}): {line}")
+    return found
+
+
+# Check each actual change, so a later implementation commit does not invalidate
+# a separately reviewed GateChange, and additions cannot hide an earlier drop.
+# Merge commits repeat their constituent changes; their non-merge ancestors are
+# checked individually. The repository uses a linear release history today.
+for commit in git("rev-list", "--reverse", f"{BASE}..HEAD").splitlines():
+    parents = git("rev-list", "--parents", "-n", "1", commit).split()[1:]
+    if len(parents) != 1:
+        continue
+    change = findings(parents[0], commit)
+    if not change:
+        continue
+    message = git("log", "-1", "--format=%B", commit)
+    declared = any(re.match(r"^GateChange: .+", line) for line in message.splitlines())
+    src_touched = bool(git("diff", "--name-only", parents[0], commit, "--", "src").strip())
+    if declared and not src_touched:
+        DECLARED += len(change)
+        if VERBOSE:
+            print(f"  {commit[:10]}: {len(change)} declared measurement change(s)")
+    else:
+        for detail in change:
+            report(f"{commit[:10]}: {detail}")
+
+if HITS:
+    print("""
+Found measurement-integrity violations.
+
+An implementation change may not be made green by removing or narrowing what
+measures it (AGENTS.md §9). If the measurement is genuinely wrong, land that
+acceptance change first, on its own, with a `GateChange:` trailer in the commit
+message. See docs/MAINTENANCE.md.""", file=sys.stderr)
+    sys.exit(1)
+
+after = counts("HEAD")
+print(f"check-integrity: OK ({after['test_attrs']} tests, "
+      f"{after['assertions']} assertions, {DECLARED} declared measurement change(s))")
