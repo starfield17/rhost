@@ -122,6 +122,28 @@ mod tests {
     }
 
     #[test]
+    fn an_output_flood_does_not_hide_the_deadline() {
+        let args = vec!["-c".into(), "exec cat /dev/zero".into()];
+        let flooding = Spec {
+            program: "/bin/sh",
+            args: &args,
+            stdin: StdinSource::Closed,
+            deadline: Some(Instant::now() + Duration::from_millis(200)),
+            cancelled: &never,
+            group: true,
+        };
+        let mut stdout = Tap::new(None, 0, Keep::Nothing);
+        let mut stderr = Tap::new(None, 0, Keep::Nothing);
+        let run = run(&flooding, &mut stdout, &mut stderr);
+        assert!(
+            run.timed_out,
+            "continuous stdout must not hide the deadline"
+        );
+        assert!(run.duration < Duration::from_secs(5), "{:?}", run.duration);
+        assert!(stdout.total() > 0, "the child produced no output");
+    }
+
+    #[test]
     fn cancellation_stops_the_child() {
         let args = vec!["-c".into(), "sleep 30".into()];
         let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));

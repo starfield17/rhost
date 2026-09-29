@@ -299,3 +299,34 @@ fn settle(
         failure,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::channel;
+
+    struct Count(usize);
+
+    impl Stream for Count {
+        fn feed(&mut self, bytes: &[u8]) -> io::Result<()> {
+            self.0 += bytes.len();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_full_stream_yields_to_the_process_loop() {
+        let (sender, receiver) = channel();
+        for _ in 0..QUEUE * 2 {
+            assert!(sender.send(Chunk::Data(vec![b'x'])).is_ok());
+        }
+        let mut slot = Some(receiver);
+        let mut sink = Count(0);
+        let mut failure = None;
+        pump_stream(&mut slot, &mut sink, &mut failure);
+        assert_eq!(sink.0, QUEUE, "a stream must yield before draining forever");
+        assert!(failure.is_none());
+        pump_stream(&mut slot, &mut sink, &mut failure);
+        assert_eq!(sink.0, QUEUE * 2);
+    }
+}

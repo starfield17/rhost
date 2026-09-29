@@ -186,6 +186,36 @@ fn invalid_utf8_does_not_hide_valid_audit_entries_or_change_the_filtered_tail() 
 }
 
 #[test]
+fn an_oversized_audit_line_does_not_hide_later_entries() -> Result<(), String> {
+    let harness = Harness::open("audit-oversized-line")?;
+    let path = harness.path("state/v4/audit.jsonl");
+    std::fs::create_dir_all(path.parent().ok_or("audit path has no parent")?)
+        .map_err(|error| fail("audit directory", error))?;
+    let oversized = serde_json::json!({
+        "time": "now",
+        "host": "gpu",
+        "operation": "exec",
+        "duration_ms": 1,
+        "ok": true,
+        "command_summary": "x".repeat(1024 * 1024),
+    });
+    let valid = serde_json::json!({
+        "time": "later",
+        "host": "gpu",
+        "operation": "doctor",
+        "duration_ms": 2,
+        "ok": true,
+    });
+    let body = format!("{oversized}\n{valid}\n");
+    std::fs::write(&path, body).map_err(|error| fail("audit fixture", error))?;
+    let (outcome, listed) = envelope(&harness, &["audit", "--json", "--limit", "0"])?;
+    assert_eq!(outcome.status, 0);
+    assert_eq!(entry_count(&listed), 1);
+    assert_eq!(listed["data"]["entries"][0]["operation"], "doctor");
+    Ok(())
+}
+
+#[test]
 fn audit_never_records_environment_values() -> Result<(), String> {
     let harness = Harness::open("audit-redaction")?;
     harness.stub("ssh", DENIED)?;

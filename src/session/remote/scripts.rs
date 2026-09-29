@@ -112,6 +112,20 @@ mod tests {
     }
 
     #[test]
+    fn fractional_session_timeouts_do_not_end_before_the_requested_duration() {
+        let token = "a".repeat(32);
+        let exec_script = exec("work", "true", Duration::from_millis(1500), &token);
+        let recover_script = recover("work", Duration::from_millis(1500));
+        assert!(exec_script.contains("while [ \"$SECONDS\" -lt 2 ]"));
+        assert!(recover_script.contains("while [ \"$SECONDS\" -lt 2 ]"));
+        assert!(
+            exec("work", "true", Duration::from_millis(500), &token)
+                .contains("while [ \"$SECONDS\" -lt 1 ]")
+        );
+        assert!(recover("work", Duration::from_secs(2)).contains("while [ \"$SECONDS\" -lt 2 ]"));
+    }
+
+    #[test]
     fn create_waits_for_readiness_and_refuses_a_duplicate_name() {
         let script = create(&meta(), "bash --noprofile --norc -i");
         let integration = integration_script("s_ab12");
