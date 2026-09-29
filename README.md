@@ -41,11 +41,14 @@ replacing an existing installation.
 curl -fsSL https://raw.githubusercontent.com/starfield17/rhost/main/scripts/install.sh | bash
 ```
 
-By default the binary goes to `~/.local/bin`. Set `RHOST_INSTALL_DIR` to choose
-another directory, or `RHOST_VERSION` to pin a published release. If the chosen
-directory is not on your `PATH`, the installer says so and prints the exact
-`export PATH=...` line that fixes it; a shell that is already open may need
-`rehash` (zsh) or `hash -r` (bash) afterwards.
+On macOS, the installer first looks for a writable standalone `rhost` already
+selected by `PATH`. Otherwise it uses a writable Homebrew `bin` directory on
+`PATH` when one has no existing `rhost`. On Linux, or when neither macOS location
+is suitable, it uses `~/.local/bin`. Set `RHOST_INSTALL_DIR` to choose a directory
+explicitly, or `RHOST_VERSION` to pin a published release. After installation,
+the script checks which `rhost` your `PATH` selects and prints a correction if
+another copy still takes precedence. An open shell may need `rehash` (zsh) or
+`hash -r` (bash) afterwards.
 The default version lookup uses GitHub's stable-release redirect. If the lookup
 fails, set `RHOST_VERSION` to a known release to skip it.
 

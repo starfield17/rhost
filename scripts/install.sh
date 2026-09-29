@@ -10,6 +10,8 @@ import os
 from pathlib import Path
 import platform
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -68,6 +70,68 @@ def download(url, destination, digest=None):
                 digest.update(chunk)
 
 
+def active_standalone_rhost():
+    found = shutil.which("rhost")
+    if not found:
+        return None
+    path = Path(found).absolute()
+    if path.is_symlink() or not path.is_file():
+        return None
+    if not os.access(path, os.W_OK) or not os.access(path.parent, os.W_OK):
+        return None
+    try:
+        result = subprocess.run([str(path), "version", "--json"], capture_output=True,
+                                text=True, timeout=5, check=False)
+        answer = json.loads(result.stdout)
+    except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired):
+        return None
+    if (result.returncode == 0 and isinstance(answer, dict) and
+            answer.get("schema_version") == 2 and
+            answer.get("operation") == "version" and answer.get("ok") is True and
+            isinstance(answer.get("data"), dict) and
+            isinstance(answer["data"].get("version"), str)):
+        return path
+    return None
+
+
+def homebrew_bin():
+    brew = shutil.which("brew")
+    if not brew:
+        return None
+    try:
+        result = subprocess.run([brew, "--prefix"], capture_output=True,
+                                text=True, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    prefix = result.stdout.strip()
+    if result.returncode != 0 or not prefix or "\n" in prefix:
+        return None
+    directory = Path(prefix) / "bin"
+    if not directory.is_absolute() or not directory.is_dir() or not os.access(directory, os.W_OK):
+        return None
+    if not any(Path(entry).expanduser().absolute() == directory for entry in
+               os.environ.get("PATH", "").split(os.pathsep) if entry):
+        return None
+    occupant = directory / "rhost"
+    if occupant.exists() or occupant.is_symlink():
+        return None
+    return directory
+
+
+def install_directory(os_name):
+    explicit = os.environ.get("RHOST_INSTALL_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+    if os_name == "darwin":
+        active = active_standalone_rhost()
+        if active:
+            return active.parent
+        available = homebrew_bin()
+        if available:
+            return available
+    return Path.home() / ".local/bin"
+
+
 def main():
     os_name = OS_MAP.get(platform.system())
     if os_name is None:
@@ -80,7 +144,7 @@ def main():
         raise RuntimeError(f"invalid RHOST_VERSION: {version}")
     asset = f"rhost_{version}_{os_name}_{arch}"
     url = f"https://github.com/{REPO}/releases/download/v{version}/{asset}"
-    install_dir = Path(os.environ.get("RHOST_INSTALL_DIR") or Path.home() / ".local/bin").expanduser()
+    install_dir = install_directory(os_name)
     install_dir.mkdir(parents=True, exist_ok=True)
     print(f"downloading rhost {version} for {os_name}/{arch} ...")
     with tempfile.TemporaryDirectory(prefix=".rhost-install.", dir=install_dir) as temporary:
@@ -99,9 +163,18 @@ def main():
             raise RuntimeError("SHA-256 verification failed; existing installation was preserved")
         binary.chmod(0o755)
         os.replace(binary, install_dir / "rhost")
-    print(f"installed {install_dir / 'rhost'}")
-    if str(install_dir) not in os.environ.get("PATH", "").split(os.pathsep):
-        print(f"note: {install_dir} is not on your PATH, so 'rhost' does not resolve yet")
+    installed = install_dir / "rhost"
+    print(f"installed {installed}")
+    selected = shutil.which("rhost")
+    try:
+        visible = selected is not None and os.path.samefile(selected, installed)
+    except OSError:
+        visible = False
+    if not visible:
+        if selected:
+            print(f"note: 'rhost' still resolves to {selected}, not {installed}")
+        else:
+            print(f"note: {install_dir} is not on your PATH, so 'rhost' does not resolve yet")
         print(f'      make it resolve:  export PATH="{install_dir}:$PATH"  (put it in your shell startup file)')
         print("      refresh an open shell:  rehash  (zsh) or  hash -r  (bash)")
         print("      or install into a directory already on your PATH:  RHOST_INSTALL_DIR=<that-directory> ./scripts/install.sh")
