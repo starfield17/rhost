@@ -2,6 +2,7 @@
 
 use super::shared::{
     FLOCK_PREFLIGHT, MARKER_SCAN_FUNC, RESOLVE_FUNC, SHELL_OF_FUNC, TMUX_PREFLIGHT, preamble,
+    timeout_seconds,
 };
 use crate::base64;
 use crate::session::DEFAULT_SHELL;
@@ -18,7 +19,7 @@ use std::time::Duration;
 pub fn exec(name_or_id: &str, command: &str, timeout: Duration, token: &str) -> String {
     let payload = format!("{{\n{command}\ncommand printf '\\033]133;R;{token};%d\\007' \"$?\"\n}}");
     let command_b64 = base64::encode(payload.as_bytes());
-    let timeout_sec = timeout.as_secs().max(1);
+    let timeout_sec = timeout_seconds(timeout);
 
     let mut out = String::new();
     out.push_str(&preamble());

@@ -3,6 +3,7 @@
 
 use super::shared::{
     FLOCK_PREFLIGHT, MARKER_SCAN_FUNC, RESOLVE_FUNC, SHELL_OF_FUNC, TMUX_PREFLIGHT, preamble,
+    timeout_seconds,
 };
 use crate::session::DEFAULT_SHELL;
 use crate::shell;
@@ -37,7 +38,7 @@ done
 /// fresh marker. A REPL that catches Ctrl-C stays busy and is reported as such:
 /// recover never types an exit command into a program it did not start.
 pub fn recover(name_or_id: &str, timeout: Duration) -> String {
-    let timeout_sec = timeout.as_secs().max(1);
+    let timeout_sec = timeout_seconds(timeout);
     let mut out = String::new();
     out.push_str(&preamble());
     out.push_str(RESOLVE_FUNC);

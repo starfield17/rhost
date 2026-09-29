@@ -121,38 +121,39 @@ fn stop(child: &mut std::process::Child, group: bool) {
     let _ = child.kill();
 }
 
-/// Moves everything one reader has already produced into its sink.
+/// Moves a bounded batch into one sink so a busy stream cannot hide a deadline.
 fn pump_stream(
     slot: &mut Option<std::sync::mpsc::Receiver<Chunk>>,
     sink: &mut dyn Stream,
     failure: &mut Option<RunFailure>,
-) {
+) -> bool {
     let Some(receiver) = slot.as_ref() else {
-        return;
+        return false;
     };
-    loop {
+    for _ in 0..QUEUE {
         match receiver.try_recv() {
             Ok(Chunk::Data(bytes)) => {
                 if let Err(error) = sink.feed(&bytes) {
                     if failure.is_none() {
                         *failure = Some(RunFailure::Stream(error));
                     }
-                    return;
+                    return false;
                 }
             }
             Ok(Chunk::Failed(text)) => {
                 if failure.is_none() {
                     *failure = Some(RunFailure::Stream(io::Error::other(text)));
                 }
-                return;
+                return false;
             }
-            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Empty) => return false,
             Err(TryRecvError::Disconnected) => {
                 *slot = None;
-                return;
+                return false;
             }
         }
     }
+    true
 }
 
 /// Runs one local process to completion, deadline, cancellation, or failure,
@@ -216,8 +217,8 @@ pub fn run(spec: &Spec<'_>, stdout: &mut dyn Stream, stderr: &mut dyn Stream) ->
     let mut killing = false;
 
     loop {
-        pump_stream(&mut out_slot, stdout, &mut failure);
-        pump_stream(&mut err_slot, stderr, &mut failure);
+        let out_busy = pump_stream(&mut out_slot, stdout, &mut failure);
+        let err_busy = pump_stream(&mut err_slot, stderr, &mut failure);
         let stopped = failure.is_some();
 
         if exit.is_none() {
@@ -267,7 +268,11 @@ pub fn run(spec: &Spec<'_>, stdout: &mut dyn Stream, stderr: &mut dyn Stream) ->
         if stop_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             break;
         }
-        thread::sleep(POLL);
+        if out_busy || err_busy {
+            thread::yield_now();
+        } else {
+            thread::sleep(POLL);
+        }
     }
 
     if let Err(error) = stdout.finish() {

@@ -21,6 +21,7 @@ pub const FILE_NAME: &str = "audit.jsonl";
 /// A command summary answers "what ran", not "reproduce this argv", so it is one
 /// bounded line.
 const MAX_COMMAND: usize = 200;
+const MAX_AUDIT_LINE: usize = 1024 * 1024;
 
 /// One audited operation. The JSON field names are a stable surface.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,6 +170,35 @@ pub fn read(path: &Path) -> io::Result<Vec<Entry>> {
     read_selected(path, "", 0)
 }
 
+/// Consume one physical line while retaining at most the accepted record size.
+/// An oversized line is discarded through its newline, leaving the next intact.
+fn read_bounded_line(reader: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<bool> {
+    line.clear();
+    let mut saw_bytes = false;
+    let mut oversized = false;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            return Ok(saw_bytes);
+        }
+        saw_bytes = true;
+        let end = available.iter().position(|byte| *byte == b'\n');
+        let consumed = end.map_or(available.len(), |index| index + 1);
+        if !oversized {
+            if line.len() + consumed <= MAX_AUDIT_LINE {
+                line.extend_from_slice(&available[..consumed]);
+            } else {
+                line.clear();
+                oversized = true;
+            }
+        }
+        reader.consume(consumed);
+        if end.is_some() {
+            return Ok(true);
+        }
+    }
+}
+
 /// Reads matching entries in file order, retaining only the requested tail.
 /// Invalid JSON or UTF-8 damages one line, not the rest of the trail.
 pub(crate) fn read_selected(path: &Path, host: &str, limit: usize) -> io::Result<Vec<Entry>> {
@@ -182,8 +212,7 @@ pub(crate) fn read_selected(path: &Path, host: &str, limit: usize) -> io::Result
     let mut all = Vec::new();
     let mut tail = VecDeque::new();
     loop {
-        line.clear();
-        if reader.read_until(b'\n', &mut line)? == 0 {
+        if !read_bounded_line(&mut reader, &mut line)? {
             break;
         }
         let Ok(entry) = serde_json::from_slice::<Entry>(&line) else {

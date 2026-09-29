@@ -6,6 +6,15 @@
 //! could find again.
 
 use crate::transport::DEFAULT_REMOTE_STATE_DIR;
+use std::time::Duration;
+
+/// Remote shell deadlines use whole seconds; round a fractional request up.
+pub(super) fn timeout_seconds(timeout: Duration) -> u64 {
+    timeout
+        .as_secs()
+        .saturating_add(u64::from(timeout.subsec_nanos() != 0))
+        .max(1)
+}
 
 /// The remote state root every script resolves the same way. `RHOST_REMOTE_STATE`
 /// overrides it; the default is this major version's own directory, so a session
