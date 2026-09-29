@@ -43,7 +43,7 @@ if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
 fi
 
 VERBOSE=$verbose python3 - "$BASE" <<'PY'
-import os, re, subprocess, sys
+import collections, os, re, subprocess, sys
 
 BASE = sys.argv[1]
 VERBOSE = os.environ.get("VERBOSE") == "1"
@@ -76,13 +76,55 @@ def count(ref, paths, pattern):
 
 
 def counts(ref):
-    tests = tracked(ref, r"^(tests/|src/)")
+    sources = tracked(ref, r"^(tests/|src/)")
     return {
-        "test_files": len(tests),
-        "test_attrs": count(ref, tests, r"#\[test\]"),
-        "assertions": count(ref, tests, r"\bassert(?:_eq|_ne|_matches)?!|\bpanic!\s*\("),
-        "ignores": count(ref, tests, r"#\[ignore"),
+        "test_files": sum(path.startswith("tests/") for path in sources),
+        "test_attrs": count(ref, sources, r"#\[test\]"),
+        "assertions": count(ref, sources, r"\bassert(?:_eq|_ne|_matches)?!|\bpanic!\s*\("),
+        "ignores": count(ref, sources, r"#\[ignore"),
     }
+
+
+def file_counts(ref, path):
+    blob = git("show", f"{ref}:{path}")
+    return {
+        "test_attrs": len(re.findall(r"#\[test\]", blob)),
+        "assertions": len(re.findall(r"\bassert(?:_eq|_ne|_matches)?!|\bpanic!\s*\(", blob)),
+        "ignores": len(re.findall(r"#\[ignore", blob)),
+    }
+
+
+def changed_tests(before_ref, after_ref):
+    """Compare each changed test-bearing file, including recognized renames."""
+    found = []
+    diff = git("diff", "--name-status", "-M", before_ref, after_ref,
+               "--", "tests", "src")
+    for line in diff.splitlines():
+        parts = line.split("\t")
+        status = parts[0]
+        old = parts[1]
+        new = parts[2] if status.startswith("R") else old
+        if status.startswith("D"):
+            if old.startswith("tests/") and old.endswith(".rs"):
+                found.append(f"test file deleted: {old}")
+            continue
+        if status.startswith("R") and old.startswith("tests/") and not new.startswith("tests/"):
+            found.append(f"test file moved out of tests/: {old} -> {new}")
+            continue
+        if not old.endswith(".rs") or not new.endswith(".rs") or status.startswith("A"):
+            continue
+        before = file_counts(before_ref, old)
+        if not old.startswith("tests/") and before["test_attrs"] == 0:
+            continue
+        after = file_counts(after_ref, new)
+        for label, key in (("`#[test]` attributes", "test_attrs"),
+                           ("assertions", "assertions")):
+            if after[key] < before[key]:
+                found.append(f"{new}: {label}: {before[key]} -> {after[key]}")
+        if after["ignores"] > before["ignores"]:
+            found.append(f"{new}: `#[ignore]` attributes: "
+                         f"{before['ignores']} -> {after['ignores']}")
+    return found
 
 
 # The gate itself: `make check` may gain prerequisites, never lose one.
@@ -97,7 +139,7 @@ def check_prerequisites(ref):
 PATTERNS = (r"cargo\s+(?:test|nextest)", r"make\s+(?:check|test-smoke)",
             r"\./scripts/check-[a-z-]+\.sh")
 def gate_lines(ref, gate_paths):
-    lines = set()
+    lines = collections.Counter()
     for path in gate_paths:
         if subprocess.run(["git", "cat-file", "-e", f"{ref}:{path}"],
                           capture_output=True).returncode:
@@ -109,12 +151,12 @@ def gate_lines(ref, gate_paths):
             if stripped.startswith("#"):
                 continue
             if any(re.search(p, stripped) for p in PATTERNS):
-                lines.add(re.sub(r"\s+", " ", stripped))
+                lines[re.sub(r"\s+", " ", stripped)] += 1
     return lines
 
 
 def findings(before_ref, after_ref):
-    found = []
+    found = changed_tests(before_ref, after_ref)
     before, after = counts(before_ref), counts(after_ref)
     if VERBOSE:
         print(f"  {before_ref[:10]}: {before}")
@@ -131,8 +173,9 @@ def findings(before_ref, after_ref):
         found.append(f"`make check` prerequisites removed: {' '.join(sorted(lost))}")
     gate_paths = [p for p in git("ls-tree", "-r", "--name-only", before_ref).splitlines()
                   if re.search(r"^(Makefile|scripts/check-.*\.sh|\.github/workflows/.*\.ya?ml)$", p)]
-    for line in sorted(gate_lines(before_ref, gate_paths) - gate_lines(after_ref, gate_paths)):
-        found.append(f"gate invocation removed or narrowed: {line}")
+    lost_lines = gate_lines(before_ref, gate_paths) - gate_lines(after_ref, gate_paths)
+    for line, lost_count in sorted(lost_lines.items()):
+        found.append(f"gate invocation removed or narrowed ({lost_count}): {line}")
     return found
 
 
