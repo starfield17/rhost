@@ -7,8 +7,8 @@
 //! public envelope; this oracle proves the helper's local semantics.
 
 use crate::remote_fs_support::{
-    ALPHA, GAMMA, X, ask, assert_no_write_temp, create, expect_error, mode, path_text, read_bytes,
-    sha256_hex,
+    ALPHA, GAMMA, X, ask, ask_within, assert_no_write_temp, create, expect_error, mkfifo, mode,
+    path_text, read_bytes, sha256_hex,
 };
 use crate::support::{Harness, fail, python3_available};
 use serde_json::{Value, json};
@@ -99,6 +99,25 @@ fn read_pages_bounded_utf8_text_with_whole_file_identity() -> Result<(), String>
         json!({"op": "read", "path": invalid, "max_bytes": 1024}),
         "INVALID_TEXT",
     )
+}
+
+#[test]
+fn reading_a_pipe_is_refused_instead_of_blocking() -> Result<(), String> {
+    let harness = Harness::open("fs-helper-pipe")?;
+    if !python3_available() {
+        return Ok(());
+    }
+    // A FIFO with no writer never completes a blocking `open`; the helper has to
+    // report the non-regular target, not wait on it. The bounded ask turns a
+    // regression into a failed assertion rather than a stalled suite.
+    let fifo = mkfifo(&harness, "read/pipe")?;
+    let answer = ask_within(
+        &harness,
+        json!({"op": "read", "path": fifo, "start": 1, "lines": 10, "max_bytes": 1024}),
+        std::time::Duration::from_secs(10),
+    )?;
+    assert_eq!(answer["error"], json!("INVALID_TARGET"), "{answer}");
+    Ok(())
 }
 
 #[test]

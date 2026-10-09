@@ -28,9 +28,14 @@ pub(crate) fn session_list(sink: &mut Sink, rows: &[ops::Info]) {
 }
 
 /// Terminal output goes to stdout as-is, so `session read ... > file` stays
-/// clean; the envelope carries the same bytes plus the cursor.
-pub(crate) fn session_output(sink: &mut Sink, content: &str) {
+/// clean; the envelope carries the same bytes plus the cursor. A bounded capture
+/// says so on stderr, because the bytes on stdout can no longer speak for
+/// themselves (SESSION-012).
+pub(crate) fn session_output(sink: &mut Sink, content: &str, truncated: bool) {
     sink.text(content);
+    if truncated {
+        warn("session output was truncated; the complete log remains readable with session read");
+    }
 }
 
 /// A missing name or cwd reads as a dash rather than as an empty column.

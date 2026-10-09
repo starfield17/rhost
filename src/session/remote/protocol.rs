@@ -105,6 +105,10 @@ pub enum ExecResult {
         /// The raw terminal bytes between the start of this command and its
         /// marker, before any presentation-layer stripping.
         output: Vec<u8>,
+        /// The source byte count the helper reported for that segment. It can be
+        /// larger than `output.len()`, which is how a bounded capture states
+        /// truncation instead of the transport slicing the base64 line.
+        source_bytes: u64,
         exit_code: u8,
     },
     Failed {
@@ -204,11 +208,14 @@ pub fn parse_exec(stdout: &str, expected_token: &str) -> ExecResult {
     let mut tokens: Vec<&str> = Vec::new();
     let mut exits: Vec<&str> = Vec::new();
     let mut outputs: Vec<&str> = Vec::new();
+    let mut output_bytes: Vec<&str> = Vec::new();
     for line in stdout.lines() {
         if let Some(value) = line.strip_prefix("RHOST_TOKEN=") {
             tokens.push(value);
         } else if let Some(value) = line.strip_prefix("RHOST_EXIT=") {
             exits.push(value);
+        } else if let Some(value) = line.strip_prefix("RHOST_OUTPUT_BYTES=") {
+            output_bytes.push(value);
         } else if let Some(value) = line.strip_prefix("RHOST_OUTPUT=") {
             outputs.push(value);
         } else if let Some(value) = line.strip_prefix("RHOST_ID=") {
@@ -225,8 +232,12 @@ pub fn parse_exec(stdout: &str, expected_token: &str) -> ExecResult {
     let Some(id) = id else {
         return protocol_failure(None);
     };
-    let ([token], [exit], [output]) = (tokens.as_slice(), exits.as_slice(), outputs.as_slice())
-    else {
+    let ([token], [exit], [output], [source]) = (
+        tokens.as_slice(),
+        exits.as_slice(),
+        outputs.as_slice(),
+        output_bytes.as_slice(),
+    ) else {
         return protocol_failure(Some(id));
     };
     if *token != expected_token {
@@ -235,12 +246,21 @@ pub fn parse_exec(stdout: &str, expected_token: &str) -> ExecResult {
     let Some(exit_code) = canonical_exit(exit) else {
         return protocol_failure(Some(id));
     };
+    let Some(source_bytes) = canonical_count(source) else {
+        return protocol_failure(Some(id));
+    };
     let Some(output) = base64::decode(output.trim()) else {
         return protocol_failure(Some(id));
     };
+    // The decoded bytes are a prefix of the reported source; a count smaller
+    // than what was decoded contradicts the answer.
+    if source_bytes < output.len() as u64 {
+        return protocol_failure(Some(id));
+    }
     ExecResult::Completed {
         id,
         output,
+        source_bytes,
         exit_code,
     }
 }
@@ -266,6 +286,15 @@ fn canonical_exit(text: &str) -> Option<u8> {
         return None;
     }
     Some(code as u8)
+}
+
+/// A source byte count has to be written as a plain nonempty decimal, so `+4`,
+/// `04` or `-1` are the helper being wrong rather than a size to trust.
+fn canonical_count(text: &str) -> Option<u64> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse().ok()
 }
 
 /// Parses `session read` output. Each cursor field must appear exactly once and

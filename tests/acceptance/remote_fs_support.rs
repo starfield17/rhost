@@ -15,7 +15,7 @@ use crate::support::{Harness, fail};
 const PROGRAM: &str = include_str!("../../src/files/backend/remote_fs.py");
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -66,6 +66,103 @@ pub(crate) fn ask(harness: &Harness, request: Value) -> Result<Value, String> {
             ),
         )
     })
+}
+
+/// Like [`ask`], but fails instead of hanging when the helper has not answered
+/// within `limit`. A regression that makes the helper block on a target (a FIFO
+/// with no writer) must fail this test, never stall the whole suite.
+pub(crate) fn ask_within(
+    harness: &Harness,
+    request: Value,
+    limit: std::time::Duration,
+) -> Result<Value, String> {
+    let payload = serde_json::to_vec(&request).map_err(|error| fail("encode request", error))?;
+    let mut child = Command::new("python3")
+        .arg("-c")
+        .arg(PROGRAM)
+        .env("HOME", harness.path("home"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| fail("spawn embedded helper", error))?;
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "the helper has no stdin".to_string())?;
+        stdin
+            .write_all(&payload)
+            .map_err(|error| fail("send request", error))?;
+    }
+    // The helper reads stdin to EOF before it does anything, so the write end has
+    // to close here; `wait_with_output` does this for `ask`, but this helper
+    // polls the child itself.
+    drop(child.stdin.take());
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "the helper has no stdout".to_string())?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "the helper has no stderr".to_string())?;
+    let out_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stdout.read_to_end(&mut bytes);
+        bytes
+    });
+    let err_reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let _ = stderr.read_to_end(&mut bytes);
+        bytes
+    });
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        match child
+            .try_wait()
+            .map_err(|error| fail("wait for helper", error))?
+        {
+            Some(_) => break,
+            None if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = out_reader.join();
+                let _ = err_reader.join();
+                return Err("the helper did not answer before the deadline".to_string());
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+    let stdout = out_reader
+        .join()
+        .map_err(|_| "the helper stdout reader panicked".to_string())?;
+    let stderr = err_reader
+        .join()
+        .map_err(|_| "the helper stderr reader panicked".to_string())?;
+    serde_json::from_slice(&stdout).map_err(|error| {
+        fail(
+            "helper stdout is not one JSON answer",
+            format!("{error}; stderr={}", String::from_utf8_lossy(&stderr)),
+        )
+    })
+}
+
+/// Creates a FIFO, whose read end blocks until a writer appears unless the
+/// opener asks for non-blocking mode.
+pub(crate) fn mkfifo(harness: &Harness, relative: &str) -> Result<String, String> {
+    let path = harness.path(relative);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| fail("prepare fifo", error))?;
+    }
+    let status = Command::new("mkfifo")
+        .arg(&path)
+        .status()
+        .map_err(|error| fail("run mkfifo", error))?;
+    if !status.success() {
+        return Err(format!("mkfifo exited {:?}", status.code()));
+    }
+    Ok(path.to_string_lossy().into_owned())
 }
 
 pub(crate) fn expect_error(harness: &Harness, request: Value, wanted: &str) -> Result<(), String> {

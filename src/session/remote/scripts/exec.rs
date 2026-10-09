@@ -5,7 +5,7 @@ use super::shared::{
     timeout_seconds,
 };
 use crate::base64;
-use crate::session::DEFAULT_SHELL;
+use crate::session::{DEFAULT_SHELL, EXEC_OUTPUT_LIMIT};
 use crate::shell;
 use std::time::Duration;
 
@@ -119,8 +119,12 @@ pub fn exec(name_or_id: &str, command: &str, timeout: Duration, token: &str) -> 
     );
     out.push_str(&format!("echo \"RHOST_TOKEN={token}\"\n"));
     out.push_str("echo \"RHOST_EXIT=$code\"\n");
+    // The *full* segment length is reported before the bytes are capped, so the
+    // caller can tell omission from completeness (SESSION-012).
+    out.push_str("echo \"RHOST_OUTPUT_BYTES=$((abs - start))\"\n");
+    out.push_str(&format!("lim={EXEC_OUTPUT_LIMIT}\n"));
     out.push_str("printf 'RHOST_OUTPUT='\n");
-    out.push_str("tail -c +$((start+1)) \"$LOG\" | head -c $((abs - start)) | base64 -w0\n");
+    out.push_str("tail -c +$((start+1)) \"$LOG\" | head -c \"$lim\" | base64 -w0\n");
     out.push_str("printf '\\n'\n");
     out
 }

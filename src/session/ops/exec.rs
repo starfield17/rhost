@@ -53,9 +53,10 @@ fn exec_outcome(stdout: &str, token: &str, reference: SessionRef) -> SessionExec
         ExecResult::Completed {
             id,
             output,
+            source_bytes,
             exit_code,
         } => {
-            let output = pty_output(&output);
+            let output = pty_output(&output, source_bytes);
             // An identity, a status or a token the domain refuses is not
             // completion: reporting success here would invent one of them.
             let Some(id) = SessionId::new(id).ok() else {
@@ -113,11 +114,13 @@ fn exec_outcome(stdout: &str, token: &str, reference: SessionRef) -> SessionExec
 
 /// Strips terminal sequences from raw pane bytes and counts the bytes that
 /// actually arrived, so the envelope describes the source rather than the view.
-fn pty_output(raw: &[u8]) -> PtyOutput {
+/// The helper reports the full segment length, so a capture the helper bounded
+/// is reported as truncated instead of silently looking complete.
+fn pty_output(raw: &[u8], source_bytes: u64) -> PtyOutput {
     let text = shell::strip_ansi(&String::from_utf8_lossy(raw));
     PtyOutput(CapturedText::projected(
         text.into_bytes(),
-        raw.len() as u64,
-        false,
+        source_bytes,
+        source_bytes > raw.len() as u64,
     ))
 }

@@ -109,6 +109,11 @@ mod tests {
         assert!(script.contains("RHOST_ERR=inputfailed"));
         assert!(script.contains("RHOST_RECOVERED=$recovered"));
         assert!(script.contains("while [ \"$SECONDS\" -lt 5 ]"));
+        // The inline output is bounded and its true size is reported, so a large
+        // command is truncation rather than a lost completion marker.
+        assert!(script.contains(&format!("lim={}", crate::session::EXEC_OUTPUT_LIMIT)));
+        assert!(script.contains("echo \"RHOST_OUTPUT_BYTES=$((abs - start))\""));
+        assert!(script.contains("head -c \"$lim\" | base64 -w0"));
     }
 
     #[test]

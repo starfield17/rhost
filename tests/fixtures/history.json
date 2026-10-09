@@ -138,5 +138,21 @@
     "mechanism_test": "tests/acceptance/files.rs:a_sync_reports_the_plan_the_tool_printed_and_only_deletes_when_asked",
     "conformance_test": null,
     "gap": "One black-box case compares preview and applied notes; there is no independent remote scenario for rsync's directory notice."
+  },
+  {
+    "id": "HIST-SESSION-005",
+    "origin": "4c36a08",
+    "contract": "SESSION-012",
+    "mechanism_test": "src/session/remote/protocol/tests.rs:an_exec_result_reports_a_bounded_capture_as_truncated",
+    "conformance_test": null,
+    "gap": "The parser and the generated helper are checked directly; a real pane producing more than the bound is exercised by the manual live suite, not by make check."
+  },
+  {
+    "id": "HIST-RS-FS-003",
+    "origin": "78ae481",
+    "contract": "FS-004",
+    "mechanism_test": "tests/acceptance/remote_fs.rs:reading_a_pipe_is_refused_instead_of_blocking",
+    "conformance_test": null,
+    "gap": "The embedded helper's own read path is the evidence; the CLI envelope maps the refusal to the same INVALID_TARGET without a second oracle."
   }
 ]

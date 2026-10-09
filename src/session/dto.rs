@@ -55,20 +55,17 @@ pub struct SessionCreateFailureDto<'a> {
 
 pub fn session_created<'a>(
     host: &str,
-    value: &'a app_session::Created,
+    info: &'a app_session::Info,
 ) -> Envelope<SessionInfoDto<'a>> {
     Envelope {
         schema_version: 2,
         operation: "session.create",
         ok: true,
         host: Some(host.into()),
-        // A successful create always carries the record.
-        data: SessionInfoDto::from(
-            value
-                .info
-                .as_ref()
-                .unwrap_or_else(|| unreachable!("successful create has an Info")),
-        ),
+        // The caller has already checked that a successful create carries a
+        // record, so the type here makes that invariant a compile-time one
+        // rather than a runtime `unreachable!`.
+        data: SessionInfoDto::from(info),
         error: None,
     }
 }

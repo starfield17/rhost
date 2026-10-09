@@ -53,6 +53,13 @@ use serde::{Deserialize, Serialize};
 /// (or zsh), and the backend standardises on bash.
 pub const DEFAULT_SHELL: &str = "bash";
 
+/// The most pane bytes one `session exec` inlines into its helper answer before
+/// it reports truncation. The base64 form, plus the other line-protocol fields,
+/// must stay inside `ops::shared::FIELD_CAPTURE`: that is what lets the helper
+/// answer truthfully about a large command instead of the transport slicing the
+/// base64 line in half and losing the completion evidence (SESSION-012).
+pub(crate) const EXEC_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
+
 /// The namespaced tmux session name for a session id.
 pub fn tmux_name(id: &str) -> String {
     format!("rhost_s_{id}")

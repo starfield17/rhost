@@ -32,7 +32,7 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
                     Some(info) => {
                         timer.succeeded(&info.initial_cwd, "", None);
                         if json {
-                            sink.envelope(&dto::session_created(&host, &created));
+                            sink.envelope(&dto::session_created(&host, info));
                         } else {
                             render::session_created(sink, info);
                         }
@@ -120,7 +120,11 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
                             ));
                         }
                     } else {
-                        render::session_output(sink, outcome.output().0.content().as_ref());
+                        render::session_output(
+                            sink,
+                            outcome.output().0.content().as_ref(),
+                            outcome.output().0.truncated(),
+                        );
                     }
                     status
                 }
@@ -177,7 +181,10 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
                 if json {
                     sink.envelope(&dto::session_read(&host, &result));
                 } else {
-                    render::session_output(sink, &result.content);
+                    // A read page is bounded by its own cursor; `more` answers
+                    // whether anything follows, so it is never a truncated
+                    // capture.
+                    render::session_output(sink, &result.content, false);
                 }
                 0
             }

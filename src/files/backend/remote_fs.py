@@ -148,9 +148,16 @@ def target_failure(path, exc, changed=False):
 
 
 def open_regular(path, directory, name, flags, changed=False):
-    """Opens the exact basename through its already-held parent directory."""
+    """Opens the exact basename through its already-held parent directory.
+
+    `O_NONBLOCK` is what makes the regular-file identity check safe: opening a
+    FIFO for reading blocks until a writer appears, so without it a `read` of a
+    pipe with no writer would hang here forever instead of being refused as a
+    non-regular target. Regular files ignore the flag, and the `fstat` check
+    below is what actually authorises the entry.
+    """
     try:
-        fd = os.open(name, flags | os.O_NOFOLLOW, dir_fd=directory)
+        fd = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     except OSError as exc:
         raise target_failure(path, exc, changed)
     if not stat.S_ISREG(os.fstat(fd).st_mode):
