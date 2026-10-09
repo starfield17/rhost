@@ -190,15 +190,31 @@ def home(path):
     return top[:-3] if top.endswith(".rs") else top
 
 
-def refs(code):
+def module_depth(path):
+    """How many `super::` hops reach the crate root from this file's module.
+
+    Mirrors Rust's file-to-module mapping: `lib.rs`/`main.rs` are the root,
+    `mod.rs` names its directory, and any other file names the directory plus
+    itself. A bare `src/a.rs` is depth 1, `src/a/b.rs` depth 2, and so on.
+    """
+    parts = os.path.relpath(path, "src").replace(os.sep, "/").split("/")
+    if parts[-1] in ("lib.rs", "main.rs", "mod.rs"):
+        return len(parts) - 1
+    return len(parts)
+
+
+def refs(code, depth):
     found = set()
+    # Absolute paths, including the aliased form `use crate::session as s;`.
+    # Aliasing is exactly how a one-line refactor could otherwise hide a
+    # dependency, because every later use names only the alias.
     for m in re.finditer(r"\b(?:crate|rhost)::", code):
         rest = code[m.end():]
         idm = re.match(r"[A-Za-z_][A-Za-z_0-9]*", rest)
         if not idm:
             continue
         name, after = idm.group(0), rest[idm.end():].lstrip()
-        if after.startswith("::") or after[:1] in (";", ","):
+        if after.startswith("::") or after[:1] in (";", ",") or re.match(r"as\b", after):
             found.add(name)
     for m in re.finditer(r"\b(?:crate|rhost)::\{([^}]*)\}", code):
         for part in m.group(1).split(","):
@@ -206,7 +222,44 @@ def refs(code):
             tm = re.match(r"[A-Za-z_][A-Za-z_0-9]*", tok)
             if tm:
                 found.add(tm.group(0))
+    # Relative paths. `super::` climbs toward the crate root and `self::` stays
+    # put, so only a chain landing exactly on the root names a top-level module;
+    # `super::files::inner` still reaches `files` while `self::files` from a
+    # nested module is that module's own child, not the capability.
+    for m in re.finditer(r"\b((?:(?:super|self)::)+)([A-Za-z_][A-Za-z_0-9]*)", code):
+        prefix, name = m.group(1), m.group(2)
+        if prefix.startswith("self::"):
+            if depth == 0:
+                found.add(name)
+        elif prefix.count("super::") == depth:
+            found.add(name)
     return found & MODS
+
+
+def self_test():
+    """Prove the scanner sees aliased and relative imports, not just `use
+    crate::x;`. A gate that cannot detect its own blind spot is not a gate."""
+    global HITS
+    cases = [
+        ("use crate::files;", 0, {"files"}),
+        ("use crate::files as probe;", 0, {"files"}),
+        ("use crate::{files, session as s};", 0, {"files", "session"}),
+        ("use super::files;", 1, {"files"}),
+        ("use super::super::session as s;", 2, {"session"}),
+        ("use super::files::inner;", 1, {"files"}),
+        ("use self::files;", 0, {"files"}),
+        ("use self::files;", 1, set()),
+        ("use crate::files;", 3, {"files"}),
+    ]
+    for code, depth, wanted in cases:
+        got = refs(code, depth)
+        if got != wanted:
+            print(f"check-structure self-test: {code!r} at depth {depth} -> "
+                  f"{sorted(got)}, wanted {sorted(wanted)}")
+            HITS += 1
+
+
+self_test()
 
 
 graph = {}
@@ -215,7 +268,7 @@ for path in sorted(glob.glob("src/**/*.rs", recursive=True)):
     h = home(path)
     if h == "lib":
         continue
-    graph.setdefault(h, set()).update(refs(src) - {h})
+    graph.setdefault(h, set()).update(refs(src, module_depth(path)) - {h})
 
 # An edge the policy does not name is a boundary violation, not a missing entry.
 for h in sorted(graph):
