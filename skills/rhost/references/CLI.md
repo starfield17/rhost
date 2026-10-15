@@ -238,6 +238,57 @@ existing file's permissions. Editing names an exact regular file and refuses a
 symlink in any path component; `fs sync --delete` is separate because it resolves
 the destination before applying its destructive-safety checks.
 
+### Patch document
+
+`fs patch` takes JSON line-range replacements, not a unified diff. After
+`fs read --json`, copy `data.sha256` into the document below in place of
+`<sha256-from-read>`. For an original file containing `alpha\nbeta\n`, this
+changes the second line to `gamma`:
+
+```json
+{
+  "sha256": "<sha256-from-read>",
+  "edits": [{"start": 2, "end": 2, "text": "gamma\n"}]
+}
+```
+
+Save it as `patch.json`, then apply it:
+
+```bash
+rhost fs patch gpu '~/work/example.txt' --patch ./patch.json --json
+```
+
+Ranges are 1-based inclusive lines in the original file, must not overlap, and
+must stay inside that file. Text is inserted literally, including its newlines;
+an empty string deletes the selected lines. An explicit `--if-hash` overrides
+the document's hash. On `FILE_CONFLICT`, read and merge again before applying.
+Use `--patch -` to read JSON from stdin; `fs write --from -` similarly reads
+replacement text from stdin. Both inputs default to stdin when their input flag
+is omitted and have an 8 MiB limit. A patch cannot insert into an empty file;
+use a hash-guarded `fs write` for that replacement.
+
+### Batch manifest
+
+Save this JSON array as `copies.json`. Local operands are resolved on the local
+machine; remote operands belong to the host passed to `fs batch`:
+
+```json
+[
+  {"op": "put", "source": "./upload.txt", "destination": "~/work/upload.txt"},
+  {"op": "get", "source": "~/work/result.txt", "destination": "./download.txt"}
+]
+```
+
+```bash
+rhost fs batch gpu --manifest ./copies.json --json
+```
+
+Each entry accepts optional boolean `resume` and `checksum` fields, both false
+by default. Parents must already exist. Entries run serially and later entries
+still run after a failure. A completed batch report has `ok:true` even when an
+entry failed: inspect `data.failed` and `data.items[].ok`/`error`; failed entries
+make the process exit 255. Inspect destinations before replaying any entries.
+
 ## Tunnels and audit
 
 ```bash

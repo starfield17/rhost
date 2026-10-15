@@ -58,6 +58,7 @@ fn read_pages_bounded_utf8_text_with_whole_file_identity() -> Result<(), String>
         Some(64),
         "{answer}"
     );
+    assert_eq!(answer["sha256"], sha256_hex(b"alpha\nbeta\n"));
 
     let bounded = ask(
         &harness,
@@ -67,11 +68,13 @@ fn read_pages_bounded_utf8_text_with_whole_file_identity() -> Result<(), String>
     assert_eq!(bounded["lines"], json!(1));
     assert_eq!(bounded["total_lines"], json!(2));
     assert_eq!(bounded["truncated"], json!(true));
+    assert_eq!(bounded["sha256"], answer["sha256"]);
 
     let page = ask(
         &harness,
         json!({"op": "read", "path": text, "start": 2, "lines": 1, "max_bytes": 256 * 1024}),
     )?;
+    assert_eq!(page["sha256"], answer["sha256"]);
     assert_eq!(page["content"], json!("beta\n"));
     assert_eq!(page["start"], json!(2));
 

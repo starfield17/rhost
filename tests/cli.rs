@@ -102,6 +102,73 @@ fn help_names_concrete_defaults_and_file_flags() -> Result<(), Box<dyn std::erro
 }
 
 #[test]
+fn help_explains_destination_deletion_and_existing_output_defaults()
+-> Result<(), Box<dyn std::error::Error>> {
+    for (argv, wanted) in [
+        (
+            vec!["fs", "sync", "--help"],
+            vec![
+                "delete destination files missing from source",
+                "source-relative",
+            ],
+        ),
+        (
+            vec!["fs", "mirror", "--help"],
+            vec![
+                "delete destination files missing from source",
+                "source-relative",
+            ],
+        ),
+        (
+            vec!["exec", "--help"],
+            vec!["1 MiB", "no default deadline", "--stream requires --json"],
+        ),
+        (
+            vec!["fs", "read", "--help"],
+            vec!["default 1", "default 200"],
+        ),
+        (
+            vec!["session", "exec", "--help"],
+            vec!["60-second", "2 MiB", "session read"],
+        ),
+        (
+            vec!["session", "read", "--help"],
+            vec!["30-second", "data.content", "data.next", "--since"],
+        ),
+        (
+            vec!["fs", "patch", "--help"],
+            vec![
+                "\"sha256\"",
+                "\"edits\"",
+                "1-based inclusive",
+                "original file",
+            ],
+        ),
+        (
+            vec!["fs", "batch", "--help"],
+            vec!["\"op\"", "\"source\"", "\"destination\"", "data.failed"],
+        ),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_rhost"))
+            .args(&argv)
+            .output()?;
+        assert!(output.status.success(), "{argv:?}");
+        assert!(output.stderr.is_empty(), "{argv:?}");
+        let help = String::from_utf8(output.stdout)?;
+        for needle in wanted {
+            assert!(help.contains(needle), "{argv:?} omits {needle:?}:\n{help}");
+        }
+        if argv[0..2] == ["fs", "mirror"] {
+            assert!(
+                !help.contains("delete remote files missing locally"),
+                "{help}"
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn boolean_flags_before_the_command_route_to_the_right_parser()
 -> Result<(), Box<dyn std::error::Error>> {
     for flag in ["--fresh", "--stream"] {

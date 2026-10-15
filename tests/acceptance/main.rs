@@ -22,6 +22,7 @@
 
 mod audit;
 mod edit;
+mod examples;
 mod exec;
 mod files;
 mod hosts;
