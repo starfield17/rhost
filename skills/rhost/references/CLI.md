@@ -6,9 +6,10 @@ without reaching its page fails the test suite. All structured responses use
 schema v2 with top-level `schema_version`, `operation`, `ok`, `data`, and
 `error`. Branch on `error.code`, never on English text; the full
 `error.code` → recovery table lives in
-[RECOVERY.md](RECOVERY.md). Confirm `rhost version --json` and
-`rhost <command> --help` match this reference before relying on it, since a
-symlinked skill and the installed binary can drift apart.
+[RECOVERY.md](RECOVERY.md). After installation, upgrade, or a flag mismatch,
+check `rhost version --json` and `rhost <command> --help`: a symlinked skill and
+the installed binary can drift apart. Request help without `--json`;
+`--help --json` is a `USAGE_ERROR`, not a structured command inventory.
 
 ## Foreground execution
 
@@ -32,10 +33,10 @@ There is no default exec deadline. JSON capture defaults to 1 MiB per stream;
 captured text is incomplete even though `bytes` reports all observed source
 bytes.
 
-The program runs under the target account's login shell, which resolves the
-`ssh` wrapper and enters `bash -lc`; the environment that login already built is
-the one the command sees. `--fresh` selects a new SSH connection, not a clean
-`PATH`. rhost does not infer which package a tool belongs to: ask the host with
+The SSH command crosses the target account's configured shell and starts the
+wrapper under `setsid bash -lc`. The program inherits that bash login startup
+environment; it is not an interactive shell. `--fresh` selects a new SSH
+connection, not a clean `PATH`. rhost does not infer which package a tool belongs to: ask the host with
 `command -V <tool>` and the host's own package manager, run through `exec`.
 
 A `;`, pipe or redirection left *outside* the quoted `--command` value is
@@ -190,8 +191,13 @@ the data and presses Enter in the same submission.
 
 Session exec returns `data.session_id`, `data.session_ref`, `data.execution`,
 `data.session_preserved`, and PTY output at `data.output.content` with
-`data.output.kind == "pty"`. Incremental reads use `data.from`, `data.next`, and
-`data.more`. `session attach` returns a non-retryable `USAGE_ERROR`; the v2
+`data.output.kind == "pty"`. Inline exec output is bounded to 2 MiB:
+`data.output.bytes` counts the full segment and `data.output.truncated` reports
+omitted bytes. Use `session read` for the retained log instead of repeating the
+command. Read returns text at `data.content` and up to 256 KiB of source bytes
+per page; use `--since` set to `data.next`, and continue while `data.more` is
+true. Byte cursors must come from the response, not the rendered text length.
+`session attach` returns a non-retryable `USAGE_ERROR`; the v2
 envelope has no honest terminal attachment representation.
 
 `session create --cwd` records the *absolute* directory the account actually
@@ -222,8 +228,10 @@ rhost fs batch <host> --manifest ./copies.json --json
 
 Quote a leading `~` so the local shell does not expand it. Plain put/get use
 scp; resume or checksum uses rsync. Sync/mirror accept repeated `--exclude`,
-`--checksum`, `--delete`, `--dry-run`, and a deadline. Always preview the exact
-destructive command with `--dry-run` before adding `--delete`.
+`--checksum`, `--delete`, `--dry-run`, and a deadline. Exclude patterns are
+source-relative. With `--delete`, sync prunes the remote destination; mirror
+prunes the local destination. Preview with `--dry-run --delete`, keeping the
+same operands and options, then remove `--dry-run` to apply that plan.
 
 `fs read` returns bounded UTF-8 text and the complete file's SHA-256. Creating a
 new file needs no hash. Replacing an existing file and every patch require the
@@ -231,8 +239,9 @@ fresh hash returned by the last read. Batch is ordered serial put/get, continues
 after individual failures, and reports `data.items[]`, `data.succeeded`, and
 `data.failed`; it is not a transaction.
 
-`fs read --max-bytes` defaults to 256 KiB and is capped at 8 MiB; a larger value
-is refused as `CONFIG_INVALID`. `fs write --mode` is three or four octal digits;
+`fs read` defaults to `--start 1 --lines 200`. `--max-bytes` defaults to 256 KiB
+and is capped at 8 MiB; an out-of-range CLI value is refused as `USAGE_ERROR`.
+`fs write --mode` is three or four octal digits;
 when it is omitted a newly created file is `0600` and a replacement keeps the
 existing file's permissions. Editing names an exact regular file and refuses a
 symlink in any path component; `fs sync --delete` is separate because it resolves

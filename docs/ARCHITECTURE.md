@@ -55,12 +55,17 @@ exec  doctor  hosts  connection   one vertical slice each
 files  session  tunnel  audit     one capability each
 ```
 
+Small root modules (`config`, `shell`, `base64`, `clock`, `random`, `stdio`,
+`signals`, `host`) own concrete shared primitives. `audit` also provides the
+operation trail and shared timer to capability runners.
+
 `dispatch` is the composition root: it may depend on every capability, but it
 only wires them together. Here, "the CLI" is an orchestration layer — it parses
 argv and calls each capability's stable surface; it never reaches into a
 capability's internals, and a capability never depends on `dispatch`. See
 [src/AGENTS.md](../src/AGENTS.md) and the `ALLOWED` map in
-`scripts/check-structure.sh` for the enforced edges.
+`scripts/check-structure.py` for the enforced edges. Run `make structure` to
+check them, or `./scripts/check-structure.sh -v` to inspect policy and actual edges.
 
 ## Detailed design
 
@@ -69,8 +74,25 @@ capability's internals, and a capability never depends on `dispatch`. See
 - [Files and JSON contracts](architecture/files-and-json.md)
 - [Engineering constraints](architecture/engineering.md)
 
-[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) is the shorter product-level
-description.
+For getting started, use the [README](../README.md). The
+[contract ledger](CONTRACT.md) owns required behavior and executable evidence;
+the [schema](../schemas/result-v2.schema.json) owns JSON shape.
+[Maintenance policy](MAINTENANCE.md) owns compatibility, change risk and release
+requirements; the migration record is frozen history.
+
+## Observable acceptance
+
+- Foreground execution reports a known remote exit status and separate bounded
+  stdout/stderr in one v2 envelope. Missing completion remains unknown. Local
+  acceptance covers classification; the native exec/transport suites exercise SSH.
+- A tmux session remains discoverable by a later CLI invocation. The native
+  session suite exercises this persistence; no local session map is authoritative.
+- File replacement requires the previously read hash. Local helper and CLI
+  acceptance cover bounded reads, whole-file hashes, conflicts and dependency
+  refusal; the native file suite exercises remote filesystem operations.
+
+Native suites provide manual pre-release evidence. CI checks the local contract
+and release artifacts; it has no SSH target and does not run the live suites.
 
 ## Frames for contested paths
 
@@ -82,7 +104,7 @@ description.
   documented guarantees, demonstrated by a reproducible case and reviewed as
   a product change.
 - Invariant and check: direct runtime dependencies stay within the reviewed
-  allowlist in `scripts/check-structure.sh`; `make structure` fails on additions.
+  allowlist in `scripts/check-structure.py`; `make structure` fails on additions.
   Live persistence still requires the manual remote suites before release.
 - Oracle: the user's OpenSSH configuration and a real target, not a local
   substitute for authentication or host-key behavior.

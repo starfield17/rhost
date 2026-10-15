@@ -16,7 +16,9 @@ diagnostic verbosity only.
 
 ## Files
 
-- Run sync or mirror with `--dry-run` before the same command with `--delete`.
+- Preview destructive sync or mirror with `--dry-run --delete`, then remove only
+  `--dry-run` to apply the same operands and options. Sync deletes remotely;
+  mirror deletes locally.
 - Delete is refused for broad destinations such as a whole home or top-level
   directory. There is no override flag.
 - `fs write` may create a missing regular file. Replacement and every patch use

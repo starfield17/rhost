@@ -15,16 +15,18 @@ disagree, so a new code cannot ship undocumented.
 
 - `USAGE_ERROR` means the request never left the local process: a missing,
   unknown or contradictory argument, an unusable `--command`, or an operation
-  the schema refuses (`session attach` needs a terminal). Correct the invocation;
-  `error.operation` names the operation that was judged. Nothing remote ran, so
-  nothing needs inspecting — but do not retry the same argv unchanged.
-- `CONFIG_INVALID` means local input was well-formed as argv but not as a value:
-  an empty or invalid `--command`, a path or `--cwd` that cannot be used, a
+  the schema refuses (`session attach` needs a terminal). Correct the invocation.
+  The top-level `operation` names the usage scope (such as `usage` or
+  `session.usage`), or the refused operation (`session.attach`). Nothing remote
+  ran, so nothing needs inspecting — but do not retry the same argv unchanged.
+- `CONFIG_INVALID` can mean local argv parsed but a value was invalid:
+  a whitespace-only program, an invalid environment entry or file path, a
   malformed `--manifest`, a transfer operand that names the wrong side, or a
-  local rhost directory that cannot be used safely. It is not retryable. Fix
-  the value or directory and resubmit; no remote command was submitted. For a
-  local directory error, point both roots at private writable storage, for
-  example:
+  local rhost directory that cannot be used safely. It can also report a remote
+  refusal, such as a session name already in use; the code alone does not prove
+  that nothing was submitted. It is not retryable. Inspect the operation's
+  evidence and existing remote state, then correct the input. For a local
+  directory error, point both roots at private writable storage, for example:
 
   ```bash
   scratch=$(mktemp -d)
@@ -86,9 +88,10 @@ disagree, so a new code cannot ship undocumented.
   (creation was observed). Read `data.session_id` and check `session list`
   before retrying; a local argument mistake leaves `data` null.
 
-For session results, use `data.execution.status`, `data.session_preserved`, and
-PTY content under `data.output`. A timeout with `session_preserved:false` means
-the managed shell is not proven usable.
+For session exec, use `data.execution.status`, `data.session_preserved`, and
+PTY content under `data.output`. For session read, text is `data.content`;
+resume with `--since` set to `data.next` while `data.more` is true. A timeout
+with `session_preserved:false` means the managed shell is not proven usable.
 
 When a dependency is missing, keep using rhost operations whose dependencies
 are present. If python3 is missing or unusable, do not repeat a failed `fs read`, `fs write`,

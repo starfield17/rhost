@@ -58,7 +58,7 @@ static CREATE_FLAGS: &[FlagSpec] = &[
         false,
         "remote working directory; resolved to an absolute path",
     ),
-    FlagSpec::value("shell", false, "remote login shell (bash only)"),
+    FlagSpec::value("shell", false, "managed pane shell (bash only)"),
     FlagSpec::value(
         "timeout",
         false,
@@ -70,7 +70,7 @@ static LIST_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "operation deadline; 0 uses the default budget",
+        "operation deadline; 0 uses the 30-second default",
     ),
 ];
 static EXEC_FLAGS: &[FlagSpec] = &[
@@ -79,7 +79,7 @@ static EXEC_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "operation deadline; 0 uses the default budget",
+        "execution deadline; 0 uses the 60-second default",
     ),
 ];
 static SEND_FLAGS: &[FlagSpec] = &[
@@ -98,7 +98,7 @@ static READ_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "operation deadline; 0 uses the default budget",
+        "operation deadline; 0 uses the 30-second default",
     ),
 ];
 static RECOVER_FLAGS: &[FlagSpec] = &[
@@ -106,7 +106,7 @@ static RECOVER_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "timeout",
         false,
-        "operation deadline; 0 uses the default budget",
+        "operation deadline; 0 uses the 30-second default",
     ),
 ];
 

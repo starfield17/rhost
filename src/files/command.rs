@@ -31,10 +31,14 @@ static FS_SYNC_FLAGS: &[FlagSpec] = &[
         false,
         "deadline for the operation; 0 uses the 5-minute default",
     ),
-    FlagSpec::long("delete", "delete remote files missing locally"),
+    FlagSpec::long("delete", "delete destination files missing from source"),
     FlagSpec::long("dry-run", "report changes without applying them"),
     FlagSpec::long("checksum", "verify with a checksum"),
-    FlagSpec::value("exclude", false, "remote path pattern to skip (repeatable)"),
+    FlagSpec::value(
+        "exclude",
+        false,
+        "source-relative path pattern to skip (repeatable)",
+    ),
 ];
 static FS_BATCH_FLAGS: &[FlagSpec] = &[
     JSON,
@@ -57,8 +61,8 @@ static FS_READ_FLAGS: &[FlagSpec] = &[
         false,
         "maximum bytes to return; default 256 KiB, max 8 MiB",
     ),
-    FlagSpec::value("start", false, "first line to return (1-based)"),
-    FlagSpec::value("lines", false, "number of lines to return"),
+    FlagSpec::value("start", false, "first line to return (1-based); default 1"),
+    FlagSpec::value("lines", false, "number of lines to return; default 200"),
 ];
 static FS_WRITE_FLAGS: &[FlagSpec] = &[
     JSON,
@@ -67,7 +71,11 @@ static FS_WRITE_FLAGS: &[FlagSpec] = &[
         false,
         "deadline for the operation; 0 uses the 60-second default",
     ),
-    FlagSpec::value("from", false, "local file to upload, or - for stdin"),
+    FlagSpec::value(
+        "from",
+        false,
+        "local file to upload, or - for stdin (default)",
+    ),
     FlagSpec::value(
         "if-hash",
         false,

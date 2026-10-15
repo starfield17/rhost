@@ -31,8 +31,8 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all 
 Anything needing a target reads it from the environment and fails with a clear
 "set `RHOST_TEST_HOST`" message when unset.
 
-`./scripts/check-portability.sh` (in CI, and in `make check`) enforces this and
-holds the authoritative pattern list: when the test hardware changes, add its
+`./scripts/check-portability.sh` (in CI, and in `make check`) enforces this;
+`scripts/check-portability.py` holds the authoritative pattern list: when the test hardware changes, add its
 model family there and prove the check by making it fail once before restoring.
 
 ## 2. Commit only your own changes; never push unasked
@@ -92,18 +92,18 @@ or CI job's run-pattern to cover tests you weren't asked to run.
 
 ## 10. Maintenance map and gates
 
-- `docs/CONTRACT.md` is the semantic ledger; `schemas/result-v2.schema.json` is
-  the active wire contract; `docs/MAINTENANCE.md` defines compatibility, MSRV,
-  release and change-risk policy. Go is not part of this tree; the archived Go
-  v3.1.0 implementation lives in the read-only `rhost-go-old` repository.
-- `src/domain/` is pure; each capability's `dto` maps its values to schema v2
-  (`src/wire/` owns the shared envelope). The Rust binary
-  implements every v2 operation except `session attach`, which the schema makes a
-  usage error. `docs/RUST_MIGRATION.md` is a frozen historical record.
-- `make check` also runs Rust fmt/clippy/tests, compiles and lints the feature-gated
-  native live crate, validates the frozen live-name coverage map, and runs independent
-  DTO schema validation, domain boundary checks, the structure policy, the release
-  contract check and contract-evidence check. It needs Cargo, not Go.
+- [Source map](src/AGENTS.md) locates capability owners, entries and focused
+  tests. [Architecture](docs/ARCHITECTURE.md) explains boundaries and reasons.
+  `scripts/check-structure.py` owns dependency policy; `make structure` checks it.
+- [Contract ledger](docs/CONTRACT.md) owns required semantics and executable
+  evidence; `schemas/result-v2.schema.json` owns the active wire shape. Each
+  capability's DTO maps its values into v2; `src/wire/` owns the shared envelope
+  and `src/domain/` stays pure. `session attach` is refused with `USAGE_ERROR`.
+- [Maintenance policy](docs/MAINTENANCE.md) owns compatibility, MSRV, release,
+  change risk and regression-memory policy. `make check` runs the complete local
+  gate: Rust fmt/clippy/tests, native-live compilation and lint, DTO/schema and
+  domain checks, portability, structure, live coverage, release contract,
+  contract evidence, agent packaging and installer tests. It needs Cargo, not Go.
 - Contract/tests cannot be weakened to make an implementation pass. CI and the
   release verify job compare the changed range with `scripts/check-integrity.sh`
   (deleted tests, dropped assertions, new `#[ignore]`, removed gate steps or a
@@ -114,19 +114,12 @@ or CI job's run-pattern to cover tests you weren't asked to run.
 - Contract/schema, domain, process cleanup, transport/session protocol and release
   semantics are Risk A: name affected consumers and get architecture review before
   implementation. See `docs/MAINTENANCE.md#change-risk` for the complete map.
-
-## Archived legacy boundary
-
-The Go implementation, its modules, version metadata, installers and old release
-workflows were removed from this tree at v4.4.1 and now live in the read-only
-`rhost-go-old` repository. Nothing here builds or reads them; this tree has no Go
-toolchain requirement. Cargo.toml is the sole active binary version authority.
-New implementation and acceptance tests must be Rust.
-The current Rust binary implements the v2 operations except `session attach`.
-Live suites against a real remote host are a required **manual pre-release
-verification**, not a gate the release workflow enforces: the workflow has no
-reachable test host, so it cannot run them. A version tag first runs `make check`
-on Linux and macOS, then builds and executes all four native release artifacts
-before the release job can publish. If a CI-reachable host is ever provided, the
-workflow must bind a same-commit live result to the tagged commit before that
-language may call it a gate (docs/MAINTENANCE.md).
+- Cargo.toml is the sole active binary version authority. New implementation and
+  acceptance tests must be Rust. The removed Go implementation, modules, metadata,
+  installers and workflows live only in the read-only `rhost-go-old` repository;
+  nothing here builds or reads them. `docs/RUST_MIGRATION.md` is frozen history.
+- Real-host live suites are required manual pre-release verification. Release CI
+  has no reachable host: it runs `make check` on Linux and macOS and executes all
+  four native artifacts before publication. A future live gate must bind a
+  same-commit live result to the tagged commit before claiming enforcement; see
+  the maintenance policy for the release procedure.

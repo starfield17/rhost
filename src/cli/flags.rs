@@ -77,11 +77,11 @@ pub static EXEC_FLAGS_ALL: &[FlagSpec] = &[
     FlagSpec::value_short("command", 'c', true, "the shell program to run"),
     FlagSpec::value("command-file", true, "read the program from a local file"),
     FlagSpec::value("cwd", false, "working directory on the remote host"),
-    FlagSpec::value("timeout", false, "execution deadline; 0 waits forever"),
+    FlagSpec::value("timeout", false, "no default deadline; 0 waits forever"),
     FlagSpec::value(
         "max-output-bytes",
         false,
-        "captured bytes per stream; 0 = all",
+        "captured bytes per stream; default 1 MiB, 0 = all",
     ),
     FlagSpec::value("env", false, "environment variable KEY=VALUE (repeatable)"),
     FlagSpec::long("fresh", "use an independent SSH connection"),

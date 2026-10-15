@@ -253,9 +253,9 @@ Both package the skill and require the `rhost` CLI to be installed separately.
 The CLI process owns no durable remote work. Killing and restarting it does not
 erase state it promised to preserve.
 
-- [Project overview](docs/PROJECT_OVERVIEW.md)
 - [Architecture and ownership](docs/ARCHITECTURE.md)
 - [Agent skill](skills/rhost/SKILL.md)
+- [CLI reference and file input examples](skills/rhost/references/CLI.md)
 - [JSON envelope schema](schemas/result-v2.schema.json)
 - [Contributor rules](AGENTS.md)
 - [Maintenance policy](docs/MAINTENANCE.md)

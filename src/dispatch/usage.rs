@@ -134,7 +134,7 @@ const FS_LEAVES: &[Leaf] = &[
     },
     Leaf {
         name: "patch",
-        usage: "patch <host> <path> --patch <file>",
+        usage: "patch <host> <path> [--patch <file>]",
         summary: "Apply a hash-guarded patch",
     },
 ];
@@ -191,11 +191,16 @@ pub(crate) fn help(target: Help) -> String {
         Help::Root => root(),
         Help::Group(scope) => group(scope),
         Help::Leaf(scope, name) => leaf(scope, name),
-        Help::Exec => page(
-            "rhost exec <host> (--command <shell-program> | --command-file <local-file>)",
-            "Run one exact shell program in a fresh remote execution context.",
-            exec_flags(),
-        ),
+        Help::Exec => {
+            let mut text = page(
+                "rhost exec <host> (--command <shell-program> | --command-file <local-file>)",
+                "Run one exact shell program in a fresh remote execution context.",
+                exec_flags(),
+            );
+            text.push_str("\nKeep the whole remote program inside --command; use --command-file for scripts.\n\
+                --stream requires --json: live output goes to stderr, one final envelope to stdout.\n");
+            text
+        }
         Help::Doctor => page(
             "rhost doctor <host>",
             "Probe a host and report what it supports before relying on it.",
@@ -260,11 +265,39 @@ fn group(scope: Scope) -> String {
 
 fn leaf(scope: Scope, name: &str) -> String {
     match leaves(scope).iter().find(|entry| entry.name == name) {
-        Some(entry) => page(
-            &format!("rhost {} {}", scope.name(), entry.usage),
-            entry.summary,
-            flags(scope, name),
-        ),
+        Some(entry) => {
+            let mut text = page(
+                &format!("rhost {} {}", scope.name(), entry.usage),
+                entry.summary,
+                flags(scope, name),
+            );
+            text.push_str(match (scope, name) {
+                (Scope::Fs, "patch") => concat!(
+                    "\nInput is JSON, not a unified diff; --patch - reads stdin (also the default).\n",
+                    "Replace <sha256-from-read> with data.sha256 from fs read --json:\n",
+                    "  {\"sha256\":\"<sha256-from-read>\",\"edits\":[{\"start\":2,\"end\":2,\"text\":\"gamma\\n\"}]}\n",
+                    "Ranges are non-overlapping, 1-based inclusive lines inside the original file.\n",
+                    "--if-hash overrides the document hash. On FILE_CONFLICT, read and merge again.\n",
+                ),
+                (Scope::Fs, "batch") => concat!(
+                    "\nManifest is a non-empty JSON array; put uploads, get downloads:\n",
+                    "  [{\"op\":\"put\",\"source\":\"./upload.txt\",\"destination\":\"~/work/upload.txt\"},\n",
+                    "   {\"op\":\"get\",\"source\":\"~/work/result.txt\",\"destination\":\"./download.txt\"}]\n",
+                    "Entries run serially and continue after failures. Parents must already exist.\n",
+                    "Inspect data.failed and data.items[].ok/error; failed entries exit 255 even with ok:true.\n",
+                ),
+                (Scope::Session, "exec") => concat!(
+                    "\nInline PTY output is bounded to 2 MiB; check data.output.truncated.\n",
+                    "The complete log remains available through session read; do not rerun the command for output.\n",
+                ),
+                (Scope::Session, "read") => concat!(
+                    "\nJSON text is data.content. Resume with --since set to data.next;\n",
+                    "data.more reports whether another page is available. Cursors count source bytes.\n",
+                ),
+                _ => "",
+            });
+            text
+        }
         None => group(scope),
     }
 }

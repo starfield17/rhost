@@ -4,7 +4,7 @@ Run `make rust-check` after Rust changes. `make structure` enforces the shape:
 a file that outgrows the reading budget fails, and so does a first-party
 `crate::`/`rhost::` dependency the policy does not allow or one that closes a
 cycle. The one place the permitted edges are written down is the `ALLOWED` map
-in `scripts/check-structure.sh`; read it there (`./scripts/check-structure.sh -v`
+in `scripts/check-structure.py`; read it there (`./scripts/check-structure.sh -v`
 prints it beside the graph the source actually produced). A module added here
 must gain a policy entry there.
 
@@ -12,8 +12,7 @@ must gain a policy entry there.
 
 The tree is cut by capability: one directory owns one reason to change, and a
 change to a capability should need only that directory plus the shared surfaces
-it names. `app/`, `output/` and `fileops/` no longer exist; their work lives
-with the capability that owns it.
+it names.
 
 | Path | Owns |
 | --- | --- |
@@ -28,17 +27,18 @@ with the capability that owns it.
 | `doctor/` | the capability probe and its envelope |
 | `hosts/` | local OpenSSH client-config discovery and its envelope |
 | `connection/` | control-master status/reset; the shared `ConnectionDto` |
-| `files/` | `fs`: grammar, use-cases, tool/helper backend, envelope (old `fileops`) |
+| `files/` | `fs`: grammar, use-cases, tool/helper backend, envelope |
 | `session/` | remote tmux sessions: grammar, use-cases, helper protocol/scripts, envelope |
 | `tunnel/` | one forward per dedicated OpenSSH master: records, requests, the master |
 | `main.rs` | signal handlers, parse, run, deliver |
-| `tests/acceptance/` | one hermetic black-box test crate, split by capability |
-| `tests/live_exec.rs`, `tests/live/` | feature-gated native live acceptance, split by capability |
+| root primitives | `config`, `shell`, `base64`, `clock`, `random`, `stdio`, `signals`, `host` |
+| `../tests/acceptance/` | one hermetic black-box test crate, split by capability |
+| `../tests/live_exec.rs`, `../tests/live/` | feature-gated native live acceptance, split by capability |
 
-- **Shared foundation** (`domain`, `transport`, `remote`, `wire`, `cli`) is the
-  only thing more than one capability may depend on. A capability never depends
-  on a sibling capability; the one declared exception is `doctor -> connection`,
-  which reuses the shared master DTO.
+- Capabilities use the shared foundation and the concrete root primitives
+  allowed by `ALLOWED`. Capability runners may also depend on `audit` for the
+  trail and timer. The other permitted capability edge is `doctor -> connection`,
+  which reuses the shared master DTO. No other sibling edges are permitted.
 - `dispatch` may depend on every capability because wiring is its whole job; it
   holds no capability behavior. `main` also uses `transport` and `signals` for
   process setup and shutdown; the `ALLOWED` map is authoritative.
@@ -77,3 +77,21 @@ with the capability that owns it.
   blanket lint allowances. Private domain modules expose only the facade in mod.rs.
 - Review contract changes before implementation changes. Type errors do not
   authorize weakening a constructor or replacing distinct identities with String.
+
+## Locate a change
+
+Paths below are relative to the repository root. Read the owner and relevant
+contract rows, then expand only for an unresolved dependency or failure.
+
+| Task | Entry / implementation | Contract / verification |
+| --- | --- | --- |
+| Flags, routing, help | `src/dispatch/`, capability `command.rs`, `src/cli/flags.rs` | `WIRE-*`; `cargo test --locked --test cli` |
+| Foreground execution / SSH | `src/exec/`, `src/transport/`, `src/remote/` | `EXEC-*`, `SSH-*`; acceptance `exec::`, `transport::` |
+| File input / editing / copies | `src/files/command.rs`, `input.rs`, `ops/`, `backend/` | `FS-*`; acceptance `edit::`, `remote_fs::`, `files::`, `examples::` |
+| Persistent terminals | `src/session/command.rs`, `ops/`, `remote/` | `SESSION-*`; acceptance `session::`; manual `make test-live-session` |
+| Tunnels / audit / discovery | matching capability `command` / `run` and DTO | `TUNNEL-*`, `AUDIT-*`, `SSH-*`; matching acceptance module |
+| JSON / contract evidence | capability `dto`, `src/wire/`, `docs/CONTRACT.md` | active schema; `cargo test --locked --test contracts --test contract_evidence` |
+
+For an acceptance module, run `cargo test --locked --test acceptance '<module>::'`.
+`make check` remains the complete local gate; remote suites require explicit
+`RHOST_TEST_HOST` and `RHOST_BIN` as documented in the root instructions.
