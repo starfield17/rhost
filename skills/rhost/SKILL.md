@@ -14,6 +14,20 @@ probe completed: inspect `data.capabilities` and `data.state_dir_writable` for
 optional operations. `python3:true` reports command presence; file operations
 check helper readiness on the target themselves.
 
+## Fast decision tree
+
+| What you want to do | Canonical invocation |
+| --- | --- |
+| Run an ordinary command / inspect host | `rhost exec <host> --command '<cmd>'` or `--command-file ./script.sh` |
+| Zero-daemon background job | `rhost exec <host> --command 'nohup <cmd> > job.log 2>&1 </dev/null & echo $! > job.pid'` |
+| Stateful shell / REPL / persistent session | `rhost session create <host> --name debug` → `exec` / `send` / `read` |
+| Read remote file & get hash | `rhost fs read <host> '<remote-path>' --json` (yields `data.sha256`) |
+| Write / overwrite file without local temp file | `printf '...' \| rhost fs write <host> '<remote-path>' [--if-hash <sha>] --json` or `<< 'EOF'` |
+| Apply precision line edits without local temp file | `printf '{"sha256":"%s",...}' <sha> \| rhost fs patch <host> '<remote-path>' --json` or `<< 'EOF'` |
+| Transfer / directory sync | `rhost fs sync <host> ./local '<remote-dir>' --dry-run --json` |
+| Persistent port forwarding | `rhost tunnel open <host> --kind local --listen localhost:8080 --destination localhost:8000 --json` |
+| Probe dependencies & SSH connection reuse | `rhost doctor <host> --json` / `rhost connection status <host> --json` |
+
 ## Choose the smallest operation
 
 | Need | Operation |
@@ -25,9 +39,12 @@ check helper readiness on the target themselves.
 | Diagnose SSH reuse or dependencies | `connection`, `doctor` |
 | Inspect the local operation trail | `audit` |
 
-For work that only outlasts a tool call, background the local `rhost exec` in the
-agent runtime. Work that must survive that runtime belongs to an existing remote
-scheduler, invoked explicitly through `exec`. Sessions own terminal state.
+For work that outlasts a tool call, background the local `rhost exec` in the
+agent runtime, or detach a canonical zero-daemon background process remotely:
+`nohup <cmd> > job.log 2>&1 </dev/null & echo $! > job.pid`. Check status via
+`kill -0 $(cat job.pid) 2>/dev/null && echo RUNNING || echo STOPPED`. Work that must
+survive long-term belongs to an existing remote scheduler, invoked explicitly through
+`exec`. Sessions own interactive terminal state.
 
 ## Run a program
 
@@ -47,6 +64,75 @@ Exec runs under remote `bash -lc`, with that shell's startup environment.
 `--fresh` selects an independent SSH connection, not a clean environment.
 Ordinary calls reuse an OpenSSH ControlMaster with a 15-minute persistence
 window. See [CLI.md](references/CLI.md) for environment diagnosis and defaults.
+
+### Privileged execution (`sudo`) and environment
+
+- `sudo` credentials do NOT persist across separate `rhost exec` calls: each call
+  is an independent non-tty session, isolated by `tty_tickets`.
+- `secure_path` in remote `/etc/sudoers` resets `PATH` to a minimal system path,
+  stripping user additions (Homebrew, Conda, Cargo). Use absolute binary paths
+  (e.g. `sudo /usr/bin/apt-get update`) or `sudo env PATH="$PATH" <cmd>`.
+- For multi-step privileged tasks, run them in a single script via `--command-file`,
+  a compound command under `exec`, or inside an `rhost session`.
+- If `sudo` needs a password non-interactively, pass it via stdin to `sudo -S`
+  (never leak passwords in command strings or audit trails). For interactive sudo,
+  use direct OpenSSH with a PTY (`ssh -t <host> 'sudo ...'`).
+
+### Canonical zero-daemon background idiom
+
+When a task should keep running on the remote host after the CLI command completes,
+avoid complex daemons. Use standard Unix process detachment:
+
+```bash
+# Launch detached process:
+rhost exec <host> --cwd '~/work' --command 'nohup <command> > job.log 2>&1 </dev/null & echo $! > job.pid' --json
+
+# Inspect liveness:
+rhost exec <host> --cwd '~/work' --command 'kill -0 $(cat job.pid) 2>/dev/null && echo RUNNING || echo STOPPED' --json
+
+# View output log or terminate:
+rhost exec <host> --cwd '~/work' --command 'tail -n 50 job.log' --json
+rhost exec <host> --cwd '~/work' --command 'kill $(cat job.pid) 2>/dev/null' --json
+```
+
+## File operations, Heredocs, and Stdin one-liners
+
+Both `fs write` and `fs patch` read from stdin by default (`--from -` and `--patch -`).
+Agents do not need to create local temporary files. Use piped one-liners or Heredocs directly:
+
+```bash
+# Stdin one-liner to create or write a remote file:
+printf 'file contents\n' | rhost fs write <host> '<remote-path>' --parents --json
+
+# Multi-line write via Heredoc:
+rhost fs write <host> '<remote-path>' --parents --json << 'EOF'
+file contents here
+line 2
+EOF
+
+# Stdin one-liner hash-guarded replacement (safe compare-and-swap with hash from fs read):
+printf 'updated contents\n' | rhost fs write <host> '<remote-path>' --if-hash <sha256> --json
+
+# Multi-line replacement via Heredoc:
+rhost fs write <host> '<remote-path>' --if-hash <sha256> --json << 'EOF'
+updated contents
+EOF
+
+# Stdin one-liner precision patch:
+printf '{"sha256":"%s","edits":[{"start":2,"end":2,"text":"replacement line\\n"}]}' <sha256> | rhost fs patch <host> '<remote-path>' --json
+
+# Hash-guarded line-range patch via Heredoc:
+rhost fs patch <host> '<remote-path>' --json << 'EOF'
+{
+  "sha256": "<sha256-from-read>",
+  "edits": [{"start": 2, "end": 2, "text": "replacement line\n"}]
+}
+EOF
+```
+
+Creating a new file requires no hash. Replacing an existing file and every patch
+require the fresh hash returned by `rhost fs read <host> '<path>' --json`.
+Editing names an exact regular file and refuses symlinks in any path component.
 
 ## Choose output and inspect evidence
 

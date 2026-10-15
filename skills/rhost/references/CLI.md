@@ -91,6 +91,46 @@ operand must be a regular local file. No persistent session is needed just to
 run a script. JSON string escaping is decoded by `jq -r`; pretty-printing the
 envelope alone does not turn captured text into multiple readable lines.
 
+### Privileged execution (`sudo`) and environment
+
+Exec runs in a non-interactive login shell under `setsid bash -lc`.
+Executing commands with `sudo` across rhost calls has specific constraints:
+
+- Sudo timestamp caching (`timestamp_timeout`) does not survive across separate
+  rhost calls when the remote sudo configuration uses `tty_tickets` (the default
+  on most Linux distributions). Each `rhost exec` is an independent non-tty session.
+- `secure_path` in `/etc/sudoers` resets `PATH` to system directories
+  (`/usr/bin:/bin:/usr/sbin:/sbin`), stripping user `PATH` additions like Homebrew
+  (`/opt/homebrew/bin`), Conda/Mamba environments, or Cargo. Invoke tools by full path
+  (e.g., `sudo /usr/bin/apt-get update`) or pass `sudo env PATH="$PATH" <tool>`.
+- For multi-step privileged tasks, group them in a single script via `--command-file`,
+  or execute them within an `rhost session`.
+- If password input is required non-interactively, use `sudo -S` with stdin. Never
+  put passwords into command text, arguments, or environment variables. For interactive
+  password entry, use direct OpenSSH with a PTY: `ssh -t <host> 'sudo ...'`.
+
+### Canonical zero-daemon background idiom
+
+For tasks that must continue running remotely after the CLI exits without needing a
+stateful terminal or an external daemon, use standard Unix process detachment:
+
+```bash
+# Launch detached process and record PID:
+rhost exec gpu --cwd '~/work' --command 'nohup <command> > job.log 2>&1 </dev/null & echo $! > job.pid' --json
+
+# Check if process is still running:
+rhost exec gpu --cwd '~/work' --command 'kill -0 $(cat job.pid) 2>/dev/null && echo RUNNING || echo STOPPED' --json
+
+# Read trailing output:
+rhost exec gpu --cwd '~/work' --command 'tail -n 50 job.log' --json
+
+# Terminate detached process:
+rhost exec gpu --cwd '~/work' --command 'kill $(cat job.pid) 2>/dev/null' --json
+```
+
+This survives CLI exit and ControlMaster teardown, keeps process logs intact,
+and preserves explicit PID tracking without complex process lifecycles.
+
 ## Hosts and diagnosis
 
 ```bash
@@ -221,8 +261,8 @@ rhost fs get <host> '<remote-path>' ./local [--resume] [--checksum]
 rhost fs sync <host> ./directory '<remote-directory>' --dry-run --json
 rhost fs mirror <host> '<remote-directory>' ./directory --dry-run --json
 rhost fs read <host> '<remote-file>' --lines 200 --start 1 --json
-rhost fs write <host> '<remote-file>' --from ./file --if-hash <sha256> --json
-rhost fs patch <host> '<remote-file>' --patch ./patch.json --if-hash <sha256> --json
+rhost fs write <host> '<remote-file>' [--from ./file] [--if-hash <sha256>] [--parents] [--mode <octal>] --json
+rhost fs patch <host> '<remote-file>' [--patch ./patch.json] [--if-hash <sha256>] --json
 rhost fs batch <host> --manifest ./copies.json --json
 ```
 
@@ -271,10 +311,45 @@ Ranges are 1-based inclusive lines in the original file, must not overlap, and
 must stay inside that file. Text is inserted literally, including its newlines;
 an empty string deletes the selected lines. An explicit `--if-hash` overrides
 the document's hash. On `FILE_CONFLICT`, read and merge again before applying.
-Use `--patch -` to read JSON from stdin; `fs write --from -` similarly reads
-replacement text from stdin. Both inputs default to stdin when their input flag
-is omitted and have an 8 MiB limit. A patch cannot insert into an empty file;
-use a hash-guarded `fs write` for that replacement.
+
+### Writing and patching via stdin (Heredocs and pipes)
+
+Both `fs write` and `fs patch` read from stdin by default (`--from -` and `--patch -`
+are implicit when omitted) with an 8 MiB limit. Agents do not need to create local
+scratch files:
+
+```bash
+# Stdin one-liner to write or create a remote file:
+printf 'line 1\nline 2\n' | rhost fs write gpu '~/work/example.txt' --parents --json
+
+# Multi-line write without local files:
+rhost fs write gpu '~/work/example.txt' --parents --json << 'EOF'
+line 1
+line 2
+EOF
+
+# Stdin one-liner hash-guarded replacement:
+printf 'line 1\nmodified line 2\n' | rhost fs write gpu '~/work/example.txt' --if-hash <sha256-from-read> --json
+
+# Multi-line hash-guarded replacement (safe compare-and-swap):
+rhost fs write gpu '~/work/example.txt' --if-hash <sha256-from-read> --json << 'EOF'
+line 1
+modified line 2
+EOF
+
+# Stdin one-liner precision patch:
+printf '{"sha256":"%s","edits":[{"start":2,"end":2,"text":"gamma\\n"}]}' <sha256-from-read> | rhost fs patch gpu '~/work/example.txt' --json
+
+# Multi-line hash-guarded patch:
+rhost fs patch gpu '~/work/example.txt' --json << 'EOF'
+{
+  "sha256": "<sha256-from-read>",
+  "edits": [{"start": 2, "end": 2, "text": "gamma\n"}]
+}
+EOF
+```
+
+A patch cannot insert into an empty file; use a hash-guarded `fs write` for that replacement.
 
 ### Batch manifest
 

@@ -33,10 +33,13 @@ remote digest. Directory `sync/mirror` never deletes without `--delete`.
 `fs read` returns bounded UTF-8 text and the SHA-256 of the complete file.
 `fs write` may create a new file without `--if-hash`; replacing an existing
 file requires the hash last returned by `fs read`. `fs patch` always requires
-a matching hash. A missing required hash returns `HASH_REQUIRED`; a stale hash
-returns `FILE_CONFLICT`. Replacement locks the already-held parent directory
-and performs a dirfd-relative temp write, hash recheck, and rename (or link when
-creating); the final filesystem operation remains atomic.
+a matching hash. Both `fs write` and `fs patch` read from stdin by default
+(`--from -` and `--patch -`), allowing callers to stream content or use Heredocs
+without creating local scratch files. A missing required hash returns
+`HASH_REQUIRED`; a stale hash returns `FILE_CONFLICT`. Replacement locks the
+already-held parent directory and performs a dirfd-relative temp write, hash
+recheck, and rename (or link when creating); the final filesystem operation
+remains atomic.
 
 ### Why the remote filesystem helper is an embedded interpreter script
 

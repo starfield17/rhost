@@ -238,14 +238,7 @@ pub(crate) fn run(harness: &Harness, args: &[&str]) -> Result<Outcome, String> {
     })
 }
 
-/// Runs one command that must answer with a schema-valid envelope. Parsing the
-/// whole trimmed stdout as a single value is what enforces "exactly one document
-/// and no prose" (WIRE-002).
-pub(crate) fn envelope(
-    harness: &Harness,
-    args: &[&str],
-) -> Result<(Outcome, serde_json::Value), String> {
-    let outcome = run(harness, args)?;
+fn parse_envelope(outcome: &Outcome, args: &[&str]) -> Result<serde_json::Value, String> {
     let value: serde_json::Value =
         serde_json::from_str(outcome.stdout.trim()).map_err(|error| {
             fail(
@@ -266,6 +259,57 @@ pub(crate) fn envelope(
     if value["ok"].as_bool().unwrap_or(false) != value["error"].is_null() {
         return Err(format!("{args:?} disagrees between ok and error: {value}"));
     }
+    Ok(value)
+}
+
+/// Runs one command that must answer with a schema-valid envelope. Parsing the
+/// whole trimmed stdout as a single value is what enforces "exactly one document
+/// and no prose" (WIRE-002).
+pub(crate) fn envelope(
+    harness: &Harness,
+    args: &[&str],
+) -> Result<(Outcome, serde_json::Value), String> {
+    let outcome = run(harness, args)?;
+    let value = parse_envelope(&outcome, args)?;
+    Ok((outcome, value))
+}
+
+pub(crate) fn run_with_stdin(
+    harness: &Harness,
+    args: &[&str],
+    input: &[u8],
+) -> Result<Outcome, String> {
+    let mut command = harness.command(args)?;
+    command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|error| fail("spawn candidate", error))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin
+            .write_all(input)
+            .map_err(|error| fail("write stdin", error))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| fail("wait candidate", error))?;
+    Ok(Outcome {
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status: output.status.code().unwrap_or(-1),
+    })
+}
+
+pub(crate) fn envelope_with_stdin(
+    harness: &Harness,
+    args: &[&str],
+    input: &[u8],
+) -> Result<(Outcome, serde_json::Value), String> {
+    let outcome = run_with_stdin(harness, args, input)?;
+    let value = parse_envelope(&outcome, args)?;
     Ok((outcome, value))
 }
 

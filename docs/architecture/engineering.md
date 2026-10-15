@@ -24,32 +24,10 @@ OpenSSH, tmux and remote processes.
 
 ## Verification
 
-```bash
-make test-smoke
-make check
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-smoke
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-session
-RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
-```
+Verification suites, commands, local gates, and release requirements are defined
+authoritatively in [`AGENTS.md`](../../AGENTS.md#9-verify-before-reporting) and
+[`docs/MAINTENANCE.md`](../MAINTENANCE.md#verification-gates).
 
-`make test-smoke` runs the complete local Rust black-box acceptance crate. Its
-external-tool defaults refuse access, so it needs no SSH service or configured
-host and cannot accidentally contact one. `make check` covers Rust formatting,
-clippy, unit tests, independent DTO schema validation, domain boundaries,
-portability, the structure budget, native-live compilation and coverage,
-the release contract check and the contract-evidence check.
-The production Rust implementation covers every schema-v2 operation except
-`session attach`, which the schema requires to be a usage error; see the current
-[maintenance policy](../MAINTENANCE.md). Live suites provide manual evidence of behavior across independent CLI processes on a real
-remote Linux host. `test-live-smoke` is the frequent, bounded check of the main
-exec, file and session workflows. The feature suites and `test-live-all`
-retain the exhaustive failure, persistence and transport cases. The native full
-suite is serial for deterministic ownership and cleanup, validates every JSON
-answer against schema v2, and runs the exact binary named by `RHOST_BIN`.
-The Rust native live suites are a documented manual pre-release step, not an
-automated release-workflow gate; the archived Go harness is no longer part of
-this tree.
+Architectural acceptance criteria and contested-path frames live in
+[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#observable-acceptance).
 
-Tracked examples and verification claims must remain host-independent.
-`scripts/check-portability.sh` enforces this.

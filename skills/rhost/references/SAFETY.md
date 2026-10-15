@@ -52,8 +52,15 @@ supplies a tool: ask the host with `command -V <tool>` and the host's own packag
 manager (`dpkg -S`, `rpm -qf`, `brew --prefix`, ...), run through `exec`.
 
 Do not rely on a `sudo` timestamp surviving across rhost calls. Each invocation is
-its own submission, so a cache granted to an earlier call may have expired. When
-`sudo` needs a password, use OpenSSH's own PTY — `ssh -t <host> 'sudo ...'` —
+its own submission under `setsid bash -lc`, so a cache granted to an earlier call
+does not survive when the remote sudo configuration uses `tty_tickets` (the default
+on most Linux distributions). Remote `secure_path` in `/etc/sudoers` also resets
+`PATH` to minimal system directories, stripping user `PATH` additions like Homebrew,
+Conda, or Cargo; invoke privileged commands with full binary paths or configure
+`sudo env PATH="$PATH"`. For multi-step privileged tasks, group commands into a
+single script via `--command-file`, or use an `rhost session`. When `sudo` requires
+a password non-interactively, pass it via stdin (`sudo -S`). When `sudo` needs an
+interactive password, use OpenSSH's own PTY — `ssh -t <host> 'sudo ...'` —
 and never pass the password through a session `send`, a command argument, an
 environment flag, or a temporary plaintext file.
 

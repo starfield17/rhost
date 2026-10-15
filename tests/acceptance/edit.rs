@@ -5,7 +5,7 @@
 //! instead, which is why `python3_available` exists.
 
 use crate::hosts::{local_host, scp_stub};
-use crate::support::{Harness, envelope, fail, python3_available, want_code};
+use crate::support::{Harness, envelope, envelope_with_stdin, fail, python3_available, want_code};
 use std::os::unix::fs::symlink;
 
 #[test]
@@ -456,5 +456,42 @@ fn the_editing_surface_refuses_symlinked_targets_without_reading_or_writing_thro
             "a refused symlink edit left a helper temp: {name}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn writing_and_patching_via_stdin_uses_defaults() -> Result<(), String> {
+    let harness = Harness::open("fs-stdin-edit")?;
+    local_host(&harness)?;
+    if !python3_available() {
+        return Ok(());
+    }
+    let target = harness.path("remote/test.txt");
+    std::fs::create_dir_all(harness.path("remote")).map_err(|e| fail("fixture", e))?;
+    let path = target.to_string_lossy().to_string();
+
+    let (out, val) = envelope_with_stdin(
+        &harness,
+        &["fs", "write", "gpu", &path, "--json"],
+        b"a\nb\n",
+    )?;
+    assert_eq!(out.status, 0, "{val}");
+    let got = std::fs::read_to_string(&target).map_err(|e| fail("read", e))?;
+    assert_eq!(got, "a\nb\n");
+
+    let (_, read) = envelope(&harness, &["fs", "read", "gpu", &path, "--json"])?;
+    let hash = read["data"]["sha256"].as_str().unwrap_or("");
+    let patch = format!(
+        "{{\"sha256\":\"{hash}\",\"edits\":[{{\"start\":2,\"end\":2,\"text\":\"c\\n\"}}]}}"
+    );
+
+    let (out, val) = envelope_with_stdin(
+        &harness,
+        &["fs", "patch", "gpu", &path, "--json"],
+        patch.as_bytes(),
+    )?;
+    assert_eq!(out.status, 0, "{val}");
+    let got = std::fs::read_to_string(&target).map_err(|e| fail("read", e))?;
+    assert_eq!(got, "a\nc\n");
     Ok(())
 }
