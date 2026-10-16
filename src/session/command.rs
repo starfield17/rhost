@@ -38,6 +38,7 @@ pub enum Session {
         host: String,
         session: String,
         offset: session::ReadOffset,
+        max_bytes: usize,
         timeout_nanos: i64,
     },
     Recover {
@@ -103,6 +104,11 @@ static READ_FLAGS: &[FlagSpec] = &[
         "read at most the last N bytes of available output",
     ),
     FlagSpec::value(
+        "max-bytes",
+        false,
+        "raw bytes per page; default 262144, range 4..262144",
+    ),
+    FlagSpec::value(
         "timeout",
         false,
         "operation deadline; 0 uses the 30-second default",
@@ -131,6 +137,7 @@ static ANY_FLAGS: &[FlagSpec] = &[
     FlagSpec::value("key", false, ""),
     FlagSpec::value("since", false, ""),
     FlagSpec::value("tail", false, ""),
+    FlagSpec::value("max-bytes", false, ""),
     FlagSpec::value("timeout", false, ""),
     FlagSpec::long("enter", ""),
 ];
@@ -299,10 +306,26 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
                 },
                 (None, None) => session::ReadOffset::Since(0),
             };
+            let max_bytes = match parsed.value("max-bytes") {
+                None => session::MAX_READ_BYTES,
+                Some(raw) => match raw.parse::<usize>() {
+                    Ok(value) if (4..=session::MAX_READ_BYTES).contains(&value) => value,
+                    _ => {
+                        return ParsedCommand::usage(
+                            Scope::Session,
+                            format!(
+                                "--max-bytes must be between 4 and {}",
+                                session::MAX_READ_BYTES
+                            ),
+                        );
+                    }
+                },
+            };
             ParsedCommand::Run(Session::Read {
                 host: operands[0].clone(),
                 session: operands[1].clone(),
                 offset,
+                max_bytes,
                 timeout_nanos: match timeout(&parsed, READ_TIMEOUT) {
                     Ok(nanos) => nanos,
                     Err(message) => return ParsedCommand::usage(Scope::Session, message),

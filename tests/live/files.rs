@@ -98,6 +98,30 @@ fn write_and_patch_are_cas_guarded_and_preserve_mode() -> Result<(), String> {
     assert_eq!(stale.output.status.code(), Some(255));
     let final_read = live.ok(&["--json", "fs", "read", &host, &target])?;
     assert_eq!(text(&final_read.value, "/data/content")?, "gamma\n");
+    let patch = live.path("exact-patch.json");
+    let mut hash = text(&final_read.value, "/data/sha256")?.to_string();
+    for (old, new) in [("gamma\n", "delta\n"), ("delta\n", "finished\n")] {
+        let document = serde_json::json!({"sha256": hash, "edits": [{"old": old, "new": new}]});
+        write(&patch, document.to_string().as_bytes())?;
+        let result = live.ok(&[
+            "--json",
+            "fs",
+            "patch",
+            &host,
+            &target,
+            "--patch",
+            &patch.to_string_lossy(),
+        ])?;
+        hash = text(&result.value, "/data/sha256")?.to_string();
+    }
+    let patched = live.ok(&["--json", "fs", "read", &host, &target])?;
+    assert_eq!(text(&patched.value, "/data/content")?, "finished\n");
+    assert_eq!(text(&patched.value, "/data/sha256")?, hash);
+    let mode = live.exec(&format!("stat -c %a -- {}", shell_quote(&target)))?;
+    assert_eq!(
+        text(&mode.value, "/data/output/stdout/content")?.trim(),
+        "640"
+    );
     live.cleanup_remote(&remote)
 }
 

@@ -44,7 +44,10 @@ fn help_lists_the_flags_each_command_accepts() -> Result<(), Box<dyn std::error:
             vec!["session", "exec", "--help"],
             vec!["--command", "--command-file"],
         ),
-        (vec!["session", "read", "--help"], vec!["--since", "--tail"]),
+        (
+            vec!["session", "read", "--help"],
+            vec!["--since", "--tail", "--max-bytes"],
+        ),
         (
             vec!["fs", "write", "--help"],
             vec!["--from", "--if-hash", "--mode", "--parents"],

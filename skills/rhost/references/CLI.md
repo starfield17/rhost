@@ -225,7 +225,9 @@ rhost session close <host> debug --json
 
 `session create` accepts `--name`, `--cwd`, `--shell bash`, and `--timeout`.
 `session exec` accepts `--command` or `--command-file` (mutually exclusive), and
-`--timeout`. List, read, and recover also accept their documented timeout. Writers are
+`--timeout`. A command file is a regular local UTF-8 file, not a remote path;
+the same 64 KiB limit and file checks as foreground exec apply.
+List, read, and recover also accept their documented timeout. Writers are
 serialized remotely. `SESSION_BUSY` means another program owns the pane and the
 requested command was not submitted. `send --data` is verbatim; `--enter` pastes
 the data and presses Enter in the same submission.
@@ -236,9 +238,24 @@ Session exec returns `data.session_id`, `data.session_ref`, `data.execution`,
 `data.output.bytes` counts the full segment and `data.output.truncated` reports
 omitted bytes. Use `session read` for the retained log instead of repeating the
 command. Read returns text at `data.content` and up to 256 KiB of source bytes
-per page; use `--tail N` to read at most the last N bytes of retained output, or
-`--since` set to `data.next`, and continue while `data.more` is true. Byte cursors
-must come from the response, not the rendered text length.
+per page. `--max-bytes N` lowers that budget (4..262144, default 262144); the
+minimum holds one complete UTF-8 character. An incomplete trailing character
+is held for the next page, so a page can be shorter than its budget.
+Use `--tail N` to select the last N bytes of retained output, or `--since` set
+to `data.next`, and continue while `data.more` is true. These offset flags are
+mutually exclusive. With `--tail N --max-bytes M`, reading starts N bytes back
+from the measured log end and returns at most M source bytes. `--tail 0`
+returns an empty page at that end. Concurrent appends are left for later reads;
+`data.size` describes the measured window, not a promise that no newer output exists.
+Byte cursors must come from the response, not the rendered text length: terminal
+sequences are removed from displayed content.
+
+```bash
+# Start with a bounded page from the recent log window.
+rhost session read <host> debug --tail 8192 --max-bytes 4096 --json
+# Continue using the preceding response's data.next while data.more is true.
+rhost session read <host> debug --since <data.next> --max-bytes 4096 --json
+```
 `session attach` returns a non-retryable `USAGE_ERROR`; the v2
 envelope has no honest terminal attachment representation.
 

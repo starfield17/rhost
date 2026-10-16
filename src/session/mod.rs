@@ -53,6 +53,9 @@ use serde::{Deserialize, Serialize};
 /// (or zsh), and the backend standardises on bash.
 pub const DEFAULT_SHELL: &str = "bash";
 
+/// Default and maximum raw-byte page budget for `session read`.
+pub const MAX_READ_BYTES: usize = 256 * 1024;
+
 /// The most pane bytes one `session exec` inlines into its helper answer before
 /// it reports truncation. The base64 form, plus the other line-protocol fields,
 /// must stay inside `ops::shared::FIELD_CAPTURE`: that is what lets the helper

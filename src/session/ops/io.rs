@@ -94,12 +94,13 @@ pub fn read(
     host: &str,
     reference: &str,
     offset: ReadOffset,
+    max_bytes: usize,
     timeout: Duration,
 ) -> Result<Read, Error> {
     let stdout = run_helper(
         client,
         host,
-        &session::read_script(reference, offset, 0),
+        &session::read_script(reference, offset, max_bytes),
         timeout,
         FIELD_CAPTURE,
     )?;

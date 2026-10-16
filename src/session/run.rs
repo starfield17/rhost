@@ -182,8 +182,16 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
             host,
             session,
             offset,
+            max_bytes,
             timeout_nanos,
-        } => match app_session::read(client, &host, &session, offset, budget(timeout_nanos)) {
+        } => match app_session::read(
+            client,
+            &host,
+            &session,
+            offset,
+            max_bytes,
+            budget(timeout_nanos),
+        ) {
             Ok(result) => {
                 if json {
                     sink.envelope(&dto::session_read(&host, &result));

@@ -90,7 +90,8 @@ disagree, so a new code cannot ship undocumented.
 
 For session exec, use `data.execution.status`, `data.session_preserved`, and
 PTY content under `data.output`. For session read, text is `data.content`;
-resume with `--since` set to `data.next` while `data.more` is true. A timeout
+resume with `--since` set to `data.next` while `data.more` is true; use
+`--max-bytes 4096` for small pages (allowed range 4..262144 raw bytes). A timeout
 with `session_preserved:false` means the managed shell is not proven usable.
 
 When a dependency is missing, keep using rhost operations whose dependencies

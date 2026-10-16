@@ -154,5 +154,12 @@
     "mechanism_test": "tests/acceptance/remote_fs.rs:reading_a_pipe_is_refused_instead_of_blocking",
     "conformance_test": null,
     "gap": "The embedded helper's own read path is the evidence; the CLI envelope maps the refusal to the same INVALID_TARGET without a second oracle."
+  },
+  {
+    "id": "HIST-RS-SESSION-003",
+    "origin": "dfd8b36",
+    "contract": "SESSION-005",
+    "mechanism_test": "src/session/remote/scripts/behavior_tests.rs:read_pages_preserve_raw_bytes_and_snapshot_cursors",
+    "conformance_test": "tests/acceptance/session.rs:session_read_budgets_page_from_tail_and_resume_at_the_returned_cursor"
   }
 ]

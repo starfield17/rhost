@@ -65,7 +65,7 @@ pub enum ReadOffset {
 /// explicit cursors so a caller can poll incrementally.
 pub fn read(name_or_id: &str, offset: ReadOffset, max_bytes: usize) -> String {
     let max_bytes = if max_bytes == 0 {
-        256 * 1024
+        crate::session::MAX_READ_BYTES
     } else {
         max_bytes
     };
@@ -80,6 +80,7 @@ pub fn read(name_or_id: &str, offset: ReadOffset, max_bytes: usize) -> String {
     out.push_str("DIR=\"$RHOST_DIR\"; LOG=\"$DIR/pty.log\"\n");
     out.push_str("LOG=$(printf '%s' \"$LOG\" | sed 's#/$##')\n");
     out.push_str("size=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n");
+    out.push_str("size=$((size))\n");
     match offset {
         ReadOffset::Since(since) => {
             out.push_str(&format!("since={since}\n"));
@@ -92,13 +93,16 @@ pub fn read(name_or_id: &str, offset: ReadOffset, max_bytes: usize) -> String {
             );
         }
     }
+    // Hold one bounded page in base64: raw shell substitution would discard
+    // trailing newlines and NUL bytes. Counting and delivering the same page
+    // also prevents appends between reads from contradicting the cursors.
     out.push_str(&format!(
-        "inc=$(tail -c +$((since+1)) \"$LOG\" 2>/dev/null | head -c {max_bytes} | wc -c)\n"
+        "page=$(tail -c +$((since+1)) \"$LOG\" 2>/dev/null | head -c \"$((size - since))\" | head -c {max_bytes} | base64 -w0)\n"
     ));
+    out.push_str("inc=$(printf '%s' \"$page\" | base64 -d | wc -c)\ninc=$((inc))\n");
     out.push_str("echo \"RHOST_FROM=$since\"\n");
     out.push_str("echo \"RHOST_NEXT=$((since + inc))\"\n");
     out.push_str("echo \"RHOST_SIZE=$size\"\n");
-    out.push_str("tail -c +$((since+1)) \"$LOG\" 2>/dev/null | head -c \"$inc\" | base64 -w0\n");
-    out.push_str("echo\n");
+    out.push_str("printf '%s\\n' \"$page\"\n");
     out
 }

@@ -6,7 +6,9 @@ description: Run commands and perform explicit file, session, tunnel, or diagnos
 # rhost
 
 Use an SSH target: alias, `user@example-host`, or hostname (`rhost hosts --json` lists known aliases).
-On first use of a host, run `rhost doctor <host> --json` (`python3:true` reports interpreter presence).
+On first use of a host, run `rhost doctor <host> --json`. `ok:true` means the probe completed;
+inspect `data.capabilities` and `data.state_dir_writable` before optional operations.
+`python3:true` reports command presence; file operations check helper readiness themselves.
 
 ## Fast decision tree
 
@@ -24,8 +26,21 @@ On first use of a host, run `rhost doctor <host> --json` (`python3:true` reports
 
 ## Output mode
 
-- **Read-only exploration**: Use default text mode (no `--json`). Streams stdout/stderr directly with minimal token overhead.
-- **Mutations & programmatic branching**: Always use `--json`. Returns a schema-v2 envelope on stdout. Branch on `error.code`, never on English text. `--json --stream` also mirrors output to stderr.
+- For interactive investigation, default `exec` text mode streams stdout/stderr.
+  It has no default deadline or output cap; bound verbose probes in the remote command.
+- For mutations, programmatic branching, hashes or pagination, use `--json`.
+  Stdout is one schema-v2 envelope; `--json --stream` mirrors exec output to stderr.
+  Parse stdout separately and branch on `error.code`, never English text or exit status alone.
+- Exec status is `data.execution.status`; a known remote status is at `data.execution.exit_code`.
+  Text is `data.output.stdout.content` / `data.output.stderr.content` (default capture: 1 MiB each).
+  Check each stream's `truncated` before treating output as complete.
+- Session exec merges PTY output at `data.output.content`; check `data.output.truncated`.
+  Session read uses `data.content`, with raw byte cursors at `data.from` / `data.next`.
+  Resume using `--since <data.next>` while `data.more` is true; rendered text length is not a cursor.
+
+Before retrying a mutation, read [RECOVERY.md](references/RECOVERY.md).
+Timeout, cancellation, unknown completion or output-delivery failure can follow remote effects.
+Inspect `data.execution`, `data.cleanup` when present, and the actual result before resubmitting.
 
 ## Remote file editing (CAS workflow)
 
@@ -52,9 +67,18 @@ Editing uses compare-and-swap (CAS) to prevent lost updates:
 
 ## Execution & Sessions
 
-- **Exec**: Runs via remote `bash -lc` under an OpenSSH ControlMaster (15-minute persistence). Sudo credentials do not persist across separate calls; use `--command-file` or compound commands for multi-step tasks.
+- **Exec**: Runs via remote `bash -lc` under an OpenSSH ControlMaster (15-minute persistence).
+  `--command-file` reads a regular local file (up to 64 KiB); exec leaves stdin free for the program.
+  Syntax inside `--command` runs remotely; syntax outside runs locally. Sudo credentials may not
+  survive separate calls; use a compound program for multi-step tasks.
 - **Background work**: Detach standard Unix processes (`nohup <cmd> > log 2>&1 </dev/null & echo $! > pid`). Check liveness via `kill -0 $(cat pid) 2>/dev/null && echo RUNNING || echo STOPPED`.
-- **Sessions**: Use for stateful shells, REPLs, or long-running commands. Drive via `rhost session exec <host> <name> --command '<cmd>'` (or `--command-file`), inspect output with `rhost session read <host> <name> [--tail <bytes>] [--since <offset>]`, and send raw keys via `send`. `session attach` is refused.
+  Submission success is not job completion. Work needing scheduler guarantees belongs to an existing remote scheduler.
+- **Sessions**: Use for stateful shells, REPLs, or interactive long-running commands.
+  Run `rhost session exec <host> <name> --command '<cmd>'` (or `--command-file`).
+  Read with `rhost session read <host> <name> [--tail <bytes> | --since <offset>] --max-bytes 4096 --json`.
+  The page budget is 4..262144 raw bytes (default 262144); `--tail N` selects the last N bytes,
+  then the budget limits the page. Continue from `data.next`. Drive a busy REPL using `send` / `read`;
+  `recover` intentionally interrupts it. `session attach` is refused.
 
 ## Authority & References
 

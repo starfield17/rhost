@@ -144,6 +144,17 @@ fn the_documented_exact_text_patch_replaces_target_text() -> Result<(), String> 
         std::fs::read_to_string(&target).map_err(|error| fail("read patch result", error))?,
         "line 1\ngamma\n"
     );
+    // Chain another edit using the returned hash, without an intervening read.
+    document["sha256"] = value["data"]["sha256"].clone();
+    document["edits"] = serde_json::json!([{"old": "gamma\n", "new": "delta\n"}]);
+    std::fs::write(&patch, document.to_string())
+        .map_err(|error| fail("write next patch", error))?;
+    let (outcome, value) = envelope(&harness, &args)?;
+    assert_eq!(outcome.status, 0, "{value}");
+    assert_eq!(
+        std::fs::read_to_string(&target).map_err(|error| fail("read chained result", error))?,
+        "line 1\ndelta\n"
+    );
     Ok(())
 }
 

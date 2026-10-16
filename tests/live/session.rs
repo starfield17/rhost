@@ -46,6 +46,38 @@ fn session_state_identity_and_byte_cursor_survive_cli_processes() -> Result<(), 
         assert!(first.contains("/var/log|retained|"));
         assert!(text(&two.value, "/data/output/content")?.contains(shell_pid));
 
+        let program = live.path("session-command.sh");
+        super::support::write(
+            &program,
+            b"export RHOST_LIVE_FILE=from-file\nprintf '%s\\n' \"$RHOST_LIVE_FILE\"\n",
+        )?;
+        let file_exec = live.ok(&[
+            "--json",
+            "session",
+            "exec",
+            &host,
+            &name,
+            "--command-file",
+            program.to_str().ok_or("script path")?,
+        ])?;
+        assert_eq!(
+            text(&file_exec.value, "/data/output/content")?.trim(),
+            "from-file"
+        );
+        let retained = live.ok(&[
+            "--json",
+            "session",
+            "exec",
+            &host,
+            &name,
+            "--command",
+            "printf '%s' \"$RHOST_LIVE_FILE\"",
+        ])?;
+        assert_eq!(
+            text(&retained.value, "/data/output/content")?.trim(),
+            "from-file"
+        );
+
         live.ok(&[
             "--json",
             "session",
@@ -74,6 +106,39 @@ fn session_state_identity_and_byte_cursor_survive_cli_processes() -> Result<(), 
             number(&tail_read.value, "/data/from")?,
             next.saturating_sub(10)
         );
+        let mut cursor = next.saturating_sub(10);
+        while cursor < next {
+            let page = live.ok(&[
+                "--json",
+                "session",
+                "read",
+                &host,
+                &name,
+                "--since",
+                &cursor.to_string(),
+                "--max-bytes",
+                "4",
+            ])?;
+            assert_eq!(number(&page.value, "/data/from")?, cursor);
+            let following = number(&page.value, "/data/next")?;
+            assert!(following > cursor && following - cursor <= 4);
+            cursor = following;
+        }
+        assert_eq!(cursor, next);
+        let empty_tail = live.ok(&[
+            "--json",
+            "session",
+            "read",
+            &host,
+            &name,
+            "--tail",
+            "0",
+            "--max-bytes",
+            "4",
+        ])?;
+        assert_eq!(number(&empty_tail.value, "/data/from")?, next);
+        assert_eq!(number(&empty_tail.value, "/data/next")?, next);
+        assert_eq!(text(&empty_tail.value, "/data/content")?, "");
         Ok(())
     })();
     let closed = live.ok(&["--json", "session", "close", &host, &name]);
