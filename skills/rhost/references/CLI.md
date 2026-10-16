@@ -339,11 +339,19 @@ line 1
 modified line 2
 EOF
 
-# Multi-line hash-guarded patch:
+# Multi-line hash-guarded patch (line-range):
 rhost fs patch gpu '~/work/example.txt' --json << 'EOF'
 {
   "sha256": "<sha256-from-read>",
   "edits": [{"start": 2, "end": 2, "text": "gamma\n"}]
+}
+EOF
+
+# Exact-text replacement patch (recommended for coding agents):
+rhost fs patch gpu '~/work/example.txt' --json << 'EOF'
+{
+  "sha256": "<sha256-from-read>",
+  "edits": [{"old": "modified line 2\n", "new": "gamma\n"}]
 }
 EOF
 ```
