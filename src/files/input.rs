@@ -1,7 +1,7 @@
 //! The local body of a `write` or `patch`, read and bounded before anything is
 //! sent remotely.
 
-use super::backend::Edit;
+use super::backend::{Edit, RangeEdit, ReplaceEdit};
 use crate::remote::Error;
 use serde_json::Value;
 use std::io::{self, Read as _};
@@ -75,28 +75,63 @@ pub(super) fn parse_patch_document(
 
     let mut edits = Vec::with_capacity(raw_edits.len());
     let mut ranges = Vec::with_capacity(raw_edits.len());
+    let mut replace_olds = std::collections::HashSet::new();
+    let mut has_range = false;
+    let mut has_replace = false;
+
     for raw_edit in raw_edits {
-        let edit: Edit = serde_json::from_value(raw_edit.clone())
-            .map_err(|_| Error::new("INVALID_PATCH", "each edit needs only start, end and text"))?;
-        if edit.start < 1 || edit.end < edit.start {
-            return Err(Error::new(
+        let edit: Edit = serde_json::from_value(raw_edit.clone()).map_err(|_| {
+            Error::new(
                 "INVALID_PATCH",
-                "edits must be non-overlapping 1-based inclusive ranges inside the file",
-            ));
+                "each edit needs either (start, end, text) or (old, new)",
+            )
+        })?;
+        match &edit {
+            Edit::Range(RangeEdit { start, end, .. }) => {
+                has_range = true;
+                if *start < 1 || *end < *start {
+                    return Err(Error::new(
+                        "INVALID_PATCH",
+                        "edits must be non-overlapping 1-based inclusive ranges inside the file",
+                    ));
+                }
+                ranges.push((*start, *end));
+            }
+            Edit::Replace(ReplaceEdit { old, .. }) => {
+                has_replace = true;
+                if old.is_empty() {
+                    return Err(Error::new("INVALID_PATCH", "old text must not be empty"));
+                }
+                if !replace_olds.insert(old.clone()) {
+                    return Err(Error::new(
+                        "INVALID_PATCH",
+                        "duplicate old text in patch edits",
+                    ));
+                }
+            }
         }
-        ranges.push((edit.start, edit.end));
         edits.push(edit);
     }
-    ranges.sort_unstable();
-    let mut previous_end = 0;
-    for (start, end) in ranges {
-        if start <= previous_end {
-            return Err(Error::new(
-                "INVALID_PATCH",
-                "edits must be non-overlapping 1-based inclusive ranges inside the file",
-            ));
+
+    if has_range && has_replace {
+        return Err(Error::new(
+            "INVALID_PATCH",
+            "cannot mix line-range and text-replacement edits",
+        ));
+    }
+
+    if has_range {
+        ranges.sort_unstable();
+        let mut previous_end = 0;
+        for (start, end) in ranges {
+            if start <= previous_end {
+                return Err(Error::new(
+                    "INVALID_PATCH",
+                    "edits must be non-overlapping 1-based inclusive ranges inside the file",
+                ));
+            }
+            previous_end = end;
         }
-        previous_end = end;
     }
     Ok((edits, Some(carried)))
 }
@@ -114,8 +149,48 @@ mod tests {
         let (edits, hash) = parse_patch_document(document, None).map_err(|error| error.code)?;
         assert_eq!(hash.as_deref(), Some("a"));
         assert_eq!(edits.len(), 2);
-        assert_eq!(edits[0].start, 3);
-        assert_eq!(edits[1].start, 1);
+        assert_eq!(
+            edits[0],
+            Edit::Range(RangeEdit {
+                start: 3,
+                end: 3,
+                text: "late\n".to_string()
+            })
+        );
+        assert_eq!(
+            edits[1],
+            Edit::Range(RangeEdit {
+                start: 1,
+                end: 2,
+                text: "early\n".to_string()
+            })
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_valid_replace_document_carries_its_hash_and_edits() -> Result<(), String> {
+        let document = br#"{"sha256":"a","edits":[
+            {"old":"foo\n","new":"bar\n"},
+            {"old":"baz\n","new":"qux\n"}
+        ]}"#;
+        let (edits, hash) = parse_patch_document(document, None).map_err(|error| error.code)?;
+        assert_eq!(hash.as_deref(), Some("a"));
+        assert_eq!(edits.len(), 2);
+        assert_eq!(
+            edits[0],
+            Edit::Replace(ReplaceEdit {
+                old: "foo\n".to_string(),
+                new: "bar\n".to_string()
+            })
+        );
+        assert_eq!(
+            edits[1],
+            Edit::Replace(ReplaceEdit {
+                old: "baz\n".to_string(),
+                new: "qux\n".to_string()
+            })
+        );
         Ok(())
     }
 
@@ -152,6 +227,22 @@ mod tests {
             br#"{"sha256":"a","edits":[{"start":2,"end":1,"text":"x"}]}"#.as_slice(),
             br#"{"sha256":"a","edits":[{"start":1,"end":2,"text":"a"},{"start":2,"end":3,"text":"b"}]}"#
                 .as_slice(),
+        ] {
+            let error = parse_patch_document(document, None).err();
+            assert_eq!(error.map(|error| error.code), Some("INVALID_PATCH"));
+        }
+    }
+
+    #[test]
+    fn malformed_replace_edits_are_patch_answers_before_any_remote_call() {
+        for document in [
+            br#"{"sha256":"a","edits":[{"old":"","new":"x"}]}"#.as_slice(),
+            br#"{"sha256":"a","edits":[{"old":"foo"}]}"#.as_slice(),
+            br#"{"sha256":"a","edits":[{"new":"foo"}]}"#.as_slice(),
+            br#"{"sha256":"a","edits":[{"old":"a","new":"b"},{"old":"a","new":"c"}]}"#.as_slice(),
+            br#"{"sha256":"a","edits":[{"start":1,"end":1,"text":"x"},{"old":"a","new":"b"}]}"#
+                .as_slice(),
+            br#"{"sha256":"a","edits":[{"old":"a","new":"b","extra":true}]}"#.as_slice(),
         ] {
             let error = parse_patch_document(document, None).err();
             assert_eq!(error.map(|error| error.code), Some("INVALID_PATCH"));

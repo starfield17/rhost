@@ -8,6 +8,19 @@ use crate::hosts::{local_host, scp_stub};
 use crate::support::{Harness, envelope, envelope_with_stdin, fail, python3_available, want_code};
 use std::os::unix::fs::symlink;
 
+fn patch_cmd<'a>(target: &'a str, path: &'a str) -> [&'a str; 7] {
+    ["fs", "patch", "gpu", target, "--patch", path, "--json"]
+}
+
+fn write_cmd<'a>(target: &'a str, from: &'a str, hash: Option<&'a str>) -> Vec<&'a str> {
+    let mut args = vec!["fs", "write", "gpu", target, "--from", from];
+    if let Some(h) = hash {
+        args.extend(["--if-hash", h]);
+    }
+    args.push("--json");
+    args
+}
+
 #[test]
 fn an_unusable_remote_python_is_a_dependency_failure_before_any_edit() -> Result<(), String> {
     let harness = Harness::open("fs-python-unusable")?;
@@ -92,15 +105,7 @@ fn reading_and_writing_a_remote_file_needs_the_hash_it_was_read_with() -> Result
     let created = harness.path("remote/new.txt");
     let (outcome, value) = envelope(
         &harness,
-        &[
-            "fs",
-            "write",
-            "gpu",
-            &created.to_string_lossy(),
-            "--from",
-            &source,
-            "--json",
-        ],
+        &write_cmd(&created.to_string_lossy(), &source, None),
     )?;
     assert_eq!(outcome.status, 0, "{value}");
     assert_eq!(value["data"]["bytes"], 6);
@@ -110,27 +115,11 @@ fn reading_and_writing_a_remote_file_needs_the_hash_it_was_read_with() -> Result
     );
 
     // Replacing one requires the hash from the read.
-    let (outcome, value) = envelope(
-        &harness,
-        &["fs", "write", "gpu", &target, "--from", &source, "--json"],
-    )?;
+    let (outcome, value) = envelope(&harness, &write_cmd(&target, &source, None))?;
     assert_eq!(outcome.status, 255, "{value}");
     want_code(&value, "HASH_REQUIRED")?;
 
-    let (outcome, value) = envelope(
-        &harness,
-        &[
-            "fs",
-            "write",
-            "gpu",
-            &target,
-            "--from",
-            &source,
-            "--if-hash",
-            &hash,
-            "--json",
-        ],
-    )?;
+    let (outcome, value) = envelope(&harness, &write_cmd(&target, &source, Some(&hash)))?;
     assert_eq!(outcome.status, 0, "{value}");
     assert_eq!(
         std::fs::read_to_string(&target).map_err(|e| fail("read back", e))?,
@@ -138,20 +127,7 @@ fn reading_and_writing_a_remote_file_needs_the_hash_it_was_read_with() -> Result
     );
 
     // The same hash cannot be replayed: the file is no longer the one it named.
-    let (outcome, value) = envelope(
-        &harness,
-        &[
-            "fs",
-            "write",
-            "gpu",
-            &target,
-            "--from",
-            &source,
-            "--if-hash",
-            &hash,
-            "--json",
-        ],
-    )?;
+    let (outcome, value) = envelope(&harness, &write_cmd(&target, &source, Some(&hash)))?;
     assert_eq!(outcome.status, 255, "{value}");
     want_code(&value, "FILE_CONFLICT")?;
     Ok(())
@@ -180,18 +156,8 @@ fn a_patch_is_applied_once_and_refused_when_its_hash_no_longer_describes_the_fil
         ),
     )
     .map_err(|e| fail("fixture", e))?;
-    let (outcome, value) = envelope(
-        &harness,
-        &[
-            "fs",
-            "patch",
-            "gpu",
-            &target,
-            "--patch",
-            &document.to_string_lossy(),
-            "--json",
-        ],
-    )?;
+    let patch_arg = document.to_string_lossy();
+    let (outcome, value) = envelope(&harness, &patch_cmd(&target, &patch_arg))?;
     assert_eq!(outcome.status, 0, "{value}");
     assert_eq!(
         std::fs::read_to_string(&target).map_err(|e| fail("read back", e))?,
@@ -199,18 +165,7 @@ fn a_patch_is_applied_once_and_refused_when_its_hash_no_longer_describes_the_fil
     );
 
     // Applying it again must be refused, not applied twice.
-    let (outcome, value) = envelope(
-        &harness,
-        &[
-            "fs",
-            "patch",
-            "gpu",
-            &target,
-            "--patch",
-            &document.to_string_lossy(),
-            "--json",
-        ],
-    )?;
+    let (outcome, value) = envelope(&harness, &patch_cmd(&target, &patch_arg))?;
     assert_eq!(outcome.status, 255);
     want_code(&value, "FILE_CONFLICT")?;
 
@@ -221,18 +176,8 @@ fn a_patch_is_applied_once_and_refused_when_its_hash_no_longer_describes_the_fil
         "{\"edits\":[{\"start\":1,\"end\":1,\"text\":\"x\"}]}",
     )
     .map_err(|e| fail("fixture", e))?;
-    let (outcome, value) = envelope(
-        &harness,
-        &[
-            "fs",
-            "patch",
-            "gpu",
-            &target,
-            "--patch",
-            &empty.to_string_lossy(),
-            "--json",
-        ],
-    )?;
+    let empty_arg = empty.to_string_lossy();
+    let (outcome, value) = envelope(&harness, &patch_cmd(&target, &empty_arg))?;
     assert_eq!(outcome.status, 255);
     want_code(&value, "CONFIG_INVALID")?;
     Ok(())
@@ -308,17 +253,18 @@ fn helper_backed_edits_validate_locally_before_any_remote_call() -> Result<(), S
     harness.stub("ssh", "exit 99")?;
     let patch = harness.path("patch.json");
     std::fs::write(&patch, "{\"edits\":[]}").map_err(|e| fail("fixture", e))?;
+    let p = patch.to_string_lossy();
     for (args, code) in [
         (
-            vec!["fs", "read", "gpu", "/tmp/x", "--max-bytes", "0", "--json"],
+            &["fs", "read", "gpu", "/tmp/x", "--max-bytes", "0", "--json"][..],
             "USAGE_ERROR",
         ),
         (
-            vec!["fs", "read", "gpu", "/tmp/x", "--lines", "0", "--json"],
+            &["fs", "read", "gpu", "/tmp/x", "--lines", "0", "--json"][..],
             "USAGE_ERROR",
         ),
         (
-            vec![
+            &[
                 "fs",
                 "read",
                 "gpu",
@@ -326,31 +272,23 @@ fn helper_backed_edits_validate_locally_before_any_remote_call() -> Result<(), S
                 "--max-bytes",
                 "99999999",
                 "--json",
-            ],
+            ][..],
             "USAGE_ERROR",
         ),
         (
-            vec!["fs", "read", "gpu", "'/tmp/x'", "--json"],
+            &["fs", "read", "gpu", "'/tmp/x'", "--json"][..],
             "CONFIG_INVALID",
         ),
         (
-            vec!["fs", "write", "gpu", "/tmp/x", "--mode", "abc", "--json"],
+            &["fs", "write", "gpu", "/tmp/x", "--mode", "abc", "--json"][..],
             "CONFIG_INVALID",
         ),
         (
-            vec![
-                "fs",
-                "patch",
-                "gpu",
-                "/tmp/x",
-                "--patch",
-                &patch.to_string_lossy(),
-                "--json",
-            ],
+            &["fs", "patch", "gpu", "/tmp/x", "--patch", &p, "--json"][..],
             "CONFIG_INVALID",
         ),
     ] {
-        let (outcome, value) = envelope(&harness, &args)?;
+        let (outcome, value) = envelope(&harness, args)?;
         assert_eq!(outcome.status, 255, "{args:?}");
         want_code(&value, code).map_err(|error| format!("{args:?} {error}"))?;
     }
@@ -416,8 +354,8 @@ fn the_editing_surface_refuses_symlinked_targets_without_reading_or_writing_thro
     .map_err(|error| fail("write patch", error))?;
 
     for args in [
-        vec!["fs", "read", "gpu", link.as_str(), "--json"],
-        vec![
+        &["fs", "read", "gpu", link.as_str(), "--json"][..],
+        &[
             "fs",
             "write",
             "gpu",
@@ -425,8 +363,8 @@ fn the_editing_surface_refuses_symlinked_targets_without_reading_or_writing_thro
             "--from",
             replacement.as_str(),
             "--json",
-        ],
-        vec![
+        ][..],
+        &[
             "fs",
             "patch",
             "gpu",
@@ -434,11 +372,10 @@ fn the_editing_surface_refuses_symlinked_targets_without_reading_or_writing_thro
             "--patch",
             document_text.as_str(),
             "--json",
-        ],
+        ][..],
     ] {
-        let arguments = args.to_vec();
-        let (outcome, value) = envelope(&harness, &arguments)?;
-        assert_eq!(outcome.status, 255, "{arguments:?}: {value}");
+        let (outcome, value) = envelope(&harness, args)?;
+        assert_eq!(outcome.status, 255, "{args:?}: {value}");
         want_code(&value, "INVALID_TARGET")?;
     }
     assert_eq!(
@@ -493,5 +430,60 @@ fn writing_and_patching_via_stdin_uses_defaults() -> Result<(), String> {
     assert_eq!(out.status, 0, "{val}");
     let got = std::fs::read_to_string(&target).map_err(|e| fail("read", e))?;
     assert_eq!(got, "a\nc\n");
+    Ok(())
+}
+
+#[test]
+fn a_patch_supports_exact_text_replacement_edits() -> Result<(), String> {
+    let harness = Harness::open("fs-patch-replace")?;
+    local_host(&harness)?;
+    if !python3_available() {
+        return Ok(());
+    }
+    let target = harness.path("remote/replace.txt");
+    std::fs::create_dir_all(harness.path("remote")).map_err(|e| fail("fixture", e))?;
+    std::fs::write(&target, "fn hello() {\n    println!(\"hi\");\n}\n")
+        .map_err(|e| fail("fixture", e))?;
+    let target_str = target.to_string_lossy().to_string();
+
+    let (_, read) = envelope(&harness, &["fs", "read", "gpu", &target_str, "--json"])?;
+    let hash = read["data"]["sha256"].as_str().unwrap_or("").to_string();
+
+    let patch = format!(
+        "{{\"sha256\":\"{hash}\",\"edits\":[{{\"old\":\"println!(\\\"hi\\\");\\n\",\"new\":\"println!(\\\"hello world\\\");\\n\"}}]}}"
+    );
+    let (outcome, value) = envelope_with_stdin(
+        &harness,
+        &["fs", "patch", "gpu", &target_str, "--json"],
+        patch.as_bytes(),
+    )?;
+    assert_eq!(outcome.status, 0, "{value}");
+    assert_eq!(
+        std::fs::read_to_string(&target).map_err(|e| fail("read back", e))?,
+        "fn hello() {\n    println!(\"hello world\");\n}\n"
+    );
+
+    // Applying same patch again must be refused with FILE_CONFLICT (CAS)
+    let (outcome, value) = envelope_with_stdin(
+        &harness,
+        &["fs", "patch", "gpu", &target_str, "--json"],
+        patch.as_bytes(),
+    )?;
+    assert_eq!(outcome.status, 255);
+    want_code(&value, "FILE_CONFLICT")?;
+
+    // Ambiguous replace (old text appearing 0 or multiple times) is refused with INVALID_PATCH
+    let (_, read2) = envelope(&harness, &["fs", "read", "gpu", &target_str, "--json"])?;
+    let hash2 = read2["data"]["sha256"].as_str().unwrap_or("").to_string();
+
+    let bad_patch =
+        format!("{{\"sha256\":\"{hash2}\",\"edits\":[{{\"old\":\"missing\",\"new\":\"x\"}}]}}");
+    let (outcome, value) = envelope_with_stdin(
+        &harness,
+        &["fs", "patch", "gpu", &target_str, "--json"],
+        bad_patch.as_bytes(),
+    )?;
+    assert_eq!(outcome.status, 255);
+    want_code(&value, "INVALID_PATCH")?;
     Ok(())
 }

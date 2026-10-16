@@ -35,8 +35,8 @@ pub use sync::{SyncRequest, pull_args, push_args, reject_sync_target};
 // or the helper protocol must not require finding every deep import.
 pub(crate) use remote::Answer;
 pub use remote::{
-    DEFAULT_HELPER_BYTES, Edit, ReadResult, Request, ResolveResult, WriteResult, command,
-    known_refusal_code, output_budget,
+    DEFAULT_HELPER_BYTES, Edit, RangeEdit, ReadResult, ReplaceEdit, Request, ResolveResult,
+    WriteResult, command, known_refusal_code, output_budget,
 };
 pub use runner::{DEFAULT_TIMEOUT, Outcome, Stop, Tools, run};
 

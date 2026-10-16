@@ -276,40 +276,20 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
         .as_str()
         .ok_or_else(|| "read returned no hash".to_string())?
         .to_string();
-    let cases: [(&str, Value, &str); 5] = [
-        ("empty", json!([]), "INVALID_PATCH"),
-        (
-            "out of range",
-            json!([{"start": 1, "end": 5, "text": "x"}]),
-            "INVALID_PATCH",
-        ),
-        (
-            "overlap",
-            json!([
-                {"start": 1, "end": 2, "text": "x"},
-                {"start": 2, "end": 3, "text": "y"}
-            ]),
-            "INVALID_PATCH",
-        ),
-        (
-            "missing text",
-            json!([{"start": 1, "end": 1}]),
-            "INVALID_PATCH",
-        ),
-        (
-            "extra field",
-            json!([{"start": 1, "end": 1, "text": "x", "surprise": 1}]),
-            "INVALID_PATCH",
-        ),
-    ];
-    for (_, edits, wanted) in cases {
+    for edits in [
+        json!([]),
+        json!([{"start": 1, "end": 5, "text": "x"}]),
+        json!([{"start": 1, "end": 2, "text": "x"}, {"start": 2, "end": 3, "text": "y"}]),
+        json!([{"start": 1, "end": 1}]),
+        json!([{"start": 1, "end": 1, "text": "x", "surprise": 1}]),
+    ] {
         expect_error(
             &harness,
             json!({
                 "op": "patch", "path": path, "if_hash": current, "max_bytes": 256 * 1024,
                 "edits": edits
             }),
-            wanted,
+            "INVALID_PATCH",
         )?;
     }
     assert_eq!(read_bytes(&path)?, b"early\nb\nlate\nd\n");
@@ -339,7 +319,55 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
             "max_bytes": 256 * 1024, "edits": [{"start":1,"end":1,"text":"x\n"}]
         }),
         "INVALID_TEXT",
-    )
+    )?;
+
+    // Exact text replacement
+    let replace_path = create(&harness, "patch/replace.txt", b"foo\nbar\nbaz\n")?;
+    let replace_hash = ask(
+        &harness,
+        json!({"op": "read", "path": replace_path, "max_bytes": 256 * 1024}),
+    )?["sha256"]
+        .as_str()
+        .ok_or_else(|| "read returned no hash".to_string())?
+        .to_string();
+    ask(
+        &harness,
+        json!({
+            "op": "patch", "path": replace_path, "if_hash": replace_hash, "max_bytes": 256 * 1024,
+            "edits": [
+                {"old": "bar\n", "new": "qux\n"},
+                {"old": "baz\n", "new": "end\n"}
+            ]
+        }),
+    )?;
+    assert_eq!(read_bytes(&replace_path)?, b"foo\nqux\nend\n");
+
+    let replace_current = ask(
+        &harness,
+        json!({"op": "read", "path": replace_path, "max_bytes": 256 * 1024}),
+    )?["sha256"]
+        .as_str()
+        .ok_or_else(|| "read returned no hash".to_string())?
+        .to_string();
+    for edits in [
+        json!([{"old": "missing\n", "new": "x"}]),
+        json!([{"old": "\n", "new": "x"}]),
+        json!([{"old": "", "new": "x"}]),
+        json!([{"old": "qux\n", "new": "a"}, {"old": "qux\nend", "new": "b"}]),
+        json!([{"old": "foo\n"}]),
+        json!([{"old": "foo\n", "new": "x", "extra": 1}]),
+        json!([{"start": 1, "end": 1, "text": "x"}, {"old": "foo\n", "new": "y"}]),
+    ] {
+        expect_error(
+            &harness,
+            json!({
+                "op": "patch", "path": replace_path, "if_hash": replace_current, "max_bytes": 256 * 1024,
+                "edits": edits
+            }),
+            "INVALID_PATCH",
+        )?;
+    }
+    Ok(())
 }
 
 #[test]

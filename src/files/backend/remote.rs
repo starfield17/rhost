@@ -72,13 +72,27 @@ pub fn output_budget(max_bytes: usize) -> usize {
     max_bytes.saturating_mul(6).saturating_add(64 * 1024)
 }
 
-/// One line-range replacement in the request's patch document.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// One line-range or exact-text replacement in the request's patch document.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Edit {
+    Range(RangeEdit),
+    Replace(ReplaceEdit),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct Edit {
+pub struct RangeEdit {
     pub start: u64,
     pub end: u64,
     pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReplaceEdit {
+    pub old: String,
+    pub new: String,
 }
 
 /// Every request shape the embedded helper understands.
@@ -283,11 +297,11 @@ mod tests {
 
         let patch = serde_json::to_value(Request::Patch {
             path: "/srv/file",
-            edits: vec![Edit {
+            edits: vec![Edit::Range(RangeEdit {
                 start: 2,
                 end: 2,
                 text: "replacement\n".to_string(),
-            }],
+            })],
             if_hash: "b".repeat(64).as_str(),
             max_bytes: DEFAULT_HELPER_BYTES,
         })?;
@@ -295,6 +309,20 @@ mod tests {
         assert_eq!(
             patch["edits"],
             serde_json::json!([{"start": 2, "end": 2, "text": "replacement\n"}])
+        );
+
+        let patch_replace = serde_json::to_value(Request::Patch {
+            path: "/srv/file",
+            edits: vec![Edit::Replace(ReplaceEdit {
+                old: "foo\n".to_string(),
+                new: "bar\n".to_string(),
+            })],
+            if_hash: "b".repeat(64).as_str(),
+            max_bytes: DEFAULT_HELPER_BYTES,
+        })?;
+        assert_eq!(
+            patch_replace["edits"],
+            serde_json::json!([{"old": "foo\n", "new": "bar\n"}])
         );
         Ok(())
     }

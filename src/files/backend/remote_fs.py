@@ -1,22 +1,8 @@
 """One-shot remote filesystem operations for `rhost fs`.
 
-The program is embedded in the rhost binary and executed by a *remote* python3:
-nothing is installed there, and a missing interpreter is reported as a
-dependency failure instead (AGENTS.md §5). It reads one JSON request on stdin and
-writes one JSON response on stdout, so no path or file content has to survive a
-shell parser at either end.
-
-Rules this file has to keep, because the CLI and its tests rely on them:
-
-* `error` is always one of the codes the CLI knows; an unexpected exception
-  becomes `INTERNAL`, never a guess;
-* the response stays inside the request's own `max_bytes`, so a large file can
-  never make the CLI drain an unbounded stream;
-* nothing is written unless the request's hash precondition still holds;
-* `read`, `write` and `patch` name one exact regular file: they refuse a symbolic
-  link in any path component and never reread a pathname they already opened;
-* `resolve` intentionally follows symlinks because a destructive sync must know
-  what its destination really names.
+Embedded in the rhost binary and executed by remote python3; nothing is installed
+there (AGENTS.md §5). Reads one JSON request on stdin and writes one JSON response
+on stdout.
 """
 import base64
 import binascii
@@ -99,18 +85,11 @@ def traversal_failure(exc, name):
 
 
 def open_directory(path, parents=False):
-    """Opens one exact directory without allowing symlinked path components.
-
-    Every component is opened relative to the fd already held. A caller that asked
-    for missing parents may create ENOENT components, never an entry that exists
-    but is a symlink, device or ordinary file.
-    """
     fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
     try:
-        for part in [part for part in path.split('/') if part and part != '.']:
+        for part in [p for p in path.split('/') if p and p != '.']:
             try:
-                child = os.open(
-                    part, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY, dir_fd=fd)
+                child = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY, dir_fd=fd)
             except OSError as exc:
                 if not parents or exc.errno != errno.ENOENT:
                     raise traversal_failure(exc, part)
@@ -119,8 +98,7 @@ def open_directory(path, parents=False):
                 except FileExistsError:
                     pass
                 try:
-                    child = os.open(
-                        part, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY, dir_fd=fd)
+                    child = os.open(part, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY, dir_fd=fd)
                 except OSError as exc:
                     raise traversal_failure(exc, part)
             os.close(fd)
@@ -148,14 +126,6 @@ def target_failure(path, exc, changed=False):
 
 
 def open_regular(path, directory, name, flags, changed=False):
-    """Opens the exact basename through its already-held parent directory.
-
-    `O_NONBLOCK` is what makes the regular-file identity check safe: opening a
-    FIFO for reading blocks until a writer appears, so without it a `read` of a
-    pipe with no writer would hang here forever instead of being refused as a
-    non-regular target. Regular files ignore the flag, and the `fstat` check
-    below is what actually authorises the entry.
-    """
     try:
         fd = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
     except OSError as exc:
@@ -170,20 +140,16 @@ def opened(path):
     parent, name = target_parts(path)
     directory = open_directory(parent)
     try:
-        fd = open_regular(path, directory, name, os.O_RDONLY)
+        return os.fdopen(open_regular(path, directory, name, os.O_RDONLY), 'rb')
     finally:
         os.close(directory)
-    return os.fdopen(fd, 'rb')
 
 
 def temp_in_directory(directory):
-    """Allocates one temp under the locked parent fd, never by pathname guess."""
     for _ in range(100):
         name = '.rhost-write-%s' % os.urandom(8).hex()
         try:
-            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                         0o600, dir_fd=directory)
-            return fd, name
+            return os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory), name
         except FileExistsError:
             continue
     raise Failure('INTERNAL', 'could not allocate a unique temporary file')
@@ -308,19 +274,7 @@ def new_body(q, op, old):
 
 
 def write_or_patch(q, path):
-    """Compare-and-swap write: hash-checked, locked, atomically replaced.
-
-    Four separate guarantees:
-      * the parent-directory lock serialises rhost writers (it cannot lock an
-        unrelated editor, so this is not a filesystem-wide compare-and-swap);
-      * all entries are resolved relative to the held parent fd, so an external
-        rename or symlink swap cannot silently move the operation elsewhere;
-      * `if_hash` has to match the current content before *and* after the copy,
-        so a concurrent edit surfaces as FILE_CONFLICT instead of being lost;
-      * the replacement is a same-directory rename (or `link` when creating), so
-        a reader never sees half a file, and deleting the target is never used
-        as a fallback for a rename that did not happen.
-    """
+    """Compare-and-swap write: hash-checked, locked, atomically replaced."""
     op = q['op']
     parent, name = target_parts(path)
     directory = open_directory(parent, op == 'write' and q.get('parents'))
@@ -400,44 +354,81 @@ def write_or_patch(q, path):
 
 
 def apply_patch(old, edits):
-    """Applies line-range replacements to the original bytes.
+    """Applies line-range or exact-text replacements to the original bytes.
 
-    Ranges are 1-based, inclusive, sorted and non-overlapping, and never beyond
-    the file as it was read: a patch that would depend on an earlier edit's
-    renumbering is refused rather than silently mis-applied.
+    Line ranges are 1-based, inclusive, sorted and non-overlapping, and never
+    beyond the file as it was read. Exact-text replacements require `old` to
+    appear exactly once in the file and edits must not overlap. Mixing line-range
+    and exact-text edits in one patch is refused.
     """
     if type(edits) is not list or not edits:
         raise Failure('INVALID_PATCH', 'edits must be a nonempty array')
     for edit in edits:
         if type(edit) is not dict:
             raise Failure('INVALID_PATCH', 'each edit must be an object')
-        if set(edit) != {'start', 'end', 'text'}:
-            raise Failure('INVALID_PATCH', 'each edit needs only start, end and text')
-        number(edit, 'start', code='INVALID_PATCH')
-        number(edit, 'end', code='INVALID_PATCH')
-        if type(edit['text']) is not str:
-            raise Failure('INVALID_PATCH', 'edit text must be a string')
+        keys = set(edit)
+        if keys == {'start', 'end', 'text'}:
+            number(edit, 'start', code='INVALID_PATCH')
+            number(edit, 'end', code='INVALID_PATCH')
+            if type(edit['text']) is not str:
+                raise Failure('INVALID_PATCH', 'edit text must be a string')
+        elif keys == {'old', 'new'}:
+            if type(edit['old']) is not str or type(edit['new']) is not str:
+                raise Failure('INVALID_PATCH', 'old and new must be strings')
+            if not edit['old']:
+                raise Failure('INVALID_PATCH', 'old text must not be empty')
+        else:
+            raise Failure(
+                'INVALID_PATCH',
+                'each edit needs either (start, end, text) or (old, new)')
+
+    has_range = any('start' in edit for edit in edits)
+    has_replace = any('old' in edit for edit in edits)
+    if has_range and has_replace:
+        raise Failure('INVALID_PATCH', 'cannot mix line-range and text-replacement edits')
+
     try:
         text = old.decode('utf-8')
     except UnicodeDecodeError:
         raise Failure('INVALID_TEXT', 'file is not UTF-8 text')
-    # Only LF separates lines, matching read(): CR is literal content, and a
-    # final line without a newline is preserved as it is.
-    parts = text.split('\n')
-    lines = [part + '\n' for part in parts[:-1]]
-    if parts[-1]:
-        lines.append(parts[-1])
-    previous = 0
-    for edit in sorted(edits, key=lambda e: e['start']):
-        start, end = edit['start'], edit['end']
-        if start <= previous or start < 1 or end < start or end > len(lines):
+
+    if has_range:
+        # Only LF separates lines, matching read(): CR is literal content, and a
+        # final line without a newline is preserved as it is.
+        parts = text.split('\n')
+        lines = [part + '\n' for part in parts[:-1]]
+        if parts[-1]:
+            lines.append(parts[-1])
+        previous = 0
+        for edit in sorted(edits, key=lambda e: e['start']):
+            start, end = edit['start'], edit['end']
+            if start <= previous or start < 1 or end < start or end > len(lines):
+                raise Failure(
+                    'INVALID_PATCH',
+                    'edits must be non-overlapping 1-based inclusive ranges inside the file')
+            previous = end
+        for edit in sorted(edits, key=lambda e: e['start'], reverse=True):
+            lines[edit['start'] - 1:edit['end']] = [edit['text']]
+        return ''.join(lines).encode('utf-8')
+
+    spans = []
+    for edit in edits:
+        target = edit['old']
+        count = text.count(target)
+        if count != 1:
             raise Failure(
                 'INVALID_PATCH',
-                'edits must be non-overlapping 1-based inclusive ranges inside the file')
-        previous = end
-    for edit in sorted(edits, key=lambda e: e['start'], reverse=True):
-        lines[edit['start'] - 1:edit['end']] = [edit['text']]
-    return ''.join(lines).encode('utf-8')
+                'old text must appear exactly once in file, found %d' % count)
+        start_idx = text.find(target)
+        end_idx = start_idx + len(target)
+        spans.append((start_idx, end_idx, edit['new']))
+    spans.sort(key=lambda s: s[0])
+    for i in range(len(spans) - 1):
+        if spans[i][1] > spans[i + 1][0]:
+            raise Failure('INVALID_PATCH', 'replacement edits must not overlap')
+    for start_idx, end_idx, new_text in reversed(spans):
+        text = text[:start_idx] + new_text + text[end_idx:]
+    return text.encode('utf-8')
 
 
 def resolve(q, path):
