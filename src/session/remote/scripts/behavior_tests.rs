@@ -1,7 +1,7 @@
 //! Exercise the generated session helper in bash with failing tmux commands.
 //! This uses local stand-ins for tools; no SSH target or real pane is needed.
 
-use super::{SendKind, close, send};
+use super::{ReadOffset, SendKind, close, read, send};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
@@ -99,5 +99,105 @@ exit 2"#,
     assert!(stdout.contains("RHOST_OK=closed"), "{stdout}");
     assert!(!session.exists(), "confirmed close removes state");
     std::fs::remove_dir_all(&root).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+/// SESSION-005: append after the size probe, before the page is read. This
+/// forces the race without a timing assumption or a real terminal.
+#[test]
+fn read_pages_preserve_raw_bytes_and_snapshot_cursors() -> Result<(), String> {
+    let root = std::env::temp_dir().join(format!("rhost-read-helper-{}", std::process::id()));
+    let bin = root.join("bin");
+    let session = root.join("remote/sessions/s_ab");
+    std::fs::create_dir_all(&bin).map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&session).map_err(|error| error.to_string())?;
+    std::fs::write(session.join("meta.json"), r#"{"name":"work"}"#)
+        .map_err(|error| error.to_string())?;
+    executable(
+        &bin.join("base64"),
+        "if [ \"$1\" = -w0 ]; then /usr/bin/base64 | tr -d '\\n'; else exec /usr/bin/base64 \"$@\"; fi",
+    )?;
+    executable(
+        &bin.join("wc"),
+        r#"size=$(/usr/bin/wc "$@")
+if [ "$RHOST_TEST_MODE" = append ] && [ ! -f "$RHOST_REMOTE_STATE/appended" ]; then
+  printf KLMNO >> "$RHOST_REMOTE_STATE/sessions/s_ab/pty.log"
+  : > "$RHOST_REMOTE_STATE/appended"
+fi
+printf '%s\n' "$((size))""#,
+    )?;
+    for (body, offset, limit, mode, from, next, expected) in [
+        (
+            b"abcdefghij".as_slice(),
+            ReadOffset::Tail(3),
+            0,
+            "static",
+            7,
+            10,
+            b"hij".as_slice(),
+        ),
+        (
+            b"abcdefghij",
+            ReadOffset::Tail(20),
+            4,
+            "static",
+            0,
+            4,
+            b"abcd",
+        ),
+        (b"", ReadOffset::Tail(3), 0, "static", 0, 0, b""),
+        (
+            b"abcdefghij",
+            ReadOffset::Since(99),
+            0,
+            "static",
+            10,
+            10,
+            b"",
+        ),
+        (
+            b"a\0b\n\n",
+            ReadOffset::Since(0),
+            0,
+            "static",
+            0,
+            5,
+            b"a\0b\n\n",
+        ),
+        (
+            b"abcdefghij",
+            ReadOffset::Tail(3),
+            0,
+            "append",
+            7,
+            10,
+            b"hij",
+        ),
+        (b"abcdefghij", ReadOffset::Tail(0), 0, "append", 10, 10, b""),
+        (
+            b"abcdefghij",
+            ReadOffset::Since(7),
+            0,
+            "append",
+            7,
+            10,
+            b"hij",
+        ),
+    ] {
+        let appended = root.join("remote/appended");
+        if appended.exists() {
+            std::fs::remove_file(appended).map_err(|error| error.to_string())?;
+        }
+        std::fs::write(session.join("pty.log"), body).map_err(|error| error.to_string())?;
+        let stdout = run(&read("work", offset, limit), &root, mode)?;
+        let page = crate::session::parse_read(&stdout)
+            .map_err(|error| format!("{offset:?} {mode}: {error:?}: {stdout}"))?;
+        assert_eq!(
+            (page.from, page.next, page.size),
+            (from, next, body.len() as u64)
+        );
+        assert_eq!(page.data, expected, "{offset:?} {mode}");
+    }
+    std::fs::remove_dir_all(root).map_err(|error| error.to_string())?;
     Ok(())
 }

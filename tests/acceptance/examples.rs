@@ -146,3 +146,87 @@ fn the_documented_exact_text_patch_replaces_target_text() -> Result<(), String> 
     );
     Ok(())
 }
+
+#[test]
+fn session_command_file_submits_the_same_multiline_program_as_inline() -> Result<(), String> {
+    let harness = Harness::open("session-command-file")?;
+    harness.stub("ssh", "exit 0")?;
+    let program = "printf '%s\\n' 'a b'\nexport VALUE='中文'\nprintf '%s' \"$VALUE\"\n";
+    harness.write("program.sh", program, None)?;
+    let path = harness.path("program.sh");
+    let (_, file) = envelope(
+        &harness,
+        &[
+            "session",
+            "exec",
+            "gpu",
+            "work",
+            "--command-file",
+            path.to_str().ok_or("path")?,
+            "--json",
+        ],
+    )?;
+    want_code(&file, "REMOTE_EXECUTION_UNKNOWN")?;
+    let (_, inline) = envelope(
+        &harness,
+        &[
+            "session",
+            "exec",
+            "gpu",
+            "work",
+            "--command",
+            program,
+            "--json",
+        ],
+    )?;
+    want_code(&inline, "REMOTE_EXECUTION_UNKNOWN")?;
+    let calls = harness.tool_calls("ssh");
+    assert_eq!(calls.len(), 2);
+    let decode = |encoded: &str| -> Result<String, String> {
+        let output = std::process::Command::new("/bin/sh")
+            .args([
+                "-c",
+                &format!(
+                    "printf '%s' {} | /usr/bin/base64 -d",
+                    crate::support::shell_quote(encoded)
+                ),
+            ])
+            .output()
+            .map_err(|error| error.to_string())?;
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).map_err(|error| error.to_string())
+    };
+    for call in &calls {
+        let outer = call.args.last().ok_or("remote command")?;
+        let encoded = outer
+            .split_once("printf %s ")
+            .ok_or("outer payload")?
+            .1
+            .split(' ')
+            .next()
+            .ok_or("outer base64")?;
+        let helper = decode(encoded)?;
+        let encoded = helper
+            .split_once("cmd=$(printf '%s' '")
+            .ok_or("pane payload")?
+            .1
+            .split('\'')
+            .next()
+            .ok_or("pane base64")?;
+        let payload = decode(encoded)?;
+        assert_eq!(
+            payload
+                .split_once("\ncommand printf")
+                .ok_or("completion marker")?
+                .0,
+            format!("{{\n{program}")
+        );
+    }
+    assert!(!harness.calls_text().contains(path.to_str().ok_or("path")?));
+    assert!(calls.iter().all(|call| {
+        call.args
+            .last()
+            .is_some_and(|arg| !arg.contains("--command-file"))
+    }));
+    Ok(())
+}

@@ -328,3 +328,98 @@ fn a_local_create_mistake_has_no_candidate_session() -> Result<(), String> {
     );
     harness.assert_no_remote_tool("session create local mistake")
 }
+
+#[test]
+fn invalid_read_budgets_are_usage_errors_before_ssh() -> Result<(), String> {
+    let harness = Harness::open("session-read-budget-invalid")?;
+    for raw in ["0", "1", "3", "-1", "262145", "18446744073709551616", "x"] {
+        let (outcome, value) = envelope(
+            &harness,
+            &[
+                "session",
+                "read",
+                "gpu",
+                "work",
+                "--max-bytes",
+                raw,
+                "--json",
+            ],
+        )?;
+        assert_eq!(outcome.status, 255);
+        want_code(&value, "USAGE_ERROR")?;
+        assert!(
+            value["error"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("between 4 and 262144")
+        );
+    }
+    harness.assert_no_remote_tool("invalid session read budget")
+}
+
+#[test]
+fn session_read_budgets_page_from_tail_and_resume_at_the_returned_cursor() -> Result<(), String> {
+    let harness = Harness::open("session-read-budget")?;
+    crate::hosts::local_host(&harness)?;
+    harness.stub("base64", "if [ \"$1\" = -w0 ]; then /usr/bin/base64 | tr -d '\\n'; else exec /usr/bin/base64 \"$@\"; fi")?;
+    let remote = harness.path("remote");
+    std::fs::create_dir_all(remote.join("sessions/s_ab")).map_err(|error| error.to_string())?;
+    std::fs::write(remote.join("sessions/s_ab/meta.json"), r#"{"name":"work"}"#)
+        .map_err(|error| error.to_string())?;
+    std::fs::write(remote.join("sessions/s_ab/pty.log"), "prefix-ab中文😀end")
+        .map_err(|error| error.to_string())?;
+    let harness = harness.env("RHOST_REMOTE_STATE", remote.to_str().ok_or("path")?);
+    let (_, first) = envelope(
+        &harness,
+        &[
+            "session",
+            "read",
+            "gpu",
+            "work",
+            "--tail",
+            "15",
+            "--max-bytes",
+            "4",
+            "--json",
+        ],
+    )?;
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(first["data"]["content"], "ab");
+    assert_eq!(first["data"]["from"], 7);
+    assert_eq!(first["data"]["next"], 9);
+    assert_eq!(first["data"]["more"], true);
+    let mut cursor = 9u64;
+    let mut content = String::from("ab");
+    for _ in 0..4 {
+        let (_, page) = envelope(
+            &harness,
+            &[
+                "session",
+                "read",
+                "gpu",
+                "work",
+                "--since",
+                &cursor.to_string(),
+                "--max-bytes",
+                "4",
+                "--json",
+            ],
+        )?;
+        assert_eq!(page["ok"], true, "{page}");
+        let next = page["data"]["next"].as_u64().ok_or("next")?;
+        assert!(next > cursor && next - cursor <= 4, "{page}");
+        content.push_str(page["data"]["content"].as_str().ok_or("content")?);
+        cursor = next;
+    }
+    assert_eq!(content, "ab中文😀end");
+    assert_eq!(cursor, 22);
+    for extra in [vec![], vec!["--max-bytes", "262144"]] {
+        let mut args = vec!["session", "read", "gpu", "work", "--json"];
+        args.extend(extra);
+        let (_, page) = envelope(&harness, &args)?;
+        assert_eq!(page["ok"], true, "{page}");
+        assert_eq!(page["data"]["content"], "prefix-ab中文😀end");
+        assert_eq!(page["data"]["more"], false);
+    }
+    Ok(())
+}
