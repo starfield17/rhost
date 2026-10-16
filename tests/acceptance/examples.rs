@@ -102,3 +102,47 @@ fn the_documented_batch_preserves_copy_direction_and_reports_each_item() -> Resu
     );
     Ok(())
 }
+
+#[test]
+fn the_documented_exact_text_patch_replaces_target_text() -> Result<(), String> {
+    let reference = include_str!("../../skills/rhost/references/CLI.md");
+    let section = reference
+        .split_once("# Exact-text replacement patch")
+        .ok_or("CLI reference omits exact-text replacement patch section")?
+        .1;
+    let body = section
+        .split_once("<< 'EOF'\n")
+        .and_then(|(_, rest)| rest.split_once("\nEOF"))
+        .map(|(json_text, _)| json_text)
+        .ok_or("cannot find exact-text replacement heredoc in CLI reference")?;
+    let mut document: Value =
+        serde_json::from_str(body).map_err(|error| fail("parse documented JSON", error))?;
+    assert_eq!(document["sha256"], "<sha256-from-read>");
+    let harness = Harness::open("documented-exact-patch")?;
+    local_host(&harness)?;
+    if !python3_available() {
+        return Err("documented patch verification requires python3".into());
+    }
+    harness.write("original.txt", "line 1\nmodified line 2\n", None)?;
+    let target = harness.path("original.txt").to_string_lossy().into_owned();
+    let (_, read) = envelope(&harness, &["fs", "read", "gpu", &target, "--json"])?;
+    document["sha256"] = read["data"]["sha256"].clone();
+    let patch = harness.path("patch.json");
+    std::fs::write(&patch, document.to_string()).map_err(|error| fail("write patch", error))?;
+    let args = [
+        "fs",
+        "patch",
+        "gpu",
+        &target,
+        "--patch",
+        &patch.to_string_lossy(),
+        "--json",
+    ];
+    let (outcome, value) = envelope(&harness, &args)?;
+    assert_eq!(outcome.status, 0, "{value}");
+    assert_eq!(
+        std::fs::read_to_string(&target).map_err(|error| fail("read patch result", error))?,
+        "line 1\ngamma\n"
+    );
+    Ok(())
+}

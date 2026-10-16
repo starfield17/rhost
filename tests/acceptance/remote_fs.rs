@@ -261,10 +261,7 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
         &harness,
         json!({
             "op": "patch", "path": path, "if_hash": hash, "max_bytes": 256 * 1024,
-            "edits": [
-                {"start": 3, "end": 3, "text": "late\n"},
-                {"start": 1, "end": 1, "text": "early\n"}
-            ]
+            "edits": [{"start": 3, "end": 3, "text": "late\n"}, {"start": 1, "end": 1, "text": "early\n"}]
         }),
     )?;
     assert_eq!(read_bytes(&path)?, b"early\nb\nlate\nd\n");
@@ -334,10 +331,7 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
         &harness,
         json!({
             "op": "patch", "path": replace_path, "if_hash": replace_hash, "max_bytes": 256 * 1024,
-            "edits": [
-                {"old": "bar\n", "new": "qux\n"},
-                {"old": "baz\n", "new": "end\n"}
-            ]
+            "edits": [{"old": "bar\n", "new": "qux\n"}, {"old": "baz\n", "new": "end\n"}]
         }),
     )?;
     assert_eq!(read_bytes(&replace_path)?, b"foo\nqux\nend\n");
@@ -353,8 +347,8 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
         json!([{"old": "missing\n", "new": "x"}]),
         json!([{"old": "\n", "new": "x"}]),
         json!([{"old": "", "new": "x"}]),
-        json!([{"old": "qux\n", "new": "a"}, {"old": "qux\nend", "new": "b"}]),
         json!([{"old": "foo\n"}]),
+        json!([{"old": "qux\n", "new": "a"}, {"old": "qux\nend", "new": "b"}]),
         json!([{"old": "foo\n", "new": "x", "extra": 1}]),
         json!([{"start": 1, "end": 1, "text": "x"}, {"old": "foo\n", "new": "y"}]),
     ] {
@@ -367,6 +361,24 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
             "INVALID_PATCH",
         )?;
     }
+
+    // Self-overlapping text occurring multiple times must be refused as ambiguous
+    let overlap_path = create(&harness, "patch/overlap.txt", b"aaa\n")?;
+    let overlap_hash = ask(
+        &harness,
+        json!({"op": "read", "path": overlap_path, "max_bytes": 256 * 1024}),
+    )?["sha256"]
+        .as_str()
+        .ok_or_else(|| "read returned no hash".to_string())?
+        .to_string();
+    expect_error(
+        &harness,
+        json!({
+            "op": "patch", "path": overlap_path, "if_hash": overlap_hash,
+            "max_bytes": 256 * 1024, "edits": [{"old": "aa", "new": "b"}]
+        }),
+        "INVALID_PATCH",
+    )?;
     Ok(())
 }
 

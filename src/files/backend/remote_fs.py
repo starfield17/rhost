@@ -353,6 +353,19 @@ def write_or_patch(q, path):
         os.close(directory)
 
 
+def count_occurrences(text, target):
+    if not target:
+        return 0
+    count, start = 0, 0
+    while True:
+        pos = text.find(target, start)
+        if pos == -1:
+            break
+        count += 1
+        start = pos + 1
+    return count
+
+
 def apply_patch(old, edits):
     """Applies line-range or exact-text replacements to the original bytes.
 
@@ -378,9 +391,8 @@ def apply_patch(old, edits):
             if not edit['old']:
                 raise Failure('INVALID_PATCH', 'old text must not be empty')
         else:
-            raise Failure(
-                'INVALID_PATCH',
-                'each edit needs either (start, end, text) or (old, new)')
+            raise Failure('INVALID_PATCH',
+                          'each edit needs either (start, end, text) or (old, new)')
 
     has_range = any('start' in edit for edit in edits)
     has_replace = any('old' in edit for edit in edits)
@@ -403,9 +415,8 @@ def apply_patch(old, edits):
         for edit in sorted(edits, key=lambda e: e['start']):
             start, end = edit['start'], edit['end']
             if start <= previous or start < 1 or end < start or end > len(lines):
-                raise Failure(
-                    'INVALID_PATCH',
-                    'edits must be non-overlapping 1-based inclusive ranges inside the file')
+                raise Failure('INVALID_PATCH',
+                              'edits must be non-overlapping 1-based inclusive ranges inside the file')
             previous = end
         for edit in sorted(edits, key=lambda e: e['start'], reverse=True):
             lines[edit['start'] - 1:edit['end']] = [edit['text']]
@@ -414,11 +425,10 @@ def apply_patch(old, edits):
     spans = []
     for edit in edits:
         target = edit['old']
-        count = text.count(target)
+        count = count_occurrences(text, target)
         if count != 1:
-            raise Failure(
-                'INVALID_PATCH',
-                'old text must appear exactly once in file, found %d' % count)
+            raise Failure('INVALID_PATCH',
+                          'old text must appear exactly once in file, found %d' % count)
         start_idx = text.find(target)
         end_idx = start_idx + len(target)
         spans.append((start_idx, end_idx, edit['new']))
