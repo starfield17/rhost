@@ -68,6 +68,12 @@ fn session_state_identity_and_byte_cursor_survive_cli_processes() -> Result<(), 
             &next.to_string(),
         ])?;
         assert!(!text(&later.value, "/data/content")?.contains("cursor-中文"));
+        let tail_read = live.ok(&["--json", "session", "read", &host, &name, "--tail", "10"])?;
+        assert_eq!(number(&tail_read.value, "/data/next")?, next);
+        assert_eq!(
+            number(&tail_read.value, "/data/from")?,
+            next.saturating_sub(10)
+        );
         Ok(())
     })();
     let closed = live.ok(&["--json", "session", "close", &host, &name]);

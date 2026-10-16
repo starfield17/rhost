@@ -30,7 +30,7 @@ mod shared;
 
 pub use create::create;
 pub use exec::exec;
-pub use io::{SendKind, read, send};
+pub use io::{ReadOffset, SendKind, read, send};
 pub use lifecycle::{close, list, recover};
 
 #[cfg(test)]
@@ -175,13 +175,19 @@ mod tests {
 
     #[test]
     fn read_reports_cursors_and_bounds_the_page() {
-        let script = read("work", 7, 0);
+        let script = read("work", ReadOffset::Since(7), 0);
         assert!(script.contains("since=7\n"));
         assert!(script.contains("RHOST_FROM=$since"));
         assert!(script.contains("RHOST_NEXT=$((since + inc))"));
         assert!(script.contains("RHOST_SIZE=$size"));
         assert!(script.contains("head -c 262144"));
-        assert!(read("work", 0, 16).contains("head -c 16"));
+        assert!(read("work", ReadOffset::Since(0), 16).contains("head -c 16"));
+
+        let tail_script = read("work", ReadOffset::Tail(50), 0);
+        assert!(tail_script.contains("tail=50\n"));
+        assert!(tail_script.contains(
+            "if [ \"$size\" -gt \"$tail\" ]; then since=$((size - tail)); else since=0; fi"
+        ));
     }
 
     #[test]

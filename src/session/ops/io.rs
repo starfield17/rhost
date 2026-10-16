@@ -87,17 +87,19 @@ impl Read {
     }
 }
 
+pub use crate::session::remote::scripts::ReadOffset;
+
 pub fn read(
     client: &Client,
     host: &str,
     reference: &str,
-    since: u64,
+    offset: ReadOffset,
     timeout: Duration,
 ) -> Result<Read, Error> {
     let stdout = run_helper(
         client,
         host,
-        &session::read_script(reference, since, 0),
+        &session::read_script(reference, offset, 0),
         timeout,
         FIELD_CAPTURE,
     )?;

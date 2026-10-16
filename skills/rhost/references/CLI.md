@@ -235,8 +235,9 @@ Session exec returns `data.session_id`, `data.session_ref`, `data.execution`,
 `data.output.bytes` counts the full segment and `data.output.truncated` reports
 omitted bytes. Use `session read` for the retained log instead of repeating the
 command. Read returns text at `data.content` and up to 256 KiB of source bytes
-per page; use `--since` set to `data.next`, and continue while `data.more` is
-true. Byte cursors must come from the response, not the rendered text length.
+per page; use `--tail N` to read at most the last N bytes of retained output, or
+`--since` set to `data.next`, and continue while `data.more` is true. Byte cursors
+must come from the response, not the rendered text length.
 `session attach` returns a non-retryable `USAGE_ERROR`; the v2
 envelope has no honest terminal attachment representation.
 

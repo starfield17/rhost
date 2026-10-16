@@ -227,7 +227,15 @@ fn group_subcommand_argument_errors_preserve_the_cause_in_json() -> Result<(), S
     let harness = Harness::open("group-subcommand-arg-error")?;
     let (outcome, value) = envelope(
         &harness,
-        &["session", "read", "example-host", "s1", "--since", "x", "--json"],
+        &[
+            "session",
+            "read",
+            "example-host",
+            "s1",
+            "--since",
+            "x",
+            "--json",
+        ],
     )?;
     assert_eq!(outcome.status, 255);
     assert_eq!(operation(&value), "session.usage");

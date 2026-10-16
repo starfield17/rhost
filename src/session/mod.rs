@@ -34,8 +34,8 @@ pub use dto::{
     session_exec_status, session_failure, session_read, session_recover, session_sent, sessions,
 };
 pub use ops::{
-    CreateOptions, Created, CreationStatus, ExecOptions, Info, Recover, SendOptions, close, create,
-    exec, list, read, recover, send,
+    CreateOptions, Created, CreationStatus, ExecOptions, Info, ReadOffset, Recover, SendOptions,
+    close, create, exec, list, read, recover, send,
 };
 pub use remote::protocol::{
     ExecResult, HelperFailure, ListEntry, ReadResult, field, parse_exec, parse_list, parse_read,

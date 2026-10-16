@@ -55,9 +55,15 @@ pub fn send(name_or_id: &str, kind: SendKind, payload: &str) -> String {
     out.push_str("echo RHOST_OK=sent\n");
     out
 }
-/// Returns the raw pane log from byte offset `since`, base64-encoded, with
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadOffset {
+    Since(u64),
+    Tail(u64),
+}
+
+/// Returns the raw pane log from byte offset `since` or tail bytes, base64-encoded, with
 /// explicit cursors so a caller can poll incrementally.
-pub fn read(name_or_id: &str, since: u64, max_bytes: usize) -> String {
+pub fn read(name_or_id: &str, offset: ReadOffset, max_bytes: usize) -> String {
     let max_bytes = if max_bytes == 0 {
         256 * 1024
     } else {
@@ -74,8 +80,18 @@ pub fn read(name_or_id: &str, since: u64, max_bytes: usize) -> String {
     out.push_str("DIR=\"$RHOST_DIR\"; LOG=\"$DIR/pty.log\"\n");
     out.push_str("LOG=$(printf '%s' \"$LOG\" | sed 's#/$##')\n");
     out.push_str("size=$(wc -c < \"$LOG\" 2>/dev/null || echo 0)\n");
-    out.push_str(&format!("since={since}\n"));
-    out.push_str("[ \"$since\" -gt \"$size\" ] && since=$size\n");
+    match offset {
+        ReadOffset::Since(since) => {
+            out.push_str(&format!("since={since}\n"));
+            out.push_str("[ \"$since\" -gt \"$size\" ] && since=$size\n");
+        }
+        ReadOffset::Tail(tail) => {
+            out.push_str(&format!("tail={tail}\n"));
+            out.push_str(
+                "if [ \"$size\" -gt \"$tail\" ]; then since=$((size - tail)); else since=0; fi\n",
+            );
+        }
+    }
     out.push_str(&format!(
         "inc=$(tail -c +$((since+1)) \"$LOG\" 2>/dev/null | head -c {max_bytes} | wc -c)\n"
     ));

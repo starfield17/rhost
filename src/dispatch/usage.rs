@@ -58,7 +58,7 @@ const SESSION_LEAVES: &[Leaf] = &[
     },
     Leaf {
         name: "read",
-        usage: "read <host> <session> [--since N]",
+        usage: "read <host> <session> [--since N | --tail N]",
         summary: "Read a session's output log incrementally",
     },
     Leaf {

@@ -36,7 +36,7 @@ pub enum Session {
     Read {
         host: String,
         session: String,
-        since: u64,
+        offset: session::ReadOffset,
         timeout_nanos: i64,
     },
     Recover {
@@ -96,6 +96,11 @@ static READ_FLAGS: &[FlagSpec] = &[
         "byte offset to resume from; 0 reads the start",
     ),
     FlagSpec::value(
+        "tail",
+        false,
+        "read at most the last N bytes of available output",
+    ),
+    FlagSpec::value(
         "timeout",
         false,
         "operation deadline; 0 uses the 30-second default",
@@ -122,6 +127,7 @@ static ANY_FLAGS: &[FlagSpec] = &[
     FlagSpec::value("data", false, ""),
     FlagSpec::value("key", false, ""),
     FlagSpec::value("since", false, ""),
+    FlagSpec::value("tail", false, ""),
     FlagSpec::value("timeout", false, ""),
     FlagSpec::long("enter", ""),
 ];
@@ -248,10 +254,17 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
             if let Err(message) = exact(2, "<host> <session>") {
                 return ParsedCommand::usage(Scope::Session, message);
             }
-            let since = match value("since") {
-                None => 0,
-                Some(raw) => match raw.parse::<u64>() {
-                    Ok(value) => value,
+            let since_raw = value("since");
+            let tail_raw = value("tail");
+            let offset = match (since_raw, tail_raw) {
+                (Some(_), Some(_)) => {
+                    return ParsedCommand::usage(
+                        Scope::Session,
+                        "--since and --tail are mutually exclusive",
+                    );
+                }
+                (Some(raw), None) => match raw.parse::<u64>() {
+                    Ok(value) => session::ReadOffset::Since(value),
                     Err(_) => {
                         return ParsedCommand::usage(
                             Scope::Session,
@@ -259,11 +272,21 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
                         );
                     }
                 },
+                (None, Some(raw)) => match raw.parse::<u64>() {
+                    Ok(value) => session::ReadOffset::Tail(value),
+                    Err(_) => {
+                        return ParsedCommand::usage(
+                            Scope::Session,
+                            format!("--tail must be a byte count, not {raw:?}"),
+                        );
+                    }
+                },
+                (None, None) => session::ReadOffset::Since(0),
             };
             ParsedCommand::Run(Session::Read {
                 host: operands[0].clone(),
                 session: operands[1].clone(),
-                since,
+                offset,
                 timeout_nanos: match timeout(&parsed, READ_TIMEOUT) {
                     Ok(nanos) => nanos,
                     Err(message) => return ParsedCommand::usage(Scope::Session, message),

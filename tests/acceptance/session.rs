@@ -32,6 +32,10 @@ fn session_grammar_refuses_what_it_cannot_run() -> Result<(), String> {
         vec!["session", "exec", "gpu", "work", "--json", "--", "true"],
         vec!["session", "read", "gpu", "--json"],
         vec!["session", "read", "gpu", "work", "--json", "--since", "-1"],
+        vec!["session", "read", "gpu", "work", "--json", "--tail", "-1"],
+        vec![
+            "session", "read", "gpu", "work", "--json", "--since", "0", "--tail", "10",
+        ],
         vec!["session", "recover", "gpu", "--json"],
         vec!["session", "close", "gpu", "--json"],
         vec![
