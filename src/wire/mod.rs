@@ -111,11 +111,16 @@ pub fn usage(message: &str) -> Envelope<Option<()>> {
     }
 }
 
-/// A command group invoked without a subcommand. Humans get the group's help
-/// text; `--json` gets exactly one envelope, because prose on stdout breaks an
-/// agent's decoder (AGENTS.md §6).
-pub fn group_usage(group: &str) -> Envelope<Option<()>> {
-    let message = format!("rhost {group} needs a subcommand (see: rhost {group} --help)");
+/// A command group usage refusal. Humans get the diagnostic plus help text when
+/// missing a subcommand; `--json` gets exactly one envelope carrying the diagnostic,
+/// because prose on stdout breaks an agent's decoder (AGENTS.md §6).
+pub fn group_usage(group: &str, message: &str) -> Envelope<Option<()>> {
+    let default_message = format!("rhost {group} needs a subcommand");
+    let message = if message == default_message {
+        format!("{default_message} (see: rhost {group} --help)")
+    } else {
+        message.to_string()
+    };
     Envelope {
         schema_version: 2,
         operation: match group {

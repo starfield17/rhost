@@ -222,6 +222,38 @@ fn a_group_without_a_subcommand_reports_its_own_usage_operation() -> Result<(), 
     harness.assert_no_remote_tool("group usage")
 }
 
+#[test]
+fn group_subcommand_argument_errors_preserve_the_cause_in_json() -> Result<(), String> {
+    let harness = Harness::open("group-subcommand-arg-error")?;
+    let (outcome, value) = envelope(
+        &harness,
+        &["session", "read", "example-host", "s1", "--since", "x", "--json"],
+    )?;
+    assert_eq!(outcome.status, 255);
+    assert_eq!(operation(&value), "session.usage");
+    want_code(&value, "USAGE_ERROR")?;
+    let message = value["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("--since must be a byte offset, not \"x\""),
+        "expected specific error message, got: {message}"
+    );
+
+    let (outcome_fs, value_fs) = envelope(
+        &harness,
+        &["fs", "read", "example-host", "/path", "--bogus", "--json"],
+    )?;
+    assert_eq!(outcome_fs.status, 255);
+    assert_eq!(operation(&value_fs), "fs.usage");
+    want_code(&value_fs, "USAGE_ERROR")?;
+    let fs_message = value_fs["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        fs_message.contains("unknown flag --bogus"),
+        "expected specific error message, got: {fs_message}"
+    );
+
+    harness.assert_no_remote_tool("group subcommand arg error")
+}
+
 /// A group's `--help` is that group's own help: a human who asked how to use
 /// `session` must not be handed the whole CLI, and the leaf list is the group's
 /// contract with them. With `--json` the same invocation is a usage error under

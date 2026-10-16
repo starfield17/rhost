@@ -337,9 +337,6 @@ line 1
 modified line 2
 EOF
 
-# Stdin one-liner precision patch:
-printf '{"sha256":"%s","edits":[{"start":2,"end":2,"text":"gamma\\n"}]}' <sha256-from-read> | rhost fs patch gpu '~/work/example.txt' --json
-
 # Multi-line hash-guarded patch:
 rhost fs patch gpu '~/work/example.txt' --json << 'EOF'
 {

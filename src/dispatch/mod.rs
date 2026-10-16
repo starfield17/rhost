@@ -92,7 +92,7 @@ pub(crate) fn deliver_usage(sink: &mut Sink, scope: Scope, message: &str, json: 
         use crate::wire;
         sink.envelope(&match scope {
             Scope::Root => wire::usage(message),
-            other => wire::group_usage(other.name()),
+            other => wire::group_usage(other.name(), message),
         });
     } else {
         warn(&format!("rhost: USAGE_ERROR: {message}"));

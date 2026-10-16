@@ -118,9 +118,6 @@ rhost fs write <host> '<remote-path>' --if-hash <sha256> --json << 'EOF'
 updated contents
 EOF
 
-# Stdin one-liner precision patch:
-printf '{"sha256":"%s","edits":[{"start":2,"end":2,"text":"replacement line\\n"}]}' <sha256> | rhost fs patch <host> '<remote-path>' --json
-
 # Hash-guarded line-range patch via Heredoc:
 rhost fs patch <host> '<remote-path>' --json << 'EOF'
 {
