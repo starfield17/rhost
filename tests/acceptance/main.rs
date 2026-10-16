@@ -376,5 +376,20 @@ fn a_missing_command_file_fails_locally_before_any_submission() -> Result<(), St
     let name = dir.to_str().ok_or("fixture path is not UTF-8")?;
     let (_, value) = envelope(&harness, &["exec", "gpu", "--json", "--command-file", name])?;
     want_code(&value, "CONFIG_INVALID")?;
+    let (outcome_sess, value_sess) = envelope(
+        &harness,
+        &[
+            "session",
+            "exec",
+            "gpu",
+            "s1",
+            "--json",
+            "--command-file",
+            name,
+        ],
+    )?;
+    assert_eq!(outcome_sess.status, 255);
+    assert_eq!(operation(&value_sess), "session.exec");
+    want_code(&value_sess, "CONFIG_INVALID")?;
     harness.assert_no_remote_tool("command-file")
 }

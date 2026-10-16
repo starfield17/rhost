@@ -14,11 +14,6 @@ pub use run::run;
 
 use crate::cli::CommandText;
 
-/// Upper bound on a `--command-file`. A shell program this long is already
-/// unusual; the bound exists so a wrong path cannot read a whole volume into
-/// memory.
-pub(crate) const MAX_COMMAND_FILE_BYTES: u64 = 64 * 1024;
-
 /// The limit `--max-output-bytes` may name, spelled as the CLI states it.
 pub(crate) const MAX_OUTPUT_LIMIT: i64 = 64 * 1024 * 1024;
 

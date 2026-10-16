@@ -124,6 +124,45 @@ pub enum CommandText {
     File(String),
 }
 
+/// Upper bound on a `--command-file`. A shell program this long is already
+/// several thousand lines; unbounded reads would allocate without bound.
+pub const MAX_COMMAND_FILE_BYTES: u64 = 64 * 1024;
+
+/// Reads a `--command-file` operand locally. A symlink, a directory, a FIFO or an
+/// empty file is refused before anything is sent, because "the program was
+/// ambiguous" is not a question to answer by running it remotely.
+pub fn read_command_file(program: &CommandText) -> Result<String, String> {
+    let CommandText::File(path) = program else {
+        return Ok(match program {
+            CommandText::Inline(text) => text.clone(),
+            CommandText::File(_) => unreachable!("handled below"),
+        });
+    };
+    let info =
+        std::fs::symlink_metadata(path).map_err(|error| format!("read --command-file: {error}"))?;
+    if !info.file_type().is_file() {
+        return Err("--command-file must be a regular file".to_string());
+    }
+    if info.len() > MAX_COMMAND_FILE_BYTES {
+        return Err(format!(
+            "--command-file exceeds {MAX_COMMAND_FILE_BYTES} bytes"
+        ));
+    }
+    let body = std::fs::read(path).map_err(|error| format!("read --command-file: {error}"))?;
+    if body.is_empty() {
+        return Err("--command-file must not be empty".to_string());
+    }
+    if body.len() as u64 > MAX_COMMAND_FILE_BYTES {
+        return Err(format!(
+            "--command-file exceeds {MAX_COMMAND_FILE_BYTES} bytes"
+        ));
+    }
+    if body.contains(&0) {
+        return Err("--command-file contains NUL".to_string());
+    }
+    String::from_utf8(body).map_err(|_| "--command-file is not valid UTF-8".to_string())
+}
+
 /// What the process should exit with, plus whether stdout itself was lost.
 pub struct Delivery {
     pub status: u8,

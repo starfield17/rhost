@@ -81,9 +81,16 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
         Session::Exec {
             host,
             session,
-            command,
+            program,
             timeout_nanos,
         } => {
+            let command = match crate::cli::read_command_file(&program) {
+                Ok(cmd) => cmd,
+                Err(reason) => {
+                    return Failure::new("session.exec", &host, "CONFIG_INVALID", reason)
+                        .deliver(sink, json);
+                }
+            };
             let timer = Timer::start("session.exec", &host);
             let options = app_session::ExecOptions {
                 host: &host,

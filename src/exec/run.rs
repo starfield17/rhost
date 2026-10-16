@@ -5,9 +5,9 @@
 //! is decided in `crate::remote`; this file turns the request into a run and
 //! delivers the answer.
 
-use super::{Exec, MAX_COMMAND_FILE_BYTES, MAX_OUTPUT_LIMIT};
+use super::{Exec, MAX_OUTPUT_LIMIT};
 use crate::audit::Timer;
-use crate::cli::{CommandText, Failure, Sink, warn, yes};
+use crate::cli::{Failure, Sink, warn, yes};
 use crate::domain::{self, CancelSignal, ExecOutcome, Execution};
 use crate::remote::exec as app_exec;
 use crate::shell;
@@ -189,33 +189,5 @@ pub(crate) fn exec_status_line(outcome: &ExecOutcome) -> String {
 /// empty file is refused before anything is sent, because "the program was
 /// ambiguous" is not a question to answer by running it remotely.
 pub(crate) fn read_command_file(command: &Exec) -> Result<String, String> {
-    let CommandText::File(path) = &command.program else {
-        return Ok(match &command.program {
-            CommandText::Inline(text) => text.clone(),
-            CommandText::File(_) => unreachable!("handled below"),
-        });
-    };
-    let info =
-        std::fs::symlink_metadata(path).map_err(|error| format!("read --command-file: {error}"))?;
-    if !info.file_type().is_file() {
-        return Err("--command-file must be a regular file".to_string());
-    }
-    if info.len() > MAX_COMMAND_FILE_BYTES {
-        return Err(format!(
-            "--command-file exceeds {MAX_COMMAND_FILE_BYTES} bytes"
-        ));
-    }
-    let body = std::fs::read(path).map_err(|error| format!("read --command-file: {error}"))?;
-    if body.is_empty() {
-        return Err("--command-file must not be empty".to_string());
-    }
-    if body.len() as u64 > MAX_COMMAND_FILE_BYTES {
-        return Err(format!(
-            "--command-file exceeds {MAX_COMMAND_FILE_BYTES} bytes"
-        ));
-    }
-    if body.contains(&0) {
-        return Err("--command-file contains NUL".to_string());
-    }
-    String::from_utf8(body).map_err(|_| "--command-file is not valid UTF-8".to_string())
+    crate::cli::read_command_file(&command.program)
 }

@@ -48,7 +48,7 @@ const SESSION_LEAVES: &[Leaf] = &[
     },
     Leaf {
         name: "exec",
-        usage: "exec <host> <session> --command <program>",
+        usage: "exec <host> <session> (--command <program> | --command-file <path>)",
         summary: "Run a command in a session (state persists)",
     },
     Leaf {

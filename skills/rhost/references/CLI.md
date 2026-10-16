@@ -224,7 +224,8 @@ rhost session close <host> debug --json
 ```
 
 `session create` accepts `--name`, `--cwd`, `--shell bash`, and `--timeout`.
-Exec, list, read, and recover also accept their documented timeout. Writers are
+`session exec` accepts `--command` or `--command-file` (mutually exclusive), and
+`--timeout`. List, read, and recover also accept their documented timeout. Writers are
 serialized remotely. `SESSION_BUSY` means another program owns the pane and the
 requested command was not submitted. `send --data` is verbatim; `--enter` pastes
 the data and presses Enter in the same submission.

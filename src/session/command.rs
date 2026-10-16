@@ -2,7 +2,8 @@
 //! argv to one [`Session`].
 
 use crate::cli::{
-    FlagSpec, Help, JSON, PLAIN_FLAGS, Parsed, ParsedCommand, Scope, parse, parse_duration,
+    CommandText, FlagSpec, Help, JSON, PLAIN_FLAGS, Parsed, ParsedCommand, Scope, parse,
+    parse_duration,
 };
 use crate::session;
 use std::time::Duration;
@@ -23,7 +24,7 @@ pub enum Session {
     Exec {
         host: String,
         session: String,
-        command: String,
+        program: CommandText,
         timeout_nanos: i64,
     },
     Send {
@@ -76,6 +77,7 @@ static LIST_FLAGS: &[FlagSpec] = &[
 static EXEC_FLAGS: &[FlagSpec] = &[
     JSON,
     FlagSpec::value("command", true, "shell program to run in the session"),
+    FlagSpec::value("command-file", true, "read the program from a local file"),
     FlagSpec::value(
         "timeout",
         false,
@@ -124,6 +126,7 @@ static ANY_FLAGS: &[FlagSpec] = &[
     FlagSpec::value("cwd", false, ""),
     FlagSpec::value("shell", false, ""),
     FlagSpec::value("command", false, ""),
+    FlagSpec::value("command-file", false, ""),
     FlagSpec::value("data", false, ""),
     FlagSpec::value("key", false, ""),
     FlagSpec::value("since", false, ""),
@@ -215,23 +218,36 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
             if parsed.dash {
                 return ParsedCommand::usage(
                     Scope::Session,
-                    "rhost session exec does not accept a command after --; use --command"
+                    "rhost session exec does not accept a command after --; use --command or --command-file"
                         .to_string(),
                 );
             }
-            let command = match value("command") {
-                Some(command) if !command.is_empty() => command,
-                _ => {
-                    return ParsedCommand::usage(
-                        Scope::Session,
-                        "rhost session exec requires --command <string>".to_string(),
-                    );
-                }
+            let inline = parsed.occurrences("command") > 0;
+            let file = parsed.occurrences("command-file") > 0;
+            if inline == file {
+                return ParsedCommand::usage(
+                    Scope::Session,
+                    "rhost session exec requires exactly one of --command or --command-file",
+                );
+            }
+            if inline && parsed.value("command") == Some("") {
+                return ParsedCommand::usage(Scope::Session, "--command must not be empty");
+            }
+            if file && matches!(parsed.value("command-file"), Some("") | Some("-")) {
+                return ParsedCommand::usage(
+                    Scope::Session,
+                    "--command-file requires a local file path, not stdin",
+                );
+            }
+            let program = if inline {
+                CommandText::Inline(parsed.value("command").unwrap_or_default().to_string())
+            } else {
+                CommandText::File(parsed.value("command-file").unwrap_or_default().to_string())
             };
             ParsedCommand::Run(Session::Exec {
                 host: operands[0].clone(),
                 session: operands[1].clone(),
-                command,
+                program,
                 timeout_nanos: match timeout(&parsed, EXEC_TIMEOUT) {
                     Ok(nanos) => nanos,
                     Err(message) => return ParsedCommand::usage(Scope::Session, message),
