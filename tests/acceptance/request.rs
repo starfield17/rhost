@@ -70,3 +70,44 @@ fn raw_request_duplicates_and_invalid_file_parameters_stop_before_ssh() -> Resul
     }
     Ok(())
 }
+
+#[test]
+fn changeset_failure_keeps_its_record_in_the_public_envelope() -> Result<(), String> {
+    let harness = Harness::open("request-changeset")?;
+    crate::hosts::local_host(&harness)?;
+    let state = harness.path("remote-state").to_string_lossy().into_owned();
+    let harness = harness.env("RHOST_REMOTE_STATE", &state);
+    let call = |op: &str, params: serde_json::Value| {
+        envelope_with_stdin(
+            &harness,
+            &["request", "--from", "-"],
+            json!({"schema_version":3,"operation":op,"host":"gpu","params":params})
+                .to_string()
+                .as_bytes(),
+        )
+    };
+    let (_, prepared) = call("helper.prepare", json!({}))?;
+    let generation = prepared["data"]["generation"].clone();
+    let expiry = prepared["data"]["remote_time_unix"]
+        .as_u64()
+        .ok_or("time")?
+        + 3600;
+    let a = harness.path("a").to_string_lossy().into_owned();
+    let b = harness.path("b").to_string_lossy().into_owned();
+    std::fs::write(&b, b"external").map_err(|e| e.to_string())?;
+    let (outcome, result) = call(
+        "fs.changeset.apply",
+        json!({"generation":generation,"key":format!("{expiry}-{}","3".repeat(64)),"expires_unix":expiry,"changes":[{"op":"write","path":a,"content":"new"},{"op":"write","path":b,"content":"conflict"}]}),
+    )?;
+    assert_eq!(outcome.status, 255);
+    assert_eq!(result["error"]["code"], "HASH_REQUIRED", "{result}");
+    assert_eq!(result["data"]["mutation"], "not_applied");
+    assert_eq!(result["data"]["files"].as_array().ok_or("files")?.len(), 2);
+    assert!(!std::path::Path::new(&a).exists());
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../../schemas/result-v3.schema.json"))
+            .map_err(|e| e.to_string())?;
+    let validator = jsonschema::validator_for(&schema).map_err(|e| e.to_string())?;
+    assert!(validator.is_valid(&result), "{result}");
+    Ok(())
+}
