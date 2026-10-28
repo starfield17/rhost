@@ -107,9 +107,15 @@ static FS_PATCH_FLAGS: &[FlagSpec] = &[
 /// table parses the same argv again. A flag that belongs to another leaf is
 /// therefore still rejected — by the second parse, which is the one that counts.
 /// The help text is unused here; the leaf's own table carries it.
+static FS_NATIVE_FLAGS: &[FlagSpec] = &[
+    JSON,
+    FlagSpec::value("from", false, "typed JSON parameter file, or - for stdin"),
+    FlagSpec::value("if-boot-id", false, "require the observed boot identity"),
+];
 static FS_ANY_FLAGS: &[FlagSpec] = &[
     JSON,
     FlagSpec::value("timeout", false, ""),
+    FlagSpec::value("if-boot-id", false, ""),
     FlagSpec::value("max-bytes", false, ""),
     FlagSpec::value("start", false, ""),
     FlagSpec::value("lines", false, ""),
@@ -176,6 +182,44 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Fs> {
         ))
     };
     match leaf.as_str() {
+        "changeset" | "search" | "read-many" => {
+            let nested = leaf == "changeset";
+            let count = if nested { 2 } else { 1 };
+            if let Err(message) = exact(
+                count,
+                if nested {
+                    "<apply|query|recover|prune> <host>"
+                } else {
+                    "<host>"
+                },
+            ) {
+                return ParsedCommand::usage(Scope::Fs, message);
+            }
+            let operation = if nested {
+                if !matches!(
+                    operands[0].as_str(),
+                    "apply" | "query" | "recover" | "prune"
+                ) {
+                    return ParsedCommand::usage(Scope::Fs, "unknown changeset operation");
+                }
+                format!("fs.changeset.{}", operands[0])
+            } else {
+                format!("fs.{}", leaf.replace('-', "_"))
+            };
+            let guard = flag_or("if-boot-id");
+            if let Some(ref guard) = guard
+                && crate::domain::BootId::new(guard.clone()).is_err()
+            {
+                return ParsedCommand::usage(Scope::Fs, "invalid boot identity");
+            }
+            ParsedCommand::Run(Fs::Native {
+                host: operands[count - 1].clone(),
+                operation,
+                from: flag_or("from").unwrap_or_else(|| "-".into()),
+                if_boot_id: guard,
+            })
+        }
+
         "put" => {
             if let Err(message) = exact(3, "<host> <local> <remote>") {
                 return ParsedCommand::usage(Scope::Root, message);
@@ -341,6 +385,7 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Fs> {
 /// The flags each leaf accepts, so its `--help` page and its parse read one table.
 pub fn leaf_flags(leaf: &str) -> &'static [FlagSpec] {
     match leaf {
+        "changeset" | "search" | "read-many" => FS_NATIVE_FLAGS,
         "put" => FS_PUT_FLAGS,
         "get" => FS_GET_FLAGS,
         "sync" | "mirror" => FS_SYNC_FLAGS,

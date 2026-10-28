@@ -37,7 +37,9 @@ impl Bundle<'_> {
                 {
                     return Err("unsupported schema anchor".into());
                 }
-                map.remove("$id");
+                if map.contains_key("$id") {
+                    return Err("nested schema identity is unsupported".into());
+                }
                 map.remove("$defs");
                 map.remove("definitions");
                 if let Some(reference) = map.get_mut("$ref") {
@@ -76,6 +78,9 @@ fn bundle(source: &Value, mut selected: Value) -> Result<Value, String> {
         names: BTreeMap::new(),
         definitions: Map::new(),
     };
+    if let Some(map) = selected.as_object_mut() {
+        map.remove("$id");
+    }
     b.visit(&mut selected)?;
     if !b.definitions.is_empty() {
         selected["$defs"] = Value::Object(b.definitions);
@@ -104,14 +109,30 @@ pub fn output(source: &Value, op: &str) -> Result<Value, String> {
         .remove("oneOf");
     outer = specialize(outer, op);
     let selected = specialize(branches[0].clone(), op);
-    outer["allOf"] = json!([selected]);
+    match outer.get_mut("allOf").and_then(Value::as_array_mut) {
+        Some(branches) => branches.push(selected),
+        None => outer["allOf"] = json!([selected]),
+    };
     bundle(source, outer)
 }
 pub fn input(source: &Value, op: &str) -> Result<Value, String> {
     let branches = source["allOf"].as_array().ok_or("input branches")?;
-    let params = branches
+    if branches
         .iter()
-        .find(|v| selects(&v["if"], op) == Some(true))
+        .any(|v| v.get("else").is_some() || selects(&v["if"], op).is_none())
+    {
+        return Err("unsupported generic input condition".into());
+    }
+    let matching = branches
+        .iter()
+        .filter(|v| selects(&v["if"], op) == Some(true))
+        .collect::<Vec<_>>();
+    if matching.len() != 1 {
+        return Err("operation parameters must have one branch".into());
+    }
+    let params = matching
+        .into_iter()
+        .next()
         .map(|v| v["then"]["properties"]["params"].clone())
         .ok_or("operation parameters")?;
     bundle(

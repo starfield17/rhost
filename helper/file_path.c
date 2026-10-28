@@ -72,3 +72,8 @@ int f_identity(const struct stat *a,const struct stat *b){
     return a->st_dev==b->st_dev && a->st_ino==b->st_ino && a->st_size==b->st_size && a->st_mtim.tv_sec==b->st_mtim.tv_sec && a->st_mtim.tv_nsec==b->st_mtim.tv_nsec && a->st_ctim.tv_sec==b->st_ctim.tv_sec && a->st_ctim.tv_nsec==b->st_ctim.tv_nsec;
 #endif
 }
+
+int f_fields(const j_value *q,const char *allowed){
+    if(!q || q->type!=J_OBJECT)return 0;
+    for(const j_value *p=q->first;p;p=p->next){int found=0;for(const char *a=allowed;*a;){const char *end=strchr(a,' ');size_t n=end?(size_t)(end-a):strlen(a);if(p->key_size==n && !memcmp(p->key,a,n)){found=1;break;}a=end?end+1:a+n;}if(!found)return 0;}return 1;
+}

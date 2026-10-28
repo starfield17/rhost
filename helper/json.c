@@ -21,6 +21,7 @@ int j_add(j_value *parent,const char *name,j_value *child) {
     if(name){child->key=strdup(name);if(!child->key){j_free(child);return 0;}child->key_size=strlen(name);}
     j_value **tail=&parent->first;while(*tail)tail=&(*tail)->next;*tail=child;return 1;
 }
+int j_take(j_value *parent,const char *name,j_value **child){j_value *value=*child;*child=NULL;return j_add(parent,name,value);}
 j_value *j_get(const j_value *parent,const char *name) {
     if(!parent || parent->type!=J_OBJECT)return NULL;
     size_t n=strlen(name);for(j_value *v=parent->first;v;v=v->next)if(v->key_size==n && !memcmp(v->key,name,n))return v;return NULL;
@@ -160,3 +161,5 @@ int j_dump(const j_value *v,j_buf *out){
     }
     return !out->failed;
 }
+
+j_value *j_clone(const j_value *v){if(!v)return NULL;j_buf b={0};b.limit=J_INPUT_LIMIT;if(!j_dump(v,&b)){free(b.data);return NULL;}j_value *copy=j_parse(b.data,b.size);free(b.data);return copy;}

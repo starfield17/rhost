@@ -7,13 +7,13 @@
 #include <stdio.h>
 #include <sys/file.h>
 #include <unistd.h>
-static int mode(const j_value *q,mode_t *out,f_error *e){
+int f_mode(const j_value *q,mode_t *out,f_error *e){
     j_value *v=j_get(q,"file_mode");if(!v || v->type==J_NULL)return 1;
     const char *s=j_string(v);if(!s)goto invalid;size_t n=strlen(s);if(!n)return 1;if(n!=3 && n!=4)goto invalid;
     mode_t value=0;for(size_t i=0;i<n;i++){if(s[i]<'0'||s[i]>'7')goto invalid;value=(value<<3)|(mode_t)(s[i]-'0');}*out=value;return 1;
 invalid:f_fail(e,"CONFIG_INVALID","file_mode must be an octal permission such as 0644");return 0;
 }
-static int save(int fd,const void *data,size_t size){
+int f_save(int fd,const void *data,size_t size){
     const unsigned char *p=data;while(size){ssize_t n=write(fd,p,size);if(n<0 && errno==EINTR)continue;if(n<=0)return 0;p+=n;size-=(size_t)n;}return 1;
 }
 j_value *f_edit(const j_value *q,const char *path,int patch,f_error *e){
@@ -21,7 +21,7 @@ j_value *f_edit(const j_value *q,const char *path,int patch,f_error *e){
     const char *expected=expected_value?j_string(expected_value):"";
     if(!expected || (parents_value && parents_value->type!=J_BOOL))return f_fail(e,"CONFIG_INVALID","invalid edit policy");
     j_buf old={0},data={0};mode_t permissions=0600;
-    if(!mode(q,&permissions,e) || (!patch && !f_decode(j_get(q,"content"),&data,e))){free(data.data);return NULL;}
+    if(!f_mode(q,&permissions,e) || (!patch && !f_decode(j_get(q,"content"),&data,e))){free(data.data);return NULL;}
     if(!patch && !f_context(e)){free(data.data);return NULL;}
     int parents=!patch && parents_value && parents_value->number;char *name=NULL;int dir=f_parent(path,parents,&name,e);if(dir<0){free(data.data);return NULL;}
     int fd=-1,exists=0;struct stat info,loaded;j_value *result=NULL;char temporary[64]={0};
@@ -38,7 +38,7 @@ j_value *f_edit(const j_value *q,const char *path,int patch,f_error *e){
         if(!f_identity(&loaded,&after)){f_fail(e,"FILE_CONFLICT","target changed while reading");goto done;}
         close(fd);fd=-1;permissions=info.st_mode&07777;
     }
-    if(!mode(q,&permissions,e))goto done;
+    if(!f_mode(q,&permissions,e))goto done;
     unsigned char digest[32];char old_hash[65];rh_sha256(old.data,old.size,digest);rh_hex(digest,32,old_hash);
     if(exists && !*expected){f_fail(e,"HASH_REQUIRED","an existing file requires if_hash from fs read");goto done;}
     if((exists && strcmp(expected,old_hash)) || (!exists && (*expected || patch))){f_fail(e,"FILE_CONFLICT","file changed or expected target is missing");goto done;}
@@ -51,7 +51,7 @@ j_value *f_edit(const j_value *q,const char *path,int patch,f_error *e){
         temporary[0]=0;
     }
     if(fd<0){f_fail(e,"INTERNAL","cannot allocate a temporary file");goto done;}
-    if(!save(fd,data.data,data.size) || fchmod(fd,permissions)<0 || fsync(fd)<0){f_os_error(e,0);goto done;}close(fd);fd=-1;
+    if(!f_save(fd,data.data,data.size) || fchmod(fd,permissions)<0 || fsync(fd)<0){f_os_error(e,0);goto done;}close(fd);fd=-1;
     if(exists){
         char now[65];fd=f_open(dir,name,1,e);if(fd<0)goto done;
         if(fstat(fd,&loaded)<0 || !f_hash_fd(fd,now,NULL,e)){if(!e->code)f_os_error(e,1);goto done;}

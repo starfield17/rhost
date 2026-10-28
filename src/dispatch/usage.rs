@@ -137,6 +137,21 @@ const FS_LEAVES: &[Leaf] = &[
         usage: "patch <host> <path> [--patch <file>]",
         summary: "Apply a hash-guarded patch",
     },
+    Leaf {
+        name: "search",
+        usage: "search <host> --from <params.json>",
+        summary: "Search files with hashes and guarded cursors",
+    },
+    Leaf {
+        name: "read-many",
+        usage: "read-many <host> --from <params.json>",
+        summary: "Read named files within one aggregate budget",
+    },
+    Leaf {
+        name: "changeset",
+        usage: "changeset <apply|query|recover|prune> <host> --from <params.json>",
+        summary: "Apply or explicitly recover named file changes",
+    },
 ];
 
 fn leaves(scope: Scope) -> &'static [Leaf] {

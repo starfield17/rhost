@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #define J_INPUT_LIMIT (12u*1024u*1024u)
-#define J_OUTPUT_LIMIT (48u*1024u*1024u+65536u)
+#define J_OUTPUT_LIMIT (64u*1024u*1024u)
 enum {J_NULL,J_BOOL,J_INT,J_REAL,J_TEXT,J_ARRAY,J_OBJECT};
 typedef struct j_value {
     unsigned type,negative;uint64_t number;
@@ -13,9 +13,12 @@ typedef struct j_value {
 } j_value;
 typedef struct {unsigned char *data;size_t size,capacity,limit;int failed;} j_buf;
 void j_append(j_buf *b,const void *p,size_t n);
+j_value *j_clone(const j_value *v);
 j_value *j_parse(const unsigned char *bytes,size_t size);
 void j_free(j_value *v);
 j_value *j_new(unsigned type);
+/* j_add consumes child on success and failure; j_take also clears its owner. */
+int j_take(j_value *parent,const char *name,j_value **child);
 int j_add(j_value *parent,const char *name,j_value *child);
 j_value *j_get(const j_value *parent,const char *name);
 const char *j_string(const j_value *v);

@@ -63,7 +63,7 @@ fn parse<T: for<'a> Deserialize<'a>>(s: &str) -> Result<T, Error> {
 fn path(s: &str) -> Result<(), Error> {
     super::backend::validate_remote_path(s).map_err(|e| Error::new("CONFIG_INVALID", e.to_string()))
 }
-pub fn execute_params(
+fn execute_simple(
     client: &Client,
     host: &str,
     operation: &str,
@@ -166,7 +166,7 @@ pub fn execute_params(
         }
     })();
     result.map_err(|mut error: Error| {
-        if !(operation != "fs.read") {
+        if operation == "fs.read" {
             error.mutation = None;
         }
         error
@@ -176,7 +176,7 @@ fn bad_answer() -> Error {
     Error::new("PROTOCOL_ERROR", "invalid native file answer")
         .with_mutation(crate::domain::MutationEvidence::Unknown)
 }
-fn refusal(e: super::backend::HelperRefusal) -> Error {
+pub(super) fn refusal(e: super::backend::HelperRefusal) -> Error {
     let Some(code) = super::backend::known_refusal_code(&e.error) else {
         return bad_answer();
     };
@@ -188,4 +188,63 @@ fn refusal(e: super::backend::HelperRefusal) -> Error {
         return bad_answer();
     };
     Error::new(code, e.message()).with_mutation(mutation)
+}
+
+/// A partial journal survives a failed operation and must reach every delivery.
+pub struct RequestOutcome {
+    pub data: Value,
+    pub error: Option<Error>,
+}
+impl RequestOutcome {
+    pub fn envelope(self, operation: &str, host: &str) -> Value {
+        let error = self.error.map(|mut e| {
+            if (matches!(operation, "fs.write" | "fs.patch")
+                || operation.starts_with("fs.changeset."))
+                && e.mutation.is_none()
+            {
+                e.mutation = Some(crate::domain::MutationEvidence::NotApplied);
+            }
+            let mut value = json!({"code":e.code,"message":e.message,"retryable":e.retryable});
+            if let Some(m) = e.mutation {
+                value["mutation"] = m.as_str().into();
+            }
+            value
+        });
+        json!({"schema_version":3,"operation":operation,"host":host,"ok":error.is_none(),"data":self.data,"error":error})
+    }
+    pub fn done(data: Value) -> Self {
+        Self { data, error: None }
+    }
+    pub fn failed(error: Error) -> Self {
+        Self {
+            data: Value::Null,
+            error: Some(error),
+        }
+    }
+}
+pub fn execute_params(
+    client: &Client,
+    host: &str,
+    operation: &str,
+    raw: &str,
+    cancelled: &dyn Fn() -> bool,
+    guard: Option<&crate::domain::BootId>,
+) -> RequestOutcome {
+    let mut outcome = if operation.starts_with("fs.changeset.") {
+        super::changes::execute(client, host, operation, raw, cancelled, guard)
+    } else if matches!(operation, "fs.search" | "fs.read_many") {
+        super::inspect::execute(client, host, operation, raw, cancelled, guard)
+    } else {
+        match execute_simple(client, host, operation, raw, cancelled, guard) {
+            Ok(data) => RequestOutcome::done(data),
+            Err(e) => RequestOutcome::failed(e),
+        }
+    };
+    if (matches!(operation, "fs.write" | "fs.patch") || operation.starts_with("fs.changeset."))
+        && let Some(e) = outcome.error.as_mut()
+        && e.mutation.is_none()
+    {
+        e.mutation = Some(crate::domain::MutationEvidence::NotApplied);
+    }
+    outcome
 }

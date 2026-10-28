@@ -23,6 +23,23 @@ pub(crate) fn run(
     stop: crate::files::Stop<'_>,
 ) -> u8 {
     match command {
+        Fs::Native {
+            host,
+            operation,
+            from,
+            if_boot_id,
+        } => super::native_cli::run(
+            sink,
+            client,
+            super::native_cli::Options {
+                host: &host,
+                operation: &operation,
+                from: &from,
+                guard: if_boot_id.as_deref(),
+                json,
+            },
+            stop.requested,
+        ),
         Fs::Put {
             host,
             local,

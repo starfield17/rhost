@@ -6,13 +6,16 @@
 //! `dto`.
 
 mod backend;
+mod changes;
 pub mod command;
 mod dto;
 mod input;
+mod inspect;
+mod native_cli;
 mod ops;
 mod render;
 mod request;
-pub use request::execute_params;
+pub use request::{RequestOutcome, execute_params};
 mod run;
 mod surface;
 

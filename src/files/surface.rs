@@ -4,6 +4,12 @@
 
 /// Every file operation the parser can hand to the runner.
 pub enum Fs {
+    Native {
+        host: String,
+        operation: String,
+        from: String,
+        if_boot_id: Option<String>,
+    },
     Put {
         host: String,
         local: String,

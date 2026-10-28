@@ -41,15 +41,22 @@ pub fn execute(client: &Client, raw: &str, cancelled: &dyn Fn() -> bool) -> Valu
         Ok(value) => value,
         Err(e) => return invalid(e.to_string()),
     };
-    let result = if matches!(q.operation.as_str(), "fs.read" | "fs.write" | "fs.patch") {
-        crate::files::execute_params(
+    let result = if matches!(
+        q.operation.as_str(),
+        "fs.read" | "fs.write" | "fs.patch" | "fs.search" | "fs.read_many"
+    ) || matches!(
+        q.operation.as_str(),
+        "fs.changeset.apply" | "fs.changeset.query" | "fs.changeset.recover" | "fs.changeset.prune"
+    ) {
+        let outcome = crate::files::execute_params(
             client,
             &q.host,
             &q.operation,
             q.params.get(),
             cancelled,
             guard.as_ref(),
-        )
+        );
+        return outcome.envelope(&q.operation, &q.host);
     } else if matches!(
         q.operation.as_str(),
         "metadata"

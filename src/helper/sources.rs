@@ -1,6 +1,24 @@
 //! Embedded sources are the only source-build authority, never remote packages.
 use sha2::{Digest, Sha256};
 pub const SOURCES: &[(&str, &str)] = &[
+    ("changes.h", include_str!("../../helper/changes.h")),
+    ("changes_api.c", include_str!("../../helper/changes_api.c")),
+    (
+        "changes_apply.c",
+        include_str!("../../helper/changes_apply.c"),
+    ),
+    (
+        "changes_journal.c",
+        include_str!("../../helper/changes_journal.c"),
+    ),
+    (
+        "changes_json.c",
+        include_str!("../../helper/changes_json.c"),
+    ),
+    (
+        "changes_prepare.c",
+        include_str!("../../helper/changes_prepare.c"),
+    ),
     ("file_edit.c", include_str!("../../helper/file_edit.c")),
     ("file_patch.c", include_str!("../../helper/file_patch.c")),
     ("file_path.c", include_str!("../../helper/file_path.c")),
@@ -8,6 +26,19 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("files.c", include_str!("../../helper/files.c")),
     ("files.h", include_str!("../../helper/files.h")),
     ("host.c", include_str!("../../helper/host.c")),
+    ("inspect.h", include_str!("../../helper/inspect.h")),
+    (
+        "inspect_many.c",
+        include_str!("../../helper/inspect_many.c"),
+    ),
+    (
+        "inspect_search.c",
+        include_str!("../../helper/inspect_search.c"),
+    ),
+    (
+        "inspect_walk.c",
+        include_str!("../../helper/inspect_walk.c"),
+    ),
     ("install.c", include_str!("../../helper/install.c")),
     ("json.c", include_str!("../../helper/json.c")),
     ("json.h", include_str!("../../helper/json.h")),

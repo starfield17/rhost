@@ -68,7 +68,7 @@ pub enum Request<'a> {
 /// One decoded `fs read` answer. Every field is required: a partial answer is
 /// not a usable page, and guessing the missing part is how a caller ends up
 /// acting on content it never saw.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReadResult {
     pub path: String,
@@ -126,7 +126,10 @@ impl HelperRefusal {
 /// an error, which the caller reports as `INTERNAL` rather than a code an agent
 /// might branch on.
 pub fn known_refusal_code(code: &str) -> Option<&'static str> {
-    const CODES: [&str; 15] = [
+    const CODES: [&str; 18] = [
+        "NAMESPACE_MISMATCH",
+        "IDEMPOTENCY_CONFLICT",
+        "REQUEST_EXPIRED",
         "CONTEXT_CHANGED",
         "CONTEXT_UNAVAILABLE",
         "STATE_UNAVAILABLE",
