@@ -727,5 +727,208 @@
         "retryable": false
       }
     }
+  },
+  {
+    "name": "fs.changeset.apply",
+    "result": {
+      "schema_version": 3,
+      "operation": "fs.changeset.apply",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "applied",
+        "mutation": "applied",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installed",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": true
+          }
+        ],
+        "failure": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.query",
+    "result": {
+      "schema_version": 3,
+      "operation": "fs.changeset.query",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "applied",
+        "mutation": "applied",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installed",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": true
+          }
+        ],
+        "failure": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.recover",
+    "result": {
+      "schema_version": 3,
+      "operation": "fs.changeset.recover",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "applied",
+        "mutation": "applied",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installed",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": true
+          }
+        ],
+        "failure": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.prune",
+    "result": {
+      "schema_version": 3,
+      "operation": "fs.changeset.prune",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "pruned": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.apply-failure",
+    "result": {
+      "schema_version": 3,
+      "operation": "fs.changeset.apply",
+      "ok": false,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "unknown",
+        "mutation": "unknown",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installing",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": false
+          }
+        ],
+        "failure": null
+      },
+      "error": {
+        "code": "STATE_UNAVAILABLE",
+        "message": "result marker unavailable",
+        "retryable": false,
+        "mutation": "unknown"
+      }
+    }
+  },
+  {
+    "name": "fs.search",
+    "result": {
+      "schema_version": 3,
+      "operation": "fs.search",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "root": "/srv/project",
+        "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "items": [
+          {
+            "path": "/srv/project/file",
+            "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 4,
+            "matches": [
+              {
+                "line": 1,
+                "text": "text"
+              }
+            ],
+            "matches_truncated": false
+          }
+        ],
+        "skipped": [],
+        "scanned_files": 1,
+        "scanned_bytes": 4,
+        "incomplete": false,
+        "reasons": [],
+        "next_cursor": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.read_many",
+    "result": {
+      "schema_version": 3,
+      "operation": "fs.read_many",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "items": [
+          {
+            "path": "/srv/project/file",
+            "ok": true,
+            "data": {
+              "path": "/srv/project/file",
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "content": "text",
+              "start": 1,
+              "lines": 1,
+              "total_lines": 1,
+              "truncated": false
+            },
+            "error": null
+          }
+        ],
+        "unread": []
+      },
+      "error": null
+    }
   }
 ]
