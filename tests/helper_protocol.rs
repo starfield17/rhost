@@ -1,4 +1,5 @@
 //! Runs only an explicitly supplied helper; CI must not compile a substitute.
+use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -20,6 +21,11 @@ fn call(input: &[u8]) -> Vec<u8> {
     let output = child
         .wait_with_output()
         .unwrap_or_else(|error| panic!("wait: {error}"));
+    assert!(
+        output.status.success(),
+        "helper exited with {}",
+        output.status
+    );
     assert!(
         output.stderr.is_empty(),
         "helper leaked diagnostics outside its frame"
@@ -62,6 +68,13 @@ fn executable_probe_is_bounded_and_does_not_invent_capabilities() {
     assert_eq!(body[0], 0);
     body = &body[1..];
     let digest = text(&mut body);
+    assert_eq!(
+        digest,
+        Sha256::digest(include_bytes!("../helper/main.c"))
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
     assert_eq!(digest.len(), 64);
     assert!(
         digest
@@ -78,6 +91,27 @@ fn executable_probe_is_bounded_and_does_not_invent_capabilities() {
         0u32.to_be_bytes(),
         "scaffolding must advertise no unimplemented operations"
     );
+}
+
+#[test]
+fn invalid_kinds_and_incomplete_bodies_are_not_unsupported_operations() {
+    let mut wrong_magic = frame(1, &[]);
+    wrong_magic[0] = b'X';
+    let mut truncated = frame(1, b"abc");
+    truncated.pop();
+    for (input, kind, code) in [
+        (wrong_magic, 1, "PROTOCOL_ERROR"),
+        (frame(0, &[]), 0, "PROTOCOL_ERROR"),
+        (frame(7, &[]), 7, "PROTOCOL_ERROR"),
+        (truncated, 1, "PROTOCOL_ERROR"),
+        (frame(2, &[]), 2, "HELPER_INCOMPATIBLE"),
+    ] {
+        let reply = call(&input);
+        let mut body = payload(&reply, kind);
+        assert_eq!(body[0], 1);
+        body = &body[1..];
+        assert_eq!(text(&mut body), code);
+    }
 }
 
 #[test]
