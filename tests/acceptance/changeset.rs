@@ -217,3 +217,79 @@ fn interrupted_install_intent_never_claims_no_target_mutation() -> Result<(), St
     assert_eq!(read_bytes(&path)?, b"a");
     Ok(())
 }
+
+#[test]
+fn process_death_keeps_partial_evidence_and_retry_never_continues_writing() -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let h = Harness::open("changeset-process-death")?;
+    let (generation, time) = prepare_native(&h)?;
+    let expiry = time + 3600;
+    let id = format!("{expiry}-{}", "5".repeat(64));
+    create(&h, "files/keep", b"unrelated")?;
+    let content = rhost::base64::encode(&vec![b'x'; 64 * 1024]);
+    let changes = (0..64)
+        .map(|i| json!({"op":"write","path":h.path(&format!("files/f{i:03}")),"content":content}))
+        .collect::<Vec<_>>();
+    let request = json!({"op":"changeset.apply","generation":generation,"key":id,"expires_unix":expiry,"changes":changes});
+    let output = std::fs::File::create(h.path("result")).map_err(|e| e.to_string())?;
+    let mut child =
+        Command::new(std::env::var_os("RHOST_HELPER_BIN").ok_or("set RHOST_HELPER_BIN")?)
+            .arg("--files-json")
+            .env("HOME", h.path("home"))
+            .env_remove("RHOST_REMOTE_STATE")
+            .env_remove("RHOST_EXPECT_BOOT_ID")
+            .stdin(Stdio::piped())
+            .stdout(output)
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .take()
+        .ok_or("stdin")?
+        .write_all(&serde_json::to_vec(&request).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    let mut interrupted = false;
+    while std::time::Instant::now() < deadline {
+        if h.path("files/f000").exists() && !h.path("files/f063").exists() {
+            child.kill().map_err(|e| e.to_string())?;
+            interrupted = true;
+            break;
+        }
+        if child.try_wait().map_err(|e| e.to_string())?.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+    if !interrupted {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+    assert!(
+        interrupted,
+        "could not interrupt a real multi-file application"
+    );
+    let observation = ask(
+        &h,
+        json!({"op":"changeset.query","generation":generation,"id":id}),
+    )?;
+    assert!(
+        matches!(
+            observation["record"]["mutation"].as_str(),
+            Some("partial" | "unknown")
+        ),
+        "{observation}"
+    );
+    assert_eq!(observation["record"]["owner_active"], false);
+    let last = h.path("files/f063").exists();
+    let retried = ask(&h, request)?;
+    assert_eq!(retried["record"]["files"], observation["record"]["files"]);
+    assert_eq!(h.path("files/f063").exists(), last);
+    assert_eq!(
+        read_bytes(&h.path("files/keep").to_string_lossy())?,
+        b"unrelated"
+    );
+    Ok(())
+}
