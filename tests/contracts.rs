@@ -7,8 +7,8 @@ fn actual_dtos_match_independent_schema() -> Result<(), Box<dyn std::error::Erro
     assert_eq!(cases.len(), 38);
     for (name, raw) in [
         (
-            "active v2 schema",
-            include_str!("../schemas/result-v2.schema.json"),
+            "active v3 schema",
+            include_str!("../schemas/result-v3.schema.json"),
         ),
         (
             "published v4.1.0 v2 validator",
@@ -17,8 +17,21 @@ fn actual_dtos_match_independent_schema() -> Result<(), Box<dyn std::error::Erro
     ] {
         let schema: serde_json::Value = serde_json::from_str(raw)?;
         let validator = jsonschema::validator_for(&schema)?;
-        for case in &cases {
-            assert!(validator.is_valid(case), "{name} rejected {case}");
+        for original in &cases {
+            let mut case = original.clone();
+            if name.starts_with("published") {
+                case["schema_version"] = 2.into();
+                if case["operation"] == "version" {
+                    case["data"]["schema_version"] = 2.into();
+                }
+                if let Some(data) = case["data"].as_object_mut() {
+                    data.remove("mutation");
+                }
+                if let Some(error) = case["error"].as_object_mut() {
+                    error.remove("mutation");
+                }
+            }
+            assert!(validator.is_valid(&case), "{name} rejected {case}");
             let mut missing = case.clone();
             missing
                 .as_object_mut()
@@ -74,7 +87,7 @@ fn published_v410_validator_is_immutable() {
 fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dyn std::error::Error>>
 {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schemas/result-v2.schema.json"))?;
+        serde_json::from_str(include_str!("../schemas/result-v3.schema.json"))?;
     let validator = jsonschema::validator_for(&schema)?;
 
     let mut covered: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -85,7 +98,7 @@ fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dy
     }
 
     let fixtures: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("fixtures/result-v2-valid.json"))?;
+        serde_json::from_str(include_str!("fixtures/result-v3-valid.json"))?;
     for fixture in &fixtures {
         let name = fixture["name"].as_str().unwrap_or("<unnamed>");
         let result = &fixture["result"];

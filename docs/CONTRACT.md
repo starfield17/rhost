@@ -1,7 +1,7 @@
 # rhost contract ledger
 
 This ledger is the authority for rhost product semantics. The production Rust
-implementation is v4 with wire schema v2. The Go v3.1.0 implementation and its
+implementation is migrating to v5 with uniform wire schema v3. The Go v3.1.0 implementation and its
 conformance harness were archived out to the read-only `rhost-go-old` repository
 at the v4.4.1 split; they are no longer part of this tree and are not maintained.
 Maintenance does not grant permission to reinterpret execution evidence,
@@ -10,7 +10,7 @@ retryability, resource ownership, or destructive operations.
 ## Authority and evidence
 
 - [Architecture](ARCHITECTURE.md) explains the guarantees; this ledger identifies
-  them. [v2](../schemas/result-v2.schema.json) defines the current representation;
+  them. [v3](../schemas/result-v3.schema.json) defines the current representation;
   v1 was frozen wire history and now lives with the archived Go implementation.
 - The Rust implementation's complete native live suite has passed against a real
   remote Linux host over SSH; that suite is a required manual pre-release

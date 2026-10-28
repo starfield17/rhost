@@ -56,7 +56,7 @@ def main() -> int:
     cli = (ROOT / "skills/rhost/references/CLI.md").read_text()
     if f"ControlPersist={persist}" not in cli:
         fail("CLI.md persistence window differs from CONTROL_PERSIST")
-    schema = json.loads((ROOT / "schemas/result-v2.schema.json").read_text())
+    schema = json.loads((ROOT / "schemas/result-v3.schema.json").read_text())
     enums = []
     def walk(node: object) -> None:
         if isinstance(node, dict):

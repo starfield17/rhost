@@ -130,7 +130,7 @@ fn busy_session_has_no_exit_and_no_stdout_alias() -> Result<(), Box<dyn std::err
 
 #[test]
 fn dto_matches_independent_contract_fixture() -> Result<(), Box<dyn std::error::Error>> {
-    let fixtures: Vec<Value> = serde_json::from_str(include_str!("fixtures/result-v2-valid.json"))?;
+    let fixtures: Vec<Value> = serde_json::from_str(include_str!("fixtures/result-v3-valid.json"))?;
     let fixture = fixtures
         .iter()
         .find(|f| f["name"] == "exec")

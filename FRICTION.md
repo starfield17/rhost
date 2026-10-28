@@ -75,3 +75,12 @@ replacement acceptance requires the same edit to succeed with unusable Python,
 keeps the existing CAS, permissions, path and bounded-read assertions, and runs
 the direct conformance suite against an explicitly supplied native candidate.
 No missing-candidate skip or Python production fallback is permitted.
+
+
+### Uniform v3 acceptance
+
+The approved v5 compatibility decision moves every public envelope to v3.
+Existing v2 fixtures and the published v4.1.0 validator remain untouched. Active
+DTO and CLI tests now require v3; the preserved payload projection additionally
+checks the frozen v2 validator. File write/patch success reports applied mutation;
+errors distinguish not_applied, applied, partial and unknown evidence.

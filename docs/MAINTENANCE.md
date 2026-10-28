@@ -1,6 +1,6 @@
 # Maintenance policy
 
-rhost v4 is the production implementation. Changes are conservative by default:
+v5 uses one schema-v3 envelope for all public JSON operations. Changes are conservative by default:
 the contract and existing gates define the product, and implementation work does
 not grant permission to reinterpret them.
 
@@ -11,8 +11,9 @@ compatibility generation, not a release train.
 
 A producer may keep its current schema version only when every DTO shape it can
 emit is accepted by the published compatibility validator for that generation.
-All actual DTO cases must pass both the active schema and the published
-validator in `schemas/compat/result-v2-v4.1.0.schema.json`. That baseline is a
+All actual DTO cases must pass the active schema v3. Preserved v4 payloads
+projected onto their frozen v2 envelope continue to pass the published validator
+in `schemas/compat/result-v2-v4.1.0.schema.json`. That baseline is a
 byte-for-byte copy from the v4.1.0 tag, protected by a SHA-256 assertion and CI;
 it is test input, not a second active schema authority.
 
