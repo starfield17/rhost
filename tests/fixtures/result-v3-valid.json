@@ -834,7 +834,7 @@
     }
   },
   {
-    "name": "fs.changeset.apply-failure",
+    "name": "fs.changeset.apply",
     "result": {
       "schema_version": 3,
       "operation": "fs.changeset.apply",
