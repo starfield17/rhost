@@ -46,6 +46,8 @@ Fields are listed in wire order. Kind zero is reserved and invalid.
 | 4 | list | generation:text |
 | 5 | signal | generation:text, run_id:text, signal:u8 |
 | 6 | prune | generation:text |
+| 7 | prepare namespace | empty; authorizes creating private namespace state |
+| 8 | namespace metadata | empty; refuses an absent namespace without creating it |
 
 Start program tag 1 means argv:texts; argv[0] is nonempty. Tag 2 means
 interpreter:text, script:text, login:boolean. Other tags are invalid. Environment
@@ -70,6 +72,7 @@ fails; the helper never invents a stale observation from current transport data.
 | list | count:u32 followed by that many run records |
 | signal | run_id:text, delivered:boolean (must be true) |
 | prune | removed:texts |
+| prepare namespace / namespace metadata | generation:text, remote_time_unix:u64 |
 
 A run record is generation:text, run_id:text, state:u8, and an optional
 completion. States 1/2/3/4/5 mean accepted/starting/running/exited/lost. Only
@@ -92,6 +95,18 @@ whose readiness checks failed. The protocol version is the header magic; source
 digest is 64 lowercase hex characters. Preparation matches both before reuse.
 Probe never initializes a namespace. Namespace preparation is a separate
 authorized operation; an executable handshake cannot manufacture a generation.
+
+The executable accepts a private `--install-cache <absolute-directory>` bootstrap
+entry point. It copies its own regular executable into an account-owned private
+directory using a lock, no-follow opens and atomic publication. This entry point
+does not initialize namespaces or launch work. The SSH bootstrap compiles only
+embedded source in a private temporary directory and invokes this installer.
+
+Run status records use RHST0001 plus state:u8, completion-kind:u8, value:u32,
+stdout-open:u8, stderr-open:u8, incomplete:u8, stdout-observed:u64,
+stderr-observed:u64, stdout-retained:u64, stderr-retained:u64. The fixed size is
+49 bytes. A lifetime owner.lock is held by the monitor, never its exec child.
+The request fingerprint hashes the canonical start body excluding wait_ms.
 
 ## Parser acceptance cases
 

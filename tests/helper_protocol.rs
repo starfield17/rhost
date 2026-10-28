@@ -68,9 +68,30 @@ fn executable_probe_is_bounded_and_does_not_invent_capabilities() {
     assert_eq!(body[0], 0);
     body = &body[1..];
     let digest = text(&mut body);
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut sources: Vec<_> = std::fs::read_dir(root.join("helper"))
+        .unwrap_or_else(|error| panic!("helper sources: {error}"))
+        .map(|entry| {
+            entry
+                .unwrap_or_else(|error| panic!("source entry: {error}"))
+                .path()
+        })
+        .filter(|path| matches!(path.extension().and_then(|s| s.to_str()), Some("c" | "h")))
+        .collect();
+    sources.sort();
+    let mut hash = Sha256::new();
+    for source in sources {
+        let name = source
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_else(|| panic!("source name"));
+        hash.update(format!("helper/{name}\0").as_bytes());
+        hash.update(std::fs::read(source).unwrap_or_else(|error| panic!("read source: {error}")));
+        hash.update([0]);
+    }
     assert_eq!(
         digest,
-        Sha256::digest(include_bytes!("../helper/main.c"))
+        hash.finalize()
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>()
@@ -102,9 +123,9 @@ fn invalid_kinds_and_incomplete_bodies_are_not_unsupported_operations() {
     for (input, kind, code) in [
         (wrong_magic, 1, "PROTOCOL_ERROR"),
         (frame(0, &[]), 0, "PROTOCOL_ERROR"),
-        (frame(7, &[]), 7, "PROTOCOL_ERROR"),
+        (frame(9, &[]), 9, "PROTOCOL_ERROR"),
         (truncated, 1, "PROTOCOL_ERROR"),
-        (frame(2, &[]), 2, "HELPER_INCOMPATIBLE"),
+        (frame(2, &[]), 2, "PROTOCOL_ERROR"),
     ] {
         let reply = call(&input);
         let mut body = payload(&reply, kind);

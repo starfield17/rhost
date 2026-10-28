@@ -17,6 +17,8 @@ it names.
 | Path | Owns |
 | --- | --- |
 | `domain/` | values, transitions, completion evidence, CAS intents (pure) |
+| `helper/` | native helper sources, RH01 codec, preparation and raw SSH invocation |
+| `runs/` | recoverable Run requests, CLI views, validation and observation DTOs |
 | `transport/` | the OpenSSH child, the wrapper protocol, the process loop |
 | `remote/` | the one submit-a-program path and the `Error` taxonomy |
 | `wire/` | the schema-v2 envelope, delivery, and the shared execution DTO |

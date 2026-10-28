@@ -18,7 +18,7 @@ HITS = 0
 MAX_LINES = 500
 tracked = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], capture_output=True, check=True).stdout
 names = sorted({name.decode() for name in tracked.split(b"\0") if name})
-files = [name for name in names if re.search(r"^(src|tests)/.*\.(rs|py)$|^scripts/.*\.py$", name)]
+files = [name for name in names if re.search(r"^(src|tests)/.*\.(rs|py)$|^scripts/.*\.py$|^helper/.*\.[ch]$", name)]
 if not files:
     print("check-structure: no Rust or Python sources found", file=sys.stderr)
     sys.exit(2)
@@ -98,6 +98,7 @@ ALLOWED = {
     "signals": {"domain"},
     "transport": {"base64", "config", "domain", "random", "shell"},
     "remote": {"domain", "shell", "transport"},
+    "helper": {"remote", "transport", "shell", "random"},
 
     # CLI primitives: the flag/argv vocabulary every capability parses with, plus
     # the stdout sink and the shared error taxonomy they map onto a status.
@@ -108,6 +109,7 @@ ALLOWED = {
     # exception is doctor -> connection, which reports the shared master DTO.
     "exec": {"audit", "cli", "domain", "remote", "shell", "signals", "stdio",
              "transport", "wire"},
+    "runs": {"cli", "helper", "remote", "transport", "base64", "shell"},
     "hosts": {"cli", "host", "wire"},
     "connection": {"audit", "cli", "transport", "wire"},
     "doctor": {"audit", "cli", "connection", "domain", "remote", "transport", "wire"},
@@ -119,7 +121,7 @@ ALLOWED = {
 
     # The composition root may depend on every capability; it holds no behavior.
     "dispatch": {"audit", "cli", "connection", "doctor", "exec", "files", "hosts",
-                 "session", "signals", "transport", "tunnel", "wire"},
+                 "session", "signals", "transport", "tunnel", "wire", "runs"},
     "main": {"dispatch", "signals", "transport"},
 }
 
