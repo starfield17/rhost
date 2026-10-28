@@ -227,7 +227,7 @@ fn process_death_keeps_partial_evidence_and_retry_never_continues_writing() -> R
     let expiry = time + 3600;
     let id = format!("{expiry}-{}", "5".repeat(64));
     create(&h, "files/keep", b"unrelated")?;
-    let content = rhost::base64::encode(&vec![b'x'; 64 * 1024]);
+    let content = "eHh4".repeat(21845);
     let changes = (0..64)
         .map(|i| json!({"op":"write","path":h.path(&format!("files/f{i:03}")),"content":content}))
         .collect::<Vec<_>>();
