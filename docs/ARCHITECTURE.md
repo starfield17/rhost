@@ -74,6 +74,13 @@ check them, or `./scripts/check-structure.sh -v` to inspect policy and actual ed
 - [Files and JSON contracts](architecture/files-and-json.md)
 - [Engineering constraints](architecture/engineering.md)
 
+### Proposed evolution
+
+[Agent interface evolution](architecture/agent-interface-v5.md) is the Risk A
+architecture review proposal for a C helper, recoverable Runs, structured
+requests and verification of locally built helper artifacts. It is not an
+implemented capability or a change to the active v2 contract.
+
 For getting started, use the [README](../README.md). The
 [contract ledger](CONTRACT.md) owns required behavior and executable evidence;
 the [schema](../schemas/result-v2.schema.json) owns JSON shape.

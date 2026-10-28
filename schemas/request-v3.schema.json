@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Planned rhost structured Run request v3",
+  "description": "Acceptance contract for the unimplemented Run slice; not an advertised v4 capability.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation", "host", "params"],
+  "properties": {
+    "schema_version": {"const": 3},
+    "operation": {"enum": ["metadata", "run.start", "run.poll", "run.list", "run.signal", "run.prune"]},
+    "host": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$"},
+    "params": {"type": "object"}
+  },
+  "allOf": [
+    {"if": {"properties": {"operation": {"const": "metadata"}}}, "then": {"properties": {"params": {"type": "object", "additionalProperties": false}}}},
+    {"if": {"properties": {"operation": {"const": "run.start"}}}, "then": {"properties": {"params": {"$ref": "#/$defs/start"}}}},
+    {"if": {"properties": {"operation": {"const": "run.poll"}}}, "then": {"properties": {"params": {"$ref": "#/$defs/poll"}}}},
+    {"if": {"properties": {"operation": {"enum": ["run.list", "run.prune"]}}}, "then": {"properties": {"params": {"$ref": "#/$defs/namespace"}}}},
+    {"if": {"properties": {"operation": {"const": "run.signal"}}}, "then": {"properties": {"params": {"$ref": "#/$defs/signal"}}}}
+  ],
+  "$defs": {
+    "generation": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "key": {"type": "string", "pattern": "^[1-9][0-9]{0,11}-[a-f0-9]{64}$"},
+    "literal": {"type": "string", "pattern": "^[^\\u0000]*$"},
+    "wait": {"type": "integer", "minimum": 0, "maximum": 300000},
+    "program": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["argv"], "properties": {"argv": {"type": "array", "minItems": 1, "maxItems": 4096, "items": {"$ref": "#/$defs/literal"}, "prefixItems": [{"type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$"}]}}},
+        {"type": "object", "additionalProperties": false, "required": ["interpreter", "script", "login"], "properties": {"interpreter": {"type": "string", "pattern": "^/[^\\u0000]+$"}, "script": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$"}, "login": {"type": "boolean"}}}
+      ]
+    },
+    "environment": {
+      "type": "object", "additionalProperties": false, "required": ["inherit", "values"],
+      "properties": {
+        "inherit": {"type": "boolean"},
+        "values": {"type": "object", "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}, "additionalProperties": {"$ref": "#/$defs/literal"}}
+      }
+    },
+    "namespace": {"type": "object", "additionalProperties": false, "required": ["generation"], "properties": {"generation": {"$ref": "#/$defs/generation"}}},
+    "start": {
+      "type": "object", "additionalProperties": false,
+      "required": ["generation", "key", "expires_unix", "cwd", "program", "environment"],
+      "properties": {
+        "generation": {"$ref": "#/$defs/generation"}, "key": {"$ref": "#/$defs/key"},
+        "expires_unix": {"type": "integer", "minimum": 1, "maximum": 999999999999},
+        "cwd": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000]+$"},
+        "program": {"$ref": "#/$defs/program"}, "environment": {"$ref": "#/$defs/environment"},
+        "stdin_base64": {"type": "string", "maxLength": 11184812, "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"},
+        "wait_ms": {"$ref": "#/$defs/wait"},
+        "deadline_ms": {"type": "integer", "minimum": 1, "maximum": 604800000}
+      }
+    },
+    "poll": {
+      "type": "object", "additionalProperties": false, "required": ["generation", "run_id"],
+      "properties": {
+        "generation": {"$ref": "#/$defs/generation"}, "run_id": {"$ref": "#/$defs/key"},
+        "wait_ms": {"$ref": "#/$defs/wait"},
+        "stdout_since": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615}, "stderr_since": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "max_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576}
+      }
+    },
+    "signal": {
+      "type": "object", "additionalProperties": false, "required": ["generation", "run_id", "signal"],
+      "properties": {"generation": {"$ref": "#/$defs/generation"}, "run_id": {"$ref": "#/$defs/key"}, "signal": {"enum": ["INT", "TERM", "KILL"]}}
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Planned rhost Run result v3",
+  "description": "Acceptance contract only; the current executable does not emit this generation.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "operation", "ok", "host", "data", "error"],
+  "properties": {
+    "schema_version": {"const": 3},
+    "operation": {"enum": ["metadata", "request", "run.start", "run.poll", "run.list", "run.signal", "run.prune"]},
+    "ok": {"type": "boolean"}, "host": {"type": ["string", "null"]},
+    "data": {},
+    "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]}
+  },
+  "allOf": [
+    {"if": {"properties": {"ok": {"const": false}, "operation": {"enum": ["metadata", "request", "run.list", "run.signal", "run.prune"]}}}, "then": {"properties": {"data": {"type": "null"}}}},
+    {"if": {"properties": {"ok": {"const": true}}}, "then": {"properties": {"error": {"type": "null"}, "host": {"type": "string", "minLength": 1}}}, "else": {"properties": {"error": {"$ref": "#/$defs/error"}, "data": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/stale"}]}}}},
+    {"if": {"properties": {"ok": {"const": true}, "operation": {"enum": ["run.start", "run.poll"]}}}, "then": {"properties": {"data": {"$ref": "#/$defs/observation"}}}},
+    {"if": {"properties": {"ok": {"const": true}, "operation": {"const": "metadata"}}}, "then": {"properties": {"data": {"type": "object", "additionalProperties": false, "required": ["schema_generations", "generation"], "properties": {"schema_generations": {"const": [2, 3]}, "generation": {"$ref": "#/$defs/generation"}}}}}},
+    {"if": {"properties": {"ok": {"const": true}, "operation": {"const": "run.list"}}}, "then": {"properties": {"data": {"type": "array", "items": {"$ref": "#/$defs/run"}}}}},
+    {"if": {"properties": {"ok": {"const": true}, "operation": {"const": "run.prune"}}}, "then": {"properties": {"data": {"type": "object", "additionalProperties": false, "required": ["removed"], "properties": {"removed": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/key"}}}}}}},
+    {"if": {"properties": {"ok": {"const": true}, "operation": {"const": "run.signal"}}}, "then": {"properties": {"data": {"type": "object", "additionalProperties": false, "required": ["run_id", "delivered"], "properties": {"run_id": {"$ref": "#/$defs/key"}, "delivered": {"const": true}}}}}},
+    {"if": {"properties": {"operation": {"const": "request"}}}, "then": {"properties": {"ok": {"const": false}, "data": {"type": "null"}}}}
+  ],
+  "$defs": {
+    "generation": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "key": {"type": "string", "pattern": "^[1-9][0-9]{0,11}-[a-f0-9]{64}$"},
+    "error": {
+      "type": "object", "additionalProperties": false, "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {"enum": ["USAGE_ERROR", "CONFIG_INVALID", "SSH_UNREACHABLE", "SSH_AUTH_FAILED", "HOST_KEY_FAILED", "REMOTE_DEPENDENCY_MISSING", "HELPER_INCOMPATIBLE", "HELPER_PREPARATION_FAILED", "IDEMPOTENCY_CONFLICT", "REQUEST_EXPIRED", "NAMESPACE_MISMATCH", "RUN_NOT_FOUND", "RUN_CONTROL_UNAVAILABLE", "STATE_UNAVAILABLE", "PROTOCOL_ERROR", "OUTPUT_WRITE_FAILED", "INTERNAL"]},
+        "message": {"type": "string"}, "retryable": {"type": "boolean"}
+      }
+    },
+    "completion": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["exit_code"], "properties": {"exit_code": {"type": "integer", "minimum": 0, "maximum": 255}}},
+        {"type": "object", "additionalProperties": false, "required": ["signal"], "properties": {"signal": {"type": "integer", "minimum": 1}}}
+      ]
+    },
+    "run": {
+      "type": "object", "additionalProperties": false, "required": ["generation", "run_id", "status"],
+      "properties": {
+        "generation": {"$ref": "#/$defs/generation"}, "run_id": {"$ref": "#/$defs/key"},
+        "status": {"enum": ["accepted", "starting", "running", "exited", "lost"]},
+        "completion": {"$ref": "#/$defs/completion"}
+      },
+      "if": {"properties": {"status": {"const": "exited"}}},
+      "then": {"required": ["completion"]}, "else": {"not": {"required": ["completion"]}}
+    },
+    "stream": {
+      "type": "object", "additionalProperties": false,
+      "required": ["from", "next", "observed_bytes", "content_base64", "open", "incomplete"],
+      "properties": {
+        "from": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615}, "next": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "observed_bytes": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "content_base64": {"type": "string", "maxLength": 1398104, "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"},
+        "open": {"type": "boolean"}, "incomplete": {"type": "boolean"}
+      }
+    },
+    "observation": {
+      "type": "object", "additionalProperties": false, "required": ["run", "stdout", "stderr", "stale"],
+      "properties": {"run": {"$ref": "#/$defs/run"}, "stdout": {"$ref": "#/$defs/stream"}, "stderr": {"$ref": "#/$defs/stream"}, "stale": {"const": false}}
+    },
+    "stale": {
+      "type": "object", "additionalProperties": false, "required": ["run", "stale"],
+      "properties": {"run": {"$ref": "#/$defs/run"}, "stale": {"const": true}}
+    }
+  }
+}
