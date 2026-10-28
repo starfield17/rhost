@@ -60,6 +60,7 @@ impl Sandbox {
         let generation = r.text();
         assert_eq!(generation.len(), 32);
         assert!(r.long() > 0);
+        assert!(matches!(r.text().len(), 0 | 36));
         assert!(r.0.is_empty());
         generation
     }

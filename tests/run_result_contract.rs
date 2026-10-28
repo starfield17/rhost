@@ -78,7 +78,12 @@ fn each_operation_owns_its_success_and_failure_payload() {
     for (operation, data) in [
         (
             "metadata",
-            json!({"schema_generations": [3], "generation": "a".repeat(32)}),
+            serde_json::from_str::<Value>(include_str!("fixtures/result-v3-valid.json"))
+                .unwrap_or_else(|e| panic!("fixtures: {e}"))
+                .as_array()
+                .and_then(|items| items.iter().find(|f| f["name"] == "metadata"))
+                .map(|f| f["result"]["data"].clone())
+                .unwrap_or_else(|| panic!("metadata fixture")),
         ),
         ("run.list", json!([record.clone()])),
         ("run.prune", json!({"removed": [record["run_id"]]})),

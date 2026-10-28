@@ -544,7 +544,25 @@
         "schema_generations": [
           3
         ],
-        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "remote_time_unix": 1,
+        "context": {
+          "boot_id": null
+        },
+        "helper": {
+          "protocol": 1,
+          "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "os": "linux",
+          "arch": "aarch64",
+          "capabilities": 7,
+          "limits": {
+            "run_frame_bytes": 8388608,
+            "file_request_bytes": 12582912,
+            "file_edit_bytes": 8388608,
+            "run_stream_bytes": 67108864,
+            "run_page_bytes": 1048576
+          }
+        }
       },
       "error": null
     }
@@ -560,7 +578,25 @@
         "schema_generations": [
           3
         ],
-        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "remote_time_unix": 1,
+        "context": {
+          "boot_id": null
+        },
+        "helper": {
+          "protocol": 1,
+          "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "os": "linux",
+          "arch": "aarch64",
+          "capabilities": 7,
+          "limits": {
+            "run_frame_bytes": 8388608,
+            "file_request_bytes": 12582912,
+            "file_edit_bytes": 8388608,
+            "run_stream_bytes": 67108864,
+            "run_page_bytes": 1048576
+          }
+        }
       },
       "error": null
     }

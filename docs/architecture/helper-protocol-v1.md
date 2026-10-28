@@ -67,12 +67,12 @@ fails; the helper never invents a stale observation from current transport data.
 
 | Request | Success payload |
 | --- | --- |
-| probe | source_digest:text, target_os:text, target_arch:text, capabilities:u32 |
+| probe | source_digest:text, target_os:text, target_arch:text, capabilities:u32, boot_id:text, run_frame:u32, file_request:u32, file_edit:u32, run_stream:u32, run_page:u32 |
 | start/poll | observation |
 | list | count:u32 followed by that many run records |
 | signal | run_id:text, delivered:boolean (must be true) |
 | prune | removed:texts |
-| prepare namespace / namespace metadata | generation:text, remote_time_unix:u64 |
+| prepare namespace / namespace metadata | generation:text, remote_time_unix:u64, boot_id:text |
 
 A run record is generation:text, run_id:text, state:u8, and an optional
 completion. States 1/2/3/4/5 mean accepted/starting/running/exited/lost. Only
@@ -133,3 +133,11 @@ paths reject NUL. Input is capped at 12 MiB, edits at 8 MiB decoded, and file
 responses reserve six escaped JSON bytes per content byte plus 64 KiB. These
 limits are independent of the 8 MiB Run frame limit. No Python fallback exists.
 The file mutation journal records targeted bytes only; it owns no Git workflow.
+
+
+An empty boot ID means unavailable, never a fabricated epoch. Structured
+`if_boot_id` is a precondition checked after native request validation and before
+requested effects; mismatch/unavailability have distinct refusals. It is not part
+of an immutable Run/changeset fingerprint and cannot authorize changed payloads.
+Cache preparation remains an isolated preparation effect. Probe capability bits
+1/2/4 represent Run, owner-bound control and native files respectively.

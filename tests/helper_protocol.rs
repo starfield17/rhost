@@ -107,11 +107,21 @@ fn executable_probe_is_bounded_and_does_not_invent_capabilities() {
         "linux" | "darwin" | "freebsd" | "openbsd" | "netbsd"
     ));
     assert!(!text(&mut body).is_empty());
+    assert!(body.len() >= 4);
     assert_eq!(
-        body,
-        3u32.to_be_bytes(),
-        "only verified Run and monitor-control operations are advertised"
+        &body[..4],
+        &7u32.to_be_bytes(),
+        "verified Run, control and native files are advertised"
     );
+    body = &body[4..];
+    let boot = text(&mut body);
+    assert!(matches!(boot.len(), 0 | 36));
+    for expected in [8388608u32, 12582912, 8388608, 67108864, 1048576] {
+        assert!(body.len() >= 4);
+        assert_eq!(&body[..4], &expected.to_be_bytes());
+        body = &body[4..];
+    }
+    assert!(body.is_empty());
 }
 
 #[test]
