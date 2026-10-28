@@ -65,7 +65,7 @@ fails; the helper never invents a stale observation from current transport data.
 
 | Request | Success payload |
 | --- | --- |
-| probe | source_digest:text, target_os:text, target_arch:text, generation:text, capabilities:u32 |
+| probe | source_digest:text, target_os:text, target_arch:text, capabilities:u32 |
 | start/poll | observation |
 | list | count:u32 followed by that many run records |
 | signal | run_id:text, delivered:boolean (must be true) |
@@ -90,6 +90,8 @@ signaling, bit 2 file CAS. Unknown bits must be ignored by the consumer and neve
 inferred from source compilation alone. A helper must not advertise a capability
 whose readiness checks failed. The protocol version is the header magic; source
 digest is 64 lowercase hex characters. Preparation matches both before reuse.
+Probe never initializes a namespace. Namespace preparation is a separate
+authorized operation; an executable handshake cannot manufacture a generation.
 
 ## Parser acceptance cases
 

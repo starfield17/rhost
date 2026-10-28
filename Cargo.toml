@@ -7,6 +7,7 @@ publish = false
 
 [features]
 live-tests = []
+helper-tests = []
 
 [[bin]]
 name = "rhost"
@@ -16,6 +17,11 @@ path = "src/main.rs"
 name = "live"
 path = "tests/live_exec.rs"
 required-features = ["live-tests"]
+
+[[test]]
+name = "helper_protocol"
+path = "tests/helper_protocol.rs"
+required-features = ["helper-tests"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

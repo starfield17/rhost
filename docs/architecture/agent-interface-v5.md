@@ -4,6 +4,17 @@ Status: proposed, not implemented. The active product remains v4 with schema v2.
 This document is the review packet required by MAINTENANCE.md for Risk A work;
 it does not change an existing acceptance criterion or claim new capabilities.
 
+## Final v5 decisions (supersede staged migration below)
+
+All v5 public JSON operations will emit schema v3; v2 remains frozen history.
+There is no workspace, worktree, branch, project snapshot or backup management.
+Agents own those workflows. File recovery records cover only explicit edits.
+Use LLVM/Clang and LLD with pinned musl build inputs for local helper builds;
+CI verifies uploaded helper binaries and never compiles replacements. Preserve
+four native client artifacts. Publish only after the complete implementation,
+same-commit verification and exact-artifact live acceptance pass.
+Read-only probes do not create namespaces or return invented generations.
+
 ## Consumers and compatibility
 
 Affected consumers are shell callers, JSON validators, coding agents, existing
