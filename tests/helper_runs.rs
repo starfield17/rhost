@@ -350,6 +350,20 @@ fn installer_rejects_wrong_binary_digest_before_replacing_a_working_image() {
         .output()
         .unwrap_or_else(|e| panic!("install: {e}"));
     assert!(installed.status.success(), "{installed:?}");
+    use sha2::Digest;
+    let bytes = std::fs::read(&helper).unwrap_or_else(|e| panic!("candidate: {e}"));
+    let digest = sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let verified = Command::new(&helper)
+        .arg("--install-cache")
+        .arg(&cache)
+        .arg(rhost::helper::source_digest())
+        .arg(&digest)
+        .output()
+        .unwrap_or_else(|e| panic!("verified: {e}"));
+    assert!(verified.status.success(), "{verified:?}");
     let before = std::fs::read(cache.join("rhost-helper")).unwrap_or_else(|e| panic!("read: {e}"));
     let refused = Command::new(helper)
         .arg("--install-cache")
