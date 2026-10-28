@@ -21,6 +21,7 @@
 #![cfg(unix)]
 
 mod audit;
+mod changeset;
 mod edit;
 mod examples;
 mod exec;

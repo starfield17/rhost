@@ -229,3 +229,31 @@ pub(crate) fn assert_no_write_temp(parent: &Path, context: &str) -> Result<(), S
     }
     Ok(())
 }
+
+pub(crate) fn prepare_native(harness: &Harness) -> Result<(String, u64), String> {
+    let mut child = Command::new(helper_binary()?)
+        .env("HOME", harness.path("home"))
+        .env_remove("RHOST_REMOTE_STATE")
+        .env_remove("RHOST_EXPECT_BOOT_ID")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let mut frame = b"RH01".to_vec();
+    frame.extend(7u32.to_be_bytes());
+    frame.extend(0u64.to_be_bytes());
+    child
+        .stdin
+        .take()
+        .ok_or("stdin")?
+        .write_all(&frame)
+        .map_err(|e| e.to_string())?;
+    let result = child.wait_with_output().map_err(|e| e.to_string())?;
+    let bytes = result.stdout;
+    if !result.status.success() || bytes.len() < 61 || bytes[16] != 0 {
+        return Err(format!("prepare failed: {bytes:?}"));
+    }
+    let generation = String::from_utf8(bytes[21..53].to_vec()).map_err(|e| e.to_string())?;
+    let time = u64::from_be_bytes(bytes[53..61].try_into().map_err(|_| "time")?);
+    Ok((generation, time))
+}
