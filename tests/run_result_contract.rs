@@ -78,7 +78,7 @@ fn each_operation_owns_its_success_and_failure_payload() {
     for (operation, data) in [
         (
             "metadata",
-            json!({"schema_generations": [2, 3], "generation": "a".repeat(32)}),
+            json!({"schema_generations": [3], "generation": "a".repeat(32)}),
         ),
         ("run.list", json!([record.clone()])),
         ("run.prune", json!({"removed": [record["run_id"]]})),

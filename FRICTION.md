@@ -30,6 +30,18 @@ Format:
 
 ## Open
 
+## 2026-10-28 — candidate installation failed once in parallel CLI acceptance
+
+- Constraint: real candidate failures must be explained without weakening
+  acceptance or treating a passing rerun as a diagnosis.
+- What happened: one public Run CLI fixture's initial helper installation
+  returned status 255 without diagnostics while another parallel case passed;
+  the same case passed alone. The failed fixture directory was no longer present.
+- Current workaround: none. Fixture names now include an atomic sequence rather
+  than relying on clock uniqueness; production deadlines and assertions remain.
+- Proposed resolution: retain installer-stage diagnostics and establish whether
+  shared fixture names or a candidate handshake failure caused the observation.
+
 ## 2026-09-16 — session live test timed out once under a full serial run
 
 - Constraint: a live test that fails once must be recorded without weakening it

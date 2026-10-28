@@ -28,6 +28,11 @@ name = "helper_runs"
 path = "tests/helper_runs.rs"
 required-features = ["helper-tests"]
 
+[[test]]
+name = "run_cli"
+path = "tests/run_cli.rs"
+required-features = ["helper-tests"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }

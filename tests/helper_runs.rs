@@ -204,3 +204,106 @@ fn independent_calls_observe_a_detached_run() {
     let (out, _) = completed(&result, &g, &k, 0);
     assert_eq!(out, b"done");
 }
+
+#[test]
+fn malformed_and_read_only_requests_do_not_initialize_state() {
+    let s = Sandbox::new();
+    let reply = s.call(8, &[]);
+    let mut r = Reader(&reply);
+    assert_eq!(r.byte(), 1);
+    assert_eq!(r.text(), "STATE_UNAVAILABLE");
+    assert!(!s.0.exists());
+    let reply = s.call(2, b"invalid");
+    let mut r = Reader(&reply);
+    assert_eq!(r.byte(), 1);
+    assert_eq!(r.text(), "PROTOCOL_ERROR");
+    assert!(!s.0.exists());
+}
+
+#[test]
+fn signals_use_the_live_monitor_and_deadlines_are_remote() {
+    let s = Sandbox::new();
+    let g = s.prepare();
+    let (k, expiry) = key();
+    let reply = s.call(2, &start(&g, &k, expiry, "sleep 15", 0, 5000));
+    assert_eq!(reply[0], 0);
+    let mut active = false;
+    for _ in 0..100 {
+        let reply = s.call(3, &poll(&g, &k, 0, 0));
+        let mut r = Reader(&reply);
+        assert_eq!(r.byte(), 0);
+        assert_eq!(r.text(), g);
+        assert_eq!(r.text(), k);
+        if r.byte() == 3 {
+            active = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(active, "monitor never became ready");
+    let mut signal = Vec::new();
+    text(&mut signal, &g);
+    text(&mut signal, &k);
+    signal.push(2);
+    let reply = s.call(5, &signal);
+    let mut r = Reader(&reply);
+    assert_eq!(r.byte(), 0);
+    assert_eq!(r.text(), k);
+    assert_eq!(r.byte(), 1);
+    assert!(r.0.is_empty());
+    let reply = s.call(3, &poll(&g, &k, 3000, 0));
+    let mut r = Reader(&reply);
+    assert_eq!(r.byte(), 0);
+    assert_eq!(r.text(), g);
+    assert_eq!(r.text(), k);
+    assert_eq!(r.byte(), 4);
+    assert_eq!(r.byte(), 2);
+    assert_eq!(r.int(), 15);
+
+    let s = Sandbox::new();
+    let g = s.prepare();
+    let (k, expiry) = key();
+    let reply = s.call(2, &start(&g, &k, expiry, "sleep 15", 3000, 100));
+    let mut r = Reader(&reply);
+    assert_eq!(r.byte(), 0);
+    assert_eq!(r.text(), g);
+    assert_eq!(r.text(), k);
+    assert_eq!(r.byte(), 4);
+    assert_eq!(r.byte(), 2);
+    assert_eq!(r.int(), 15);
+}
+
+#[test]
+fn installing_a_bad_candidate_preserves_the_working_executable() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::process::CommandExt;
+    let s = Sandbox::new();
+    let _ = s.prepare();
+    let helper =
+        std::env::var("RHOST_HELPER_BIN").unwrap_or_else(|_| panic!("set RHOST_HELPER_BIN"));
+    let cache = s.0.join("cache");
+    let installed = Command::new(&helper)
+        .arg("--install-cache")
+        .arg(&cache)
+        .output()
+        .unwrap_or_else(|e| panic!("install: {e}"));
+    assert!(installed.status.success(), "{installed:?}");
+    let original =
+        std::fs::read(cache.join("rhost-helper")).unwrap_or_else(|e| panic!("cache: {e}"));
+    let bad = s.0.join("bad-candidate");
+    std::fs::write(&bad, b"#!/bin/sh\nprintf wrong-answer\n")
+        .unwrap_or_else(|e| panic!("candidate: {e}"));
+    std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o700))
+        .unwrap_or_else(|e| panic!("mode: {e}"));
+    let rejected = Command::new(&helper)
+        .arg0(&bad)
+        .arg("--install-cache")
+        .arg(&cache)
+        .output()
+        .unwrap_or_else(|e| panic!("install: {e}"));
+    assert!(!rejected.status.success());
+    assert_eq!(
+        std::fs::read(cache.join("rhost-helper")).unwrap_or_else(|e| panic!("cache: {e}")),
+        original
+    );
+}
