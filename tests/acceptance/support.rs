@@ -336,14 +336,3 @@ pub(crate) fn operation(value: &serde_json::Value) -> String {
 pub(crate) fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
-
-/// Whether this machine can run the embedded helper the way a remote host
-/// would. `make check` must not require python3, so the editing tests assert the
-/// dependency answer when it is absent instead of passing silently.
-pub(crate) fn python3_available() -> bool {
-    std::process::Command::new("/usr/bin/env")
-        .args(["sh", "-c", "command -v python3 >/dev/null 2>&1"])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}

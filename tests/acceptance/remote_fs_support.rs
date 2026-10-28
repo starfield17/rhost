@@ -6,13 +6,13 @@
 //! Direct conformance for the embedded remote filesystem helper.
 //!
 //! These cases deliberately stop below the CLI: one JSON request goes to the
-//! exact `PROGRAM` embedded in the binary, and one JSON answer comes back. That
+//! explicitly supplied native helper candidate, and one JSON answer comes back. That
 //! makes filesystem edge failures diagnosable without a round trip through a
 //! stubbed SSH transport. The CLI acceptance suite remains the oracle for the
 //! public envelope; this oracle proves the helper's local semantics.
 
 use crate::support::{Harness, fail};
-const PROGRAM: &str = include_str!("../../src/files/backend/remote_fs.py");
+
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
@@ -20,15 +20,19 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+fn helper_binary() -> Result<std::ffi::OsString, String> {
+    std::env::var_os("RHOST_HELPER_BIN")
+        .ok_or_else(|| "set RHOST_HELPER_BIN to an explicitly built native helper".to_string())
+}
+
 pub(crate) const ALPHA: &str = "YWxwaGEK";
 pub(crate) const GAMMA: &str = "Z2FtbWEK";
 pub(crate) const X: &str = "eAo=";
 
 pub(crate) fn ask(harness: &Harness, request: Value) -> Result<Value, String> {
     let payload = serde_json::to_vec(&request).map_err(|error| fail("encode request", error))?;
-    let mut child = Command::new("python3")
-        .arg("-c")
-        .arg(PROGRAM)
+    let mut child = Command::new(helper_binary()?)
+        .arg("--files-json")
         .env("HOME", harness.path("home"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -77,9 +81,8 @@ pub(crate) fn ask_within(
     limit: std::time::Duration,
 ) -> Result<Value, String> {
     let payload = serde_json::to_vec(&request).map_err(|error| fail("encode request", error))?;
-    let mut child = Command::new("python3")
-        .arg("-c")
-        .arg(PROGRAM)
+    let mut child = Command::new(helper_binary()?)
+        .arg("--files-json")
         .env("HOME", harness.path("home"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

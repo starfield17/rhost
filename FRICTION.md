@@ -65,3 +65,13 @@ An entry appears here only when one of the three triggers above actually
 happens. Once resolved, its durable decision goes to the contract or maintenance
 policy, its lineage to git (or `tests/fixtures/history.json` if it was a real
 defect), and the entry is deleted.
+
+
+### Native file dependency acceptance
+
+The v4 acceptance case required file editing to fail when remote Python was
+unusable. That conflicts with the approved standalone C helper boundary. The
+replacement acceptance requires the same edit to succeed with unusable Python,
+keeps the existing CAS, permissions, path and bounded-read assertions, and runs
+the direct conformance suite against an explicitly supplied native candidate.
+No missing-candidate skip or Python production fallback is permitted.

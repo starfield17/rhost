@@ -1,7 +1,7 @@
 //! The two documented file-input formats exercised through the real CLI.
 
 use crate::hosts::{local_host, scp_stub};
-use crate::support::{Harness, envelope, fail, python3_available, want_code};
+use crate::support::{Harness, envelope, fail, want_code};
 use serde_json::Value;
 
 fn documented_json(heading: &str) -> Result<Value, String> {
@@ -27,9 +27,6 @@ fn the_documented_patch_replaces_original_lines_and_refuses_a_stale_hash() -> Re
     assert_eq!(document["sha256"], "<sha256-from-read>");
     let harness = Harness::open("documented-patch")?;
     local_host(&harness)?;
-    if !python3_available() {
-        return Err("documented patch verification requires python3".into());
-    }
     harness.write("original.txt", "alpha\nbeta\n", None)?;
     let target = harness.path("original.txt").to_string_lossy().into_owned();
     let (_, read) = envelope(&harness, &["fs", "read", "gpu", &target, "--json"])?;
@@ -120,9 +117,6 @@ fn the_documented_exact_text_patch_replaces_target_text() -> Result<(), String> 
     assert_eq!(document["sha256"], "<sha256-from-read>");
     let harness = Harness::open("documented-exact-patch")?;
     local_host(&harness)?;
-    if !python3_available() {
-        return Err("documented patch verification requires python3".into());
-    }
     harness.write("original.txt", "line 1\nmodified line 2\n", None)?;
     let target = harness.path("original.txt").to_string_lossy().into_owned();
     let (_, read) = envelope(&harness, &["fs", "read", "gpu", &target, "--json"])?;

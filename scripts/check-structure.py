@@ -113,7 +113,7 @@ ALLOWED = {
     "hosts": {"cli", "host", "wire"},
     "connection": {"audit", "cli", "transport", "wire"},
     "doctor": {"audit", "cli", "connection", "domain", "remote", "transport", "wire"},
-    "files": {"audit", "base64", "cli", "config", "domain", "remote", "shell", "transport",
+    "files": {"helper", "audit", "base64", "cli", "config", "domain", "remote", "shell", "transport",
              "wire"},
     "session": {"audit", "base64", "cli", "domain", "random", "remote", "shell",
                 "transport", "wire"},

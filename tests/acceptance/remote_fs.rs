@@ -1,7 +1,7 @@
 //! Direct conformance for the embedded remote filesystem helper.
 //!
 //! These cases deliberately stop below the CLI: one JSON request goes to the
-//! exact `PROGRAM` embedded in the binary, and one JSON answer comes back. That
+//! explicitly supplied native helper candidate, and one JSON answer comes back. That
 //! makes filesystem edge failures diagnosable without a round trip through a
 //! stubbed SSH transport. The CLI acceptance suite remains the oracle for the
 //! public envelope; this oracle proves the helper's local semantics.
@@ -10,16 +10,13 @@ use crate::remote_fs_support::{
     ALPHA, GAMMA, X, ask, ask_within, assert_no_write_temp, create, expect_error, mkfifo, mode,
     path_text, read_bytes, sha256_hex,
 };
-use crate::support::{Harness, fail, python3_available};
+use crate::support::{Harness, fail};
 use serde_json::{Value, json};
 use std::os::unix::fs::{PermissionsExt, symlink};
 
 #[test]
 fn request_envelopes_are_checked_before_the_helper_touches_a_file() -> Result<(), String> {
     let harness = Harness::open("fs-helper-request")?;
-    if !python3_available() {
-        return Ok(());
-    }
     let cases: [(Value, &str); 4] = [
         (json!(["read"]), "CONFIG_INVALID"),
         (json!({"op": "read", "max_bytes": 1024}), "CONFIG_INVALID"),
@@ -41,9 +38,6 @@ fn request_envelopes_are_checked_before_the_helper_touches_a_file() -> Result<()
 #[test]
 fn read_pages_bounded_utf8_text_with_whole_file_identity() -> Result<(), String> {
     let harness = Harness::open("fs-helper-read")?;
-    if !python3_available() {
-        return Ok(());
-    }
     let text = create(&harness, "read/text.txt", b"alpha\nbeta\n")?;
     let answer = ask(
         &harness,
@@ -107,9 +101,6 @@ fn read_pages_bounded_utf8_text_with_whole_file_identity() -> Result<(), String>
 #[test]
 fn reading_a_pipe_is_refused_instead_of_blocking() -> Result<(), String> {
     let harness = Harness::open("fs-helper-pipe")?;
-    if !python3_available() {
-        return Ok(());
-    }
     // A FIFO with no writer never completes a blocking `open`; the helper has to
     // report the non-regular target, not wait on it. The bounded ask turns a
     // regression into a failed assertion rather than a stalled suite.
@@ -126,9 +117,6 @@ fn reading_a_pipe_is_refused_instead_of_blocking() -> Result<(), String> {
 #[test]
 fn writes_are_hash_guarded_permission_explicit_and_clean_on_failure() -> Result<(), String> {
     let harness = Harness::open("fs-helper-write")?;
-    if !python3_available() {
-        return Ok(());
-    }
     let created = harness.path("create/nested/new.txt");
     let created_text = created.to_string_lossy().into_owned();
     let answer = ask(
@@ -246,9 +234,6 @@ fn writes_are_hash_guarded_permission_explicit_and_clean_on_failure() -> Result<
 #[test]
 fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<(), String> {
     let harness = Harness::open("fs-helper-patch")?;
-    if !python3_available() {
-        return Ok(());
-    }
     let path = create(&harness, "patch/file.txt", b"a\nb\nc\nd\n")?;
     let hash = ask(
         &harness,
@@ -385,9 +370,6 @@ fn patches_apply_once_and_refuse_every_shape_that_cannot_be_trusted() -> Result<
 #[test]
 fn editing_refuses_a_symlinked_target_or_parent_without_following_it() -> Result<(), String> {
     let harness = Harness::open("fs-helper-symlink")?;
-    if !python3_available() {
-        return Ok(());
-    }
     let real = create(&harness, "link/real.txt", b"target\n")?;
     let link = harness.path("link/final-link");
     symlink(&real, &link).map_err(|error| fail("create symlink", error))?;
@@ -437,9 +419,6 @@ fn editing_refuses_a_symlinked_target_or_parent_without_following_it() -> Result
 #[test]
 fn parents_are_created_only_when_no_symlink_shadows_a_component() -> Result<(), String> {
     let harness = Harness::open("fs-helper-parents")?;
-    if !python3_available() {
-        return Ok(());
-    }
     let real = harness.path("real-parent");
     std::fs::create_dir_all(&real).map_err(|error| fail("prepare parent", error))?;
     let link = harness.path("link-parent");
@@ -464,9 +443,6 @@ fn parents_are_created_only_when_no_symlink_shadows_a_component() -> Result<(), 
 #[test]
 fn destructive_sync_resolution_follows_the_authorized_target_only() -> Result<(), String> {
     let harness = Harness::open("fs-helper-resolve")?;
-    if !python3_available() {
-        return Ok(());
-    }
     let safe = harness.path("sync/tree");
     std::fs::create_dir_all(&safe).map_err(|error| fail("prepare sync fixture", error))?;
     let safe = safe.to_string_lossy().into_owned();

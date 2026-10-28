@@ -121,3 +121,15 @@ Control handling and non-reaping child-exit observation share one serialized
 monitor event loop. Once control is disabled, queued controls are refused before
 the leader is reaped. State-directory restoration is outside the deduplication
 guarantee: restoring its generation file cannot detect that restoration itself.
+
+## Native file requests
+
+File operations retain their existing bounded, single-document private JSON
+protocol through `rhost-helper --files-json`. Run control continues to use RH01.
+The native file parser rejects duplicate keys, invalid UTF-8, invalid numeric
+types, excess nesting, oversized input and trailing documents before effects.
+Strings retain decoded byte lengths, including escaped NUL in file content;
+paths reject NUL. Input is capped at 12 MiB, edits at 8 MiB decoded, and file
+responses reserve six escaped JSON bytes per content byte plus 64 KiB. These
+limits are independent of the 8 MiB Run frame limit. No Python fallback exists.
+The file mutation journal records targeted bytes only; it owns no Git workflow.

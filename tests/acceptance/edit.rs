@@ -1,11 +1,10 @@
 //! The remote editing surface: bounded reads, hash-guarded writes and patches.
 //!
 //! The helper runs on the "remote" side — here, the local host stub — and its
-//! answers are the CLI's data. A host without python3 gets the dependency answer
-//! instead, which is why `python3_available` exists.
+//! answers are the CLI's data. Native operations do not depend on Python.
 
 use crate::hosts::{local_host, scp_stub};
-use crate::support::{Harness, envelope, envelope_with_stdin, fail, python3_available, want_code};
+use crate::support::{Harness, envelope, envelope_with_stdin, fail, want_code};
 use std::os::unix::fs::symlink;
 
 fn patch_cmd<'a>(target: &'a str, path: &'a str) -> [&'a str; 7] {
@@ -22,7 +21,7 @@ fn write_cmd<'a>(target: &'a str, from: &'a str, hash: Option<&'a str>) -> Vec<&
 }
 
 #[test]
-fn an_unusable_remote_python_is_a_dependency_failure_before_any_edit() -> Result<(), String> {
+fn an_unusable_remote_python_does_not_prevent_a_native_edit() -> Result<(), String> {
     let harness = Harness::open("fs-python-unusable")?;
     local_host(&harness)?;
     // Keep this SSH stand-in below the login shell. The bash stand-in restores
@@ -65,11 +64,11 @@ fn an_unusable_remote_python_is_a_dependency_failure_before_any_edit() -> Result
             "--json",
         ],
     )?;
-    assert_eq!(outcome.status, 255);
-    want_code(&answer, "REMOTE_DEPENDENCY_MISSING")?;
-    assert!(
-        !target.exists(),
-        "the failing interpreter must not edit a file"
+    assert_eq!(outcome.status, 0, "{answer}");
+    assert_eq!(answer["data"]["bytes"], 9);
+    assert_eq!(
+        std::fs::read(&target).map_err(|e| fail("read native edit", e))?,
+        b"contents\n"
     );
     Ok(())
 }
@@ -85,13 +84,6 @@ fn reading_and_writing_a_remote_file_needs_the_hash_it_was_read_with() -> Result
     std::fs::write(&source, "gamma\n").map_err(|e| fail("fixture", e))?;
     let target = target.to_string_lossy().to_string();
     let source = source.to_string_lossy().to_string();
-
-    if !python3_available() {
-        let (outcome, value) = envelope(&harness, &["fs", "read", "gpu", &target, "--json"])?;
-        assert_eq!(outcome.status, 255);
-        want_code(&value, "REMOTE_DEPENDENCY_MISSING")?;
-        return Ok(());
-    }
 
     let (outcome, value) = envelope(&harness, &["fs", "read", "gpu", &target, "--json"])?;
     assert_eq!(outcome.status, 0, "{value}");
@@ -138,9 +130,6 @@ fn a_patch_is_applied_once_and_refused_when_its_hash_no_longer_describes_the_fil
 -> Result<(), String> {
     let harness = Harness::open("fs-patch")?;
     local_host(&harness)?;
-    if !python3_available() {
-        return Ok(());
-    }
     let target = harness.path("remote/patch.txt");
     std::fs::create_dir_all(harness.path("remote")).map_err(|e| fail("fixture", e))?;
     std::fs::write(&target, "alpha\nbeta\n").map_err(|e| fail("fixture", e))?;
@@ -322,9 +311,6 @@ fn the_editing_surface_refuses_symlinked_targets_without_reading_or_writing_thro
 -> Result<(), String> {
     let harness = Harness::open("fs-edit-symlink")?;
     local_host(&harness)?;
-    if !python3_available() {
-        return Ok(());
-    }
     let root = harness.path("symlink");
     std::fs::create_dir_all(&root).map_err(|error| fail("prepare symlink fixture", error))?;
     let real = root.join("real.txt");
@@ -400,9 +386,6 @@ fn the_editing_surface_refuses_symlinked_targets_without_reading_or_writing_thro
 fn writing_and_patching_via_stdin_uses_defaults() -> Result<(), String> {
     let harness = Harness::open("fs-stdin-edit")?;
     local_host(&harness)?;
-    if !python3_available() {
-        return Ok(());
-    }
     let target = harness.path("remote/test.txt");
     std::fs::create_dir_all(harness.path("remote")).map_err(|e| fail("fixture", e))?;
     let path = target.to_string_lossy().to_string();
@@ -437,9 +420,6 @@ fn writing_and_patching_via_stdin_uses_defaults() -> Result<(), String> {
 fn a_patch_supports_exact_text_replacement_edits() -> Result<(), String> {
     let harness = Harness::open("fs-patch-replace")?;
     local_host(&harness)?;
-    if !python3_available() {
-        return Ok(());
-    }
     let target = harness.path("remote/replace.txt");
     std::fs::create_dir_all(harness.path("remote")).map_err(|e| fail("fixture", e))?;
     std::fs::write(&target, "fn hello() {\n    println!(\"hi\");\n}\n")
