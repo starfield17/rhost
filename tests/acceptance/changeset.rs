@@ -88,3 +88,132 @@ fn duplicate_directory_aliases_are_refused_before_target_changes() -> Result<(),
     assert_eq!(read_bytes(&a)?, b"original\n");
     Ok(())
 }
+
+#[test]
+fn recovery_after_partial_preflight_keeps_a_reloadable_journal() -> Result<(), String> {
+    let h = Harness::open("changeset-reprepare")?;
+    let (generation, time) = prepare_native(&h)?;
+    let expiry = time + 3600;
+    let a = create(&h, "files/a", b"a")?;
+    let b = create(&h, "files/b", b"b")?;
+    let id = format!("{expiry}-{}", "e".repeat(64));
+    let refused = ask(
+        &h,
+        json!({"op":"changeset.apply","generation":generation,"key":id,"expires_unix":expiry,"changes":[
+      {"op":"write","path":a,"if_hash":sha256_hex(b"a"),"content":"eAo="},
+      {"op":"write","path":b,"if_hash":sha256_hex(b"changed"),"content":"eAo="}]}),
+    )?;
+    assert_eq!(refused["record"]["status"], "refused");
+    std::fs::write(&b, b"changed").map_err(|e| e.to_string())?;
+    let resumed = ask(
+        &h,
+        json!({"op":"changeset.recover","generation":generation,"id":id,"action":"resume"}),
+    )?;
+    assert!(resumed["error"].is_null(), "{resumed}");
+    assert_eq!(resumed["record"]["status"], "applied");
+    assert_eq!(
+        ask(
+            &h,
+            json!({"op":"changeset.query","generation":generation,"id":id})
+        )?["record"]["status"],
+        "applied"
+    );
+    let restored = ask(
+        &h,
+        json!({"op":"changeset.recover","generation":generation,"id":id,"action":"rollback"}),
+    )?;
+    assert!(restored["error"].is_null(), "{restored}");
+    assert_eq!(read_bytes(&a)?, b"a");
+    assert_eq!(read_bytes(&b)?, b"changed");
+    Ok(())
+}
+#[test]
+fn pruning_persists_expiry_and_never_reauthorizes_a_key() -> Result<(), String> {
+    let h = Harness::open("changeset-expiry")?;
+    let (generation, time) = prepare_native(&h)?;
+    let expiry = time + 4;
+    let path = create(&h, "files/a", b"a")?;
+    let id = format!("{expiry}-{}", "f".repeat(64));
+    let request = json!({"op":"changeset.apply","generation":generation,"key":id,"expires_unix":expiry,"changes":[{"op":"write","path":path,"if_hash":sha256_hex(b"a"),"content":"eAo="}]});
+    assert_eq!(ask(&h, request.clone())?["record"]["status"], "applied");
+    let clock = h.path("home/.local/state/rhost/v5/clock");
+    let before = u64::from_be_bytes(
+        std::fs::read(&clock)
+            .map_err(|e| e.to_string())?
+            .try_into()
+            .map_err(|_| "clock")?,
+    );
+    assert!(before < expiry);
+    while std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs()
+        < expiry
+    {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(
+        ask(
+            &h,
+            json!({"op":"changeset.query","generation":generation,"id":id})
+        )?["record"]["status"],
+        "applied"
+    );
+    let pruned = ask(
+        &h,
+        json!({"op":"changeset.prune","generation":generation,"id":id}),
+    )?;
+    assert_eq!(pruned["pruned"], true, "{pruned}");
+    let after = u64::from_be_bytes(
+        std::fs::read(&clock)
+            .map_err(|e| e.to_string())?
+            .try_into()
+            .map_err(|_| "clock")?,
+    );
+    assert!(after >= expiry);
+    assert_eq!(ask(&h, request)?["error"], "REQUEST_EXPIRED");
+    Ok(())
+}
+#[test]
+fn interrupted_install_intent_never_claims_no_target_mutation() -> Result<(), String> {
+    let h = Harness::open("changeset-intent-evidence")?;
+    let (generation, time) = prepare_native(&h)?;
+    let expiry = time + 3600;
+    let path = create(&h, "files/a", b"a")?;
+    let id = format!("{expiry}-{}", "1".repeat(64));
+    assert_eq!(
+        ask(
+            &h,
+            json!({"op":"changeset.apply","generation":generation,"key":id,"expires_unix":expiry,"changes":[{"op":"write","path":path,"if_hash":sha256_hex(b"a"),"content":"eAo="}]})
+        )?["record"]["status"],
+        "applied"
+    );
+    // Reconstruct a durable syscall-before-result-marker boundary from a completed
+    // installation. No fault hook is added to the shipping helper.
+    let manifest = h.path(&format!(
+        "home/.local/state/rhost/v5/changes/{id}/manifest.json"
+    ));
+    let mut record: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&manifest).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    record["status"] = "applying".into();
+    record["files"][0]["state"] = "installing".into();
+    record["files"][0]["ever_applied"] = false.into();
+    std::fs::write(
+        &manifest,
+        serde_json::to_vec(&record).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    let observed = ask(
+        &h,
+        json!({"op":"changeset.query","generation":generation,"id":id}),
+    )?;
+    assert_eq!(observed["record"]["mutation"], "unknown", "{observed}");
+    let recovered = ask(
+        &h,
+        json!({"op":"changeset.recover","generation":generation,"id":id,"action":"rollback"}),
+    )?;
+    assert!(recovered["error"].is_null(), "{recovered}");
+    assert_eq!(read_bytes(&path)?, b"a");
+    Ok(())
+}
