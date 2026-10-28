@@ -13,7 +13,10 @@ fn each_owned_allocation_may_fail_without_invalid_memory_access()
         .ok_or("set RHOST_HELPER_FAULT_BIN to the local instrumented helper")?;
     let root =
         std::fs::canonicalize("target")?.join(format!("helper-alloc-fault-{}", std::process::id()));
-    let hash = format!("{:x}", Sha256::digest(b"old\n"));
+    let hash = Sha256::digest(b"old\n")
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     let generation = "a".repeat(32);
     for op in ["search", "read_many", "changeset.apply"] {
         for fail in 1..=600 {
