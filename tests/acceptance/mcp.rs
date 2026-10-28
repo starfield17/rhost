@@ -196,7 +196,16 @@ fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
     let key = format!("{expiry}-{}", "d".repeat(64));
     let started=m.call(3,"rhost_run_start",json!({"host":"gpu","params":{"generation":generation,"key":key,"expires_unix":expiry,"cwd":"/","program":{"argv":["/bin/sleep","30"]},"environment":{"inherit":false,"values":{}}}}))?;
     assert_eq!(started["ok"], true, "{started}");
-    let before = harness.calls().len();
+    let submitted = || {
+        harness
+            .calls()
+            .iter()
+            .filter(|call| {
+                call.program == "ssh" && call.args.iter().any(|arg| arg.contains("RHOST_FRAME_3_"))
+            })
+            .count()
+    };
+    let before = submitted();
     for id in 10..26 {
         m.start(
             id,
@@ -205,7 +214,7 @@ fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
         )?;
     }
     let deadline = Instant::now() + Duration::from_secs(10);
-    while harness.calls().len() < before + 32 {
+    while submitted() < before + 16 {
         if Instant::now() >= deadline {
             return Err("16 observations did not reach SSH".into());
         }

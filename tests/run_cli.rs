@@ -30,18 +30,6 @@ impl Fixture {
         .unwrap_or_else(|e| panic!("SSH: {e}"));
         std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o700))
             .unwrap_or_else(|e| panic!("mode: {e}"));
-        let cache = root.join(format!(
-            ".cache/rhost/helper/{}",
-            rhost::helper::source_digest()
-        ));
-        let helper =
-            std::env::var("RHOST_HELPER_BIN").unwrap_or_else(|_| panic!("set RHOST_HELPER_BIN"));
-        let output = Command::new(helper)
-            .arg("--install-cache")
-            .arg(cache)
-            .output()
-            .unwrap_or_else(|e| panic!("install: {e}"));
-        assert!(output.status.success(), "{output:?}");
         Self { root }
     }
     fn spawn(&self, request: &Value) -> std::process::Child {

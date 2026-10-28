@@ -337,3 +337,30 @@ fn installing_a_bad_candidate_preserves_the_working_executable() {
         original
     );
 }
+
+#[test]
+fn installer_rejects_wrong_binary_digest_before_replacing_a_working_image() {
+    let s = Sandbox::new();
+    let cache = s.0.join("cache");
+    let helper =
+        std::env::var("RHOST_HELPER_BIN").unwrap_or_else(|_| panic!("set RHOST_HELPER_BIN"));
+    let installed = Command::new(&helper)
+        .arg("--install-cache")
+        .arg(&cache)
+        .output()
+        .unwrap_or_else(|e| panic!("install: {e}"));
+    assert!(installed.status.success(), "{installed:?}");
+    let before = std::fs::read(cache.join("rhost-helper")).unwrap_or_else(|e| panic!("read: {e}"));
+    let refused = Command::new(helper)
+        .arg("--install-cache")
+        .arg(&cache)
+        .arg(rhost::helper::source_digest())
+        .arg("f".repeat(64))
+        .output()
+        .unwrap_or_else(|e| panic!("bad hash: {e}"));
+    assert!(!refused.status.success());
+    assert_eq!(
+        std::fs::read(cache.join("rhost-helper")).unwrap_or_else(|e| panic!("preserved: {e}")),
+        before
+    );
+}
