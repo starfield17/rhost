@@ -63,7 +63,7 @@ if len(owned) != 1:
     print("check-structure: expected one rhost package")
     HITS += 1
 else:
-    allowed = {"serde", "serde_json", "sha2", "signal-hook"}
+    allowed = {"serde", "serde_json", "sha2", "signal-hook", "rmcp", "tokio"}
     actual = set()
     problems = []
     for dependency in owned[0]["dependencies"]:
@@ -98,17 +98,19 @@ ALLOWED = {
     "signals": {"domain"},
     "transport": {"base64", "config", "domain", "random", "shell"},
     "remote": {"domain", "shell", "transport"},
-    "helper": {"remote", "transport", "shell", "random"},
+    "helper": {"domain", "remote", "transport", "shell", "random"},
 
     # CLI primitives: the flag/argv vocabulary every capability parses with, plus
     # the stdout sink and the shared error taxonomy they map onto a status.
-    "cli": {"remote", "stdio", "wire"},
+    "cli": {"domain", "remote", "stdio", "wire"},
 
     # Capabilities. A capability may reach the shared foundation and the CLI
     # primitives, and must not depend on a sibling capability; the one declared
     # exception is doctor -> connection, which reports the shared master DTO.
     "exec": {"audit", "cli", "domain", "remote", "shell", "signals", "stdio",
              "transport", "wire"},
+    "request": {"cli", "domain", "files", "remote", "runs", "signals", "transport", "wire"},
+    "mcp": {"request", "transport", "cli"},
     "runs": {"cli", "helper", "remote", "transport", "base64", "shell", "signals"},
     "hosts": {"cli", "host", "wire"},
     "connection": {"audit", "cli", "transport", "wire"},
@@ -121,7 +123,7 @@ ALLOWED = {
 
     # The composition root may depend on every capability; it holds no behavior.
     "dispatch": {"audit", "cli", "connection", "doctor", "exec", "files", "hosts",
-                 "session", "signals", "transport", "tunnel", "wire", "runs"},
+                 "session", "signals", "transport", "tunnel", "wire", "runs", "request", "mcp"},
     "main": {"dispatch", "signals", "transport"},
 }
 

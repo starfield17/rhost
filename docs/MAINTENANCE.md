@@ -103,3 +103,18 @@ timeouts are not diagnoses. Expensive stress targets stay opt-in rather than in
 implementation and is frozen as history. Current product semantics live in
 [`CONTRACT.md`](CONTRACT.md); current maintenance and release decisions live in
 this document.
+
+
+## v5 native helper and MCP toolchain
+
+The v5 client MSRV is Rust 1.88 for the official MCP SDK. Runtime dependencies
+add rmcp with default features disabled and only server/stdio support, plus
+Tokio for that adapter. HTTP transports and authentication stacks are disabled.
+`mcp` owns SDK types; capabilities return the same typed request outcomes to CLI
+and MCP. Cancellation is request-scoped and stops observation, never a Run.
+
+Local `make check` and `make test-smoke` build a native C test candidate when
+`RHOST_HELPER_BIN` is absent. CI must download and supply an exact prebuilt
+candidate; it never compiles the helper. No remote source build is permitted in
+these gates. Cargo remains the client build system. The helper build inputs and
+release promotion have a separate manifest and exact-binary verification.

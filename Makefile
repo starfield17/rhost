@@ -1,3 +1,17 @@
+# Native helper test candidates are built locally; CI must supply exact bytes.
+ifeq ($(origin RHOST_HELPER_BIN), undefined)
+RHOST_HELPER_BIN := $(CURDIR)/target/helper/rhost-helper
+RHOST_BUILD_TEST_HELPER := 1
+endif
+export RHOST_HELPER_BIN
+export RHOST_NO_SOURCE_BUILD := 1
+.PHONY: helper-candidate
+helper-candidate:
+	@if [ -n "$(RHOST_BUILD_TEST_HELPER)" ]; then \
+		if [ -n "$$CI" ]; then echo "set RHOST_HELPER_BIN to a verified native candidate; CI never compiles helpers" >&2; exit 2; fi; \
+		sh scripts/build-helper.sh "$(RHOST_HELPER_BIN)"; \
+	else test -f "$(RHOST_HELPER_BIN)" || { echo "set RHOST_HELPER_BIN to an existing native candidate" >&2; exit 2; }; fi
+
 export RHOST_BIN
 export RHOST_BIN_ROOT := $(CURDIR)
 export RHOST_REPO_ROOT := $(CURDIR)
@@ -24,7 +38,7 @@ fmt:
 	cargo fmt
 test:
 	cargo test --locked
-check: rust-check portability structure live-suite release-contract contract-evidence agent-package install-test
+check: helper-candidate rust-check portability structure live-suite release-contract contract-evidence agent-package install-test
 rust-check:
 	cargo fmt --check
 	cargo clippy --locked --all-targets -- -D warnings
@@ -53,8 +67,7 @@ install-test:
 BASE ?= HEAD^
 check-integrity:
 	./scripts/check-integrity.sh $(BASE)
-test-smoke:
-	@command -v python3 >/dev/null 2>&1 || (echo "test-smoke requires python3 for the embedded remote-helper paths" >&2; exit 1)
+test-smoke: helper-candidate
 	cargo test --locked --test acceptance
 
 STRESS_RUNS ?= 50
