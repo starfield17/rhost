@@ -8,6 +8,7 @@ publish = false
 [features]
 live-tests = []
 helper-tests = []
+helper-fault-tests = []
 
 [[bin]]
 name = "rhost"
@@ -32,6 +33,11 @@ required-features = ["helper-tests"]
 name = "run_cli"
 path = "tests/run_cli.rs"
 required-features = ["helper-tests"]
+
+[[test]]
+name = "helper_faults"
+path = "tests/helper_faults.rs"
+required-features = ["helper-fault-tests"]
 
 [dependencies]
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-io"] }
