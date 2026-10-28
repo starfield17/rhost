@@ -16,7 +16,7 @@ fn tool_schemas_preserve_contract_acceptance_and_stay_bounded() -> Result<(), Bo
         bytes += serde_json::to_vec(&schema::input(&input, op)?)?.len();
         let validator = jsonschema::validator_for(&advertised)?;
         for fixture in fixtures.as_array().ok_or("fixtures")? {
-            let case = fixture.get("value").unwrap_or(fixture);
+            let case = fixture.get("result").unwrap_or(fixture);
             if case["operation"] != op { continue; }
             assert_eq!(validator.is_valid(case), full.is_valid(case), "{op}: {case}");
             for field in ["schema_version", "data", "error", "ok", "operation"] {
