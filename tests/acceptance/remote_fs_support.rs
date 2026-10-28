@@ -35,9 +35,17 @@ pub(crate) fn ask(harness: &Harness, request: Value) -> Result<Value, String> {
 }
 
 pub(crate) fn ask_raw(harness: &Harness, payload: &[u8]) -> Result<Value, String> {
+    ask_raw_guard(harness, payload, "")
+}
+pub(crate) fn ask_guard(harness: &Harness, request: Value, guard: &str) -> Result<Value, String> {
+    let payload = serde_json::to_vec(&request).map_err(|e| e.to_string())?;
+    ask_raw_guard(harness, &payload, guard)
+}
+fn ask_raw_guard(harness: &Harness, payload: &[u8], guard: &str) -> Result<Value, String> {
     let mut child = Command::new(helper_binary()?)
         .arg("--files-json")
         .env("HOME", harness.path("home"))
+        .env("RHOST_EXPECT_BOOT_ID", guard)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

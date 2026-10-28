@@ -222,6 +222,35 @@ fn malformed_and_read_only_requests_do_not_initialize_state() {
 }
 
 #[test]
+fn metadata_observes_clock_high_water_without_rewriting_it() {
+    let s = Sandbox::new();
+    let generation = s.prepare();
+    let future = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_else(|e| panic!("clock: {e}"))
+        .as_secs()
+        + 86400;
+    let clock = s.0.join("clock");
+    std::fs::write(&clock, future.to_be_bytes()).unwrap_or_else(|e| panic!("seed clock: {e}"));
+    let before = std::fs::metadata(&clock)
+        .and_then(|m| m.modified())
+        .unwrap_or_else(|e| panic!("clock metadata: {e}"));
+    let reply = s.call(8, &[]);
+    let mut r = Reader(&reply);
+    assert_eq!(r.byte(), 0);
+    assert_eq!(r.text(), generation);
+    assert_eq!(r.long(), future);
+    assert!(matches!(r.text().len(), 0 | 36));
+    assert!(r.0.is_empty());
+    assert_eq!(
+        std::fs::metadata(&clock)
+            .and_then(|m| m.modified())
+            .unwrap_or_else(|e| panic!("clock after: {e}")),
+        before
+    );
+}
+
+#[test]
 fn signals_use_the_live_monitor_and_deadlines_are_remote() {
     let s = Sandbox::new();
     let g = s.prepare();

@@ -59,6 +59,8 @@ fn raw_request_duplicates_and_invalid_file_parameters_stop_before_ssh() -> Resul
         r#"{"schema_version":3,"operation":"fs.read","host":"gpu","params":{"path":"/srv/file","max_bytes":0}}"#,
         r#"{"schema_version":3,"operation":"fs.patch","host":"gpu","params":{"path":"/srv/file","if_hash":"","edits":[]}}"#,
         r#"{"schema_version":3,"operation":"run.list","host":"gpu","host":"other","params":{}}"#,
+        r#"{"schema_version":3,"operation":"metadata","host":"gpu","if_boot_id":"invalid","params":{}}"#,
+        r#"{"schema_version":3,"operation":"metadata","host":"gpu","if_boot_id":null,"params":{}}"#,
     ].into_iter().enumerate() {
         let harness = Harness::open(&format!("request-invalid-{index}"))?;
         let (outcome, answer) = envelope_with_stdin(&harness, &["request","--from","-"],raw.as_bytes())?;

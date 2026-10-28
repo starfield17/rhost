@@ -114,3 +114,24 @@ fn a_lost_file_reply_preserves_unknown_mutation_after_the_bytes_changed() -> Res
     );
     Ok(())
 }
+
+#[test]
+fn native_boot_guard_refuses_before_creating_requested_parents() -> Result<(), String> {
+    let harness = Harness::open("native-boot-guard")?;
+    let target = harness.path("missing-parent/file");
+    let result = crate::remote_fs_support::ask_guard(
+        &harness,
+        json!({"op":"write","path":target,"content":"eAo=","parents":true,"max_bytes":4096}),
+        "00000000-0000-0000-0000-000000000000",
+    )?;
+    assert!(
+        matches!(
+            result["error"].as_str(),
+            Some("CONTEXT_CHANGED" | "CONTEXT_UNAVAILABLE")
+        ),
+        "{result}"
+    );
+    assert_eq!(result["mutation"], "not_applied");
+    assert!(!harness.path("missing-parent").exists());
+    Ok(())
+}
