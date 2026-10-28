@@ -45,3 +45,21 @@ fn read_many_has_an_aggregate_content_budget_and_per_file_refusals() -> Result<(
     assert_eq!(read["unread"][0], b);
     Ok(())
 }
+
+#[test]
+fn per_file_match_truncation_and_scan_incompleteness_are_distinct() -> Result<(), String> {
+    let h = Harness::open("search-coverage")?;
+    create(&h, "tree/a", b"needle\nneedle\n")?;
+    create(&h, "tree/b", b"needle\n")?;
+    let q = json!({"op":"search","root":h.path("tree"),"pattern":"needle","max_results":1,"max_matches":1,"max_bytes":1024});
+    let page = ask(&h, q.clone())?;
+    assert_eq!(page["items"][0]["matches_truncated"], true, "{page}");
+    assert_eq!(page["incomplete"], false);
+    assert!(page["next_cursor"].is_string());
+    create(&h, "tree/binary", &[0xff, 0xfe])?;
+    let partial = ask(&h, q)?;
+    assert_eq!(partial["incomplete"], true, "{partial}");
+    assert!(partial["next_cursor"].is_null());
+    assert_eq!(partial["skipped"][0]["code"], "INVALID_TEXT");
+    Ok(())
+}

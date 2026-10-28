@@ -137,3 +137,29 @@ fn fs_changeset_cli_uses_the_same_typed_json_parameters() -> Result<(), String> 
     assert_eq!(r["data"]["status"], "applied");
     Ok(())
 }
+
+#[test]
+fn structured_inspection_cli_results_match_the_active_schema() -> Result<(), String> {
+    let h = Harness::open("inspect-cli")?;
+    crate::hosts::local_host(&h)?;
+    let path = h.path("tree/file");
+    std::fs::create_dir_all(path.parent().ok_or("parent")?).map_err(|e| e.to_string())?;
+    std::fs::write(&path, b"needle\n").map_err(|e| e.to_string())?;
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../../schemas/result-v3.schema.json"))
+            .map_err(|e| e.to_string())?;
+    let validator = jsonschema::validator_for(&schema).map_err(|e| e.to_string())?;
+    for (leaf, params) in [
+        ("search", json!({"root":h.path("tree"),"pattern":"needle"})),
+        ("read-many", json!({"paths":[path]})),
+    ] {
+        let (status, result) = envelope_with_stdin(
+            &h,
+            &["fs", leaf, "gpu", "--from", "-"],
+            params.to_string().as_bytes(),
+        )?;
+        assert_eq!(status.status, 0, "{result}");
+        assert!(validator.is_valid(&result), "{result}");
+    }
+    Ok(())
+}
