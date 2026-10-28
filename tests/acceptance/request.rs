@@ -111,3 +111,29 @@ fn changeset_failure_keeps_its_record_in_the_public_envelope() -> Result<(), Str
     assert!(validator.is_valid(&result), "{result}");
     Ok(())
 }
+
+#[test]
+fn fs_changeset_cli_uses_the_same_typed_json_parameters() -> Result<(), String> {
+    let h = Harness::open("changeset-cli")?;
+    crate::hosts::local_host(&h)?;
+    let state = h.path("remote-state").to_string_lossy().into_owned();
+    let h = h.env("RHOST_REMOTE_STATE", &state);
+    let (_, p) = envelope_with_stdin(
+        &h,
+        &["request", "--from", "-"],
+        br#"{"schema_version":3,"operation":"helper.prepare","host":"gpu","params":{}}"#,
+    )?;
+    let expiry = p["data"]["remote_time_unix"].as_u64().ok_or("time")? + 3600;
+    let id = format!("{expiry}-{}", "4".repeat(64));
+    let path = h.path("file");
+    let params=json!({"generation":p["data"]["generation"],"key":id,"expires_unix":expiry,"changes":[{"op":"write","path":path,"content":"one\n"}]}).to_string();
+    let (status, r) = envelope_with_stdin(
+        &h,
+        &["fs", "changeset", "apply", "gpu", "--from", "-"],
+        params.as_bytes(),
+    )?;
+    assert_eq!(status.status, 0, "{r}");
+    assert_eq!(r["operation"], "fs.changeset.apply");
+    assert_eq!(r["data"]["status"], "applied");
+    Ok(())
+}
