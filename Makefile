@@ -1,3 +1,4 @@
+.DEFAULT_GOAL := build
 # Native helper test candidates are built locally; CI must supply exact bytes.
 ifeq ($(origin RHOST_HELPER_BIN), undefined)
 RHOST_TEST_HELPER_BIN := $(CURDIR)/target/helper/rhost-helper
@@ -38,10 +39,10 @@ clean:
 	cargo clean
 fmt:
 	cargo fmt
-test:
+test: helper-candidate
 	cargo test --locked
-check: helper-candidate rust-check portability structure live-suite release-contract contract-evidence agent-package install-test
-rust-check:
+check: helper-candidate native-helper-check rust-check portability structure live-suite release-contract contract-evidence agent-package install-test
+rust-check: helper-candidate
 	cargo fmt --check
 	cargo clippy --locked --all-targets -- -D warnings
 	cargo clippy --locked --features live-tests --test live -- -D warnings
@@ -64,7 +65,7 @@ contract-evidence:
 	./scripts/check-contract-evidence.sh
 agent-package:
 	./scripts/check-agent-package.sh
-install-test:
+install-test: helper-candidate
 	./scripts/test-install.sh
 BASE ?= HEAD^
 check-integrity:
@@ -128,3 +129,9 @@ test-live-all:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" >&2; exit 1)
 	@test -n "$(RHOST_BIN)" || (echo "set RHOST_BIN to an explicit binary" >&2; exit 1)
 	cargo test --locked --features live-tests --test live -- --nocapture --test-threads=1
+
+
+.PHONY: native-helper-check
+native-helper-check: helper-candidate
+	RHOST_HELPER_BIN="$(RHOST_TEST_HELPER_BIN)" RHOST_NO_SOURCE_BUILD=1 cargo clippy --locked --all-targets --features helper-tests -- -D warnings
+	RHOST_HELPER_BIN="$(RHOST_TEST_HELPER_BIN)" RHOST_NO_SOURCE_BUILD=1 cargo test --locked --features helper-tests --test helper_protocol --test helper_runs --test run_cli
