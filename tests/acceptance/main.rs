@@ -26,6 +26,7 @@ mod examples;
 mod exec;
 mod files;
 mod hosts;
+mod mcp;
 mod remote_fs;
 mod remote_fs_native;
 mod remote_fs_support;
