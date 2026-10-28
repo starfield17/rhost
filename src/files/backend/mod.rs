@@ -36,7 +36,7 @@ pub use sync::{SyncRequest, pull_args, push_args, reject_sync_target};
 pub(crate) use remote::Answer;
 pub use remote::{
     DEFAULT_HELPER_BYTES, Edit, RangeEdit, ReadResult, ReplaceEdit, Request, ResolveResult,
-    WriteResult, command, known_refusal_code, output_budget,
+    WriteResult, known_refusal_code, output_budget,
 };
 pub use runner::{DEFAULT_TIMEOUT, Outcome, Stop, Tools, run};
 

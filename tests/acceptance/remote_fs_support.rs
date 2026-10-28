@@ -31,6 +31,10 @@ pub(crate) const X: &str = "eAo=";
 
 pub(crate) fn ask(harness: &Harness, request: Value) -> Result<Value, String> {
     let payload = serde_json::to_vec(&request).map_err(|error| fail("encode request", error))?;
+    ask_raw(harness, &payload)
+}
+
+pub(crate) fn ask_raw(harness: &Harness, payload: &[u8]) -> Result<Value, String> {
     let mut child = Command::new(helper_binary()?)
         .arg("--files-json")
         .env("HOME", harness.path("home"))
@@ -45,7 +49,7 @@ pub(crate) fn ask(harness: &Harness, request: Value) -> Result<Value, String> {
             .as_mut()
             .ok_or_else(|| "the helper has no stdin".to_string())?;
         stdin
-            .write_all(&payload)
+            .write_all(payload)
             .map_err(|error| fail("send request", error))?;
     }
     let output = child

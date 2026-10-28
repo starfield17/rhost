@@ -41,37 +41,27 @@ already-held parent directory and performs a dirfd-relative temp write, hash
 recheck, and rename (or link when creating); the final filesystem operation
 remains atomic.
 
-### Why the remote filesystem helper is an embedded interpreter script
+### Native file helper
 
-`fs read`/`write`/`patch` run a helper on the remote host, and `fs sync --delete`
-uses the same helper to resolve a destructive destination. It is a Python program
-compiled into the rhost binary and executed by the target's own `python3`; rhost
-installs nothing there (AGENTS.md §5). The session helpers are generated shell
-scripts instead, so this difference is deliberate:
+`fs read`/`write`/`patch` and destructive sync resolution use the standalone C99
+helper through a bounded one-shot JSON request. The client prepares a matching
+content-addressed helper using an explicit local candidate or an existing remote
+`cc`; it never installs remote packages. Missing or unusable Python does not
+prevent editing. A read-only helper handshake is distinct from doctor command
+presence and verifies source/protocol identity before file requests.
 
-- the remote architecture is unknown, so a Rust helper would need per-target
-  cross-compilation — which the release contract forbids — and rhost never ships
-  a binary to the target;
-- the helper moves structured binary data: base64 content and hashes in one
-  JSON request, one bounded JSON reply, under a `flock` and an atomic
-  same-directory replace. Shell plus coreutils would need a hand-rolled quoting
-  protocol to do the same;
-- a target with a usable `python3` supplies that JSON pump with no install;
-  missing or unusable interpreter support gets `REMOTE_DEPENDENCY_MISSING`
-  before the helper touches a file.
+The helper uses directory-relative no-follow opens, advisory directory locks,
+streaming SHA-256 and same-directory atomic replacement. Its parser preserves
+explicit string lengths, including NUL in UTF-8 file content, while refusing NUL
+in paths, duplicate JSON keys and malformed requests. A read scans the complete
+file for identity while retaining only the requested whole-line page. Filesystem
+identity checks reject concurrent changes observed during the operation.
 
-The helper requires Python 3.5 or newer plus the target's `fcntl.flock`,
-directory-relative filesystem operations, no-follow flags, nanosecond stat
-fields, and byte hex conversion. Each helper invocation checks these on the
-target before running the request. `doctor` reports whether `python3` resolves
-in its execution environment; `data.capabilities.python3` is not a readiness
-claim for this helper. A later operation can still fail for ordinary filesystem
-reasons such as permissions or a changed path.
-
-The mechanism is deliberately not frozen (`docs/CONTRACT.md`): the helper's
-source language may change if a target without `python3` ever justifies it. Its
-name records the authority it owns: authoritative remote filesystem state, not
-only text editing.
+Locks coordinate participating writers; they do not exclude arbitrary external
+writers. The single-file rename is atomic, but validation before and after it
+cannot make an external writer participate in CAS. Mutation evidence and
+recoverable multi-file edits are subsequent v3 work, not guarantees of this
+native migration.
 
 ## Batch maintenance boundary
 

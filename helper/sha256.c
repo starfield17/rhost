@@ -25,15 +25,24 @@ static void block(uint32_t h[8],const unsigned char *p) {
     }
     h[0]+=a;h[1]+=b;h[2]+=c;h[3]+=d;h[4]+=e;h[5]+=f;h[6]+=g;h[7]+=v;
 }
-void rh_sha256(const void *data,size_t size,unsigned char out[32]) {
-    const unsigned char *p=data; size_t n=size;
-    uint32_t h[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
-    while(n>=64) {block(h,p);p+=64;n-=64;}
-    unsigned char tail[128]={0}; if(n) memcpy(tail,p,n); tail[n]=128;
-    size_t bytes=n<56?64:128; uint64_t bits=(uint64_t)size*8;
+void rh_hash_init(rh_hash *h) {
+    const uint32_t initial[8]={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    memcpy(h->h,initial,sizeof initial);h->size=0;h->used=0;
+}
+void rh_hash_update(rh_hash *h,const void *data,size_t size) {
+    const unsigned char *p=data;h->size+=size;
+    while(size){size_t n=64-h->used;if(n>size)n=size;memcpy(h->pending+h->used,p,n);h->used+=n;p+=n;size-=n;
+        if(h->used==64){block(h->h,h->pending);h->used=0;}}
+}
+void rh_hash_finish(rh_hash *h,unsigned char out[32]) {
+    unsigned char tail[128]={0};size_t n=h->used;if(n)memcpy(tail,h->pending,n);tail[n]=128;
+    size_t bytes=n<56?64:128; uint64_t bits=h->size*8;
     rh_put32(tail+bytes-8,(uint32_t)(bits>>32));rh_put32(tail+bytes-4,(uint32_t)bits);
-    block(h,tail);if(bytes==128) block(h,tail+64);
-    for(unsigned i=0;i<8;i++) rh_put32(out+4*i,h[i]);
+    block(h->h,tail);if(bytes==128) block(h->h,tail+64);
+    for(unsigned i=0;i<8;i++) rh_put32(out+4*i,h->h[i]);
+}
+void rh_sha256(const void *data,size_t size,unsigned char out[32]) {
+    rh_hash h;rh_hash_init(&h);rh_hash_update(&h,data,size);rh_hash_finish(&h,out);
 }
 void rh_hex(const unsigned char *p,size_t n,char *out) {
     static const char hex[]="0123456789abcdef";

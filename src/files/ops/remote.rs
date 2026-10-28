@@ -33,7 +33,7 @@ pub(crate) fn first_line(text: &str) -> String {
         .to_string()
 }
 
-/// Runs the embedded helper for one typed request and decodes only the answer
+/// Runs the native helper for one typed request and decodes only the answer
 /// shape this operation was asked for. Refusal codes are trusted because they
 /// are a closed list, never because the helper said so.
 pub(crate) fn helper<T>(
@@ -47,32 +47,13 @@ where
     T: DeserializeOwned,
 {
     let payload = serde_json::to_vec(request).map_err(|error| internal(error.to_string()))?;
-    let (code, stdout, stderr) = run_remote(
-        client,
-        host,
-        &helper_protocol::command(),
-        Some(&payload),
+    let stdout = crate::helper::Helper::new(client, host).file_call(
+        &payload,
         timeout,
         helper_protocol::output_budget(max_bytes),
     )?;
-    if code == 126 || code == 127 {
-        return Err(Error::new(
-            "REMOTE_DEPENDENCY_MISSING",
-            "this operation needs remote Python 3.5 or newer with fcntl and directory-relative filesystem support; rhost does not install it",
-        ));
-    }
-    if code != 0 {
-        return Err(internal(format!(
-            "remote file helper exited {code}: {}",
-            first_line(&stderr)
-        )));
-    }
-    let answer: Answer<T> = serde_json::from_str(stdout.trim()).map_err(|_| {
-        internal(format!(
-            "remote file helper returned no usable answer: {}",
-            first_line(&stderr)
-        ))
-    })?;
+    let answer: Answer<T> = serde_json::from_slice(&stdout)
+        .map_err(|_| internal("remote file helper returned no usable answer"))?;
     match answer {
         Answer::Done(result) => Ok(result),
         Answer::Refused(refusal) => match helper_protocol::known_refusal_code(&refusal.error) {

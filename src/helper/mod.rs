@@ -61,11 +61,14 @@ impl<'a> Helper<'a> {
         Ok((run, stdout.body(), stderr.body()))
     }
     fn command(&self, marker: &str) -> String {
+        self.command_mode(marker, "")
+    }
+    fn command_mode(&self, marker: &str, mode: &str) -> String {
         let state = std::env::var("RHOST_REMOTE_STATE")
             .unwrap_or_else(|_| "~/.local/state/rhost/v5".into());
         let executable = format!("{}rhost-helper", self.cache);
         let script = format!(
-            "printf '%s' {}; {} exec env RHOST_REMOTE_STATE={} {}",
+            "printf '%s' {}; {} exec env RHOST_REMOTE_STATE={} {} {mode}",
             crate::shell::quote(marker),
             self.cache_guard(),
             crate::shell::path_quote(&state),
@@ -230,6 +233,43 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
             request.frame(kind)?,
             Duration::from_millis(u64::from(wait_ms) + 15000),
         )
+    }
+    pub fn file_call(
+        &self,
+        request: &[u8],
+        timeout: Duration,
+        cap: usize,
+    ) -> Result<Vec<u8>, Error> {
+        self.ensure()?;
+        let marker = format!(
+            "RHOST_FILE_{}\n",
+            crate::random::hex(16).map_err(|e| Error::new("INTERNAL", e.to_string()))?
+        );
+        let (run, stdout, _) = self.transport(
+            &self.command_mode(&marker, "--files-json"),
+            request,
+            timeout,
+            cap.saturating_add(65536),
+        )?;
+        if let Some(at) = stdout
+            .windows(marker.len())
+            .position(|s| s == marker.as_bytes())
+        {
+            let answer = &stdout[at + marker.len()..];
+            if serde_json::from_slice::<serde_json::Value>(answer).is_ok() {
+                return Ok(answer.to_vec());
+            }
+        }
+        if run.cancelled {
+            return Err(Error::new(
+                "REMOTE_COMMAND_CANCELLED",
+                "file observation cancelled; mutation outcome is unknown",
+            ));
+        }
+        Err(Error::new(
+            "REMOTE_EXECUTION_UNKNOWN",
+            "no complete native file helper answer; mutation outcome is unknown",
+        ))
     }
 }
 fn never() -> bool {

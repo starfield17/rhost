@@ -1,70 +1,9 @@
-//! The typed remote filesystem-helper protocol and its one-shot bootstrap.
-//!
-//! One JSON request goes in, one JSON answer comes out. The program is embedded
-//! in the binary and executed by the *remote* python3; nothing is installed
-//! there (AGENTS.md §5). It travels as one quoted argument, so no path or file
-//! body ever has to survive a shell parser, and the request goes in on stdin for
-//! the same reason.
-//!
-//! Why an embedded interpreter script rather than Rust or a generated shell
-//! program, given the session helpers are shell scripts:
-//!
-//! * the helper runs on a host whose architecture rhost does not know (x86_64,
-//!   aarch64, ...), so a Rust helper would have to be cross-compiled per target;
-//!   `check-release-contract.sh` refuses a cross-compiler, and rhost never
-//!   installs anything remotely (AGENTS.md §5), so a native remote binary is out;
-//! * unlike the session helpers, this one has to move binary bodies and return
-//!   structured bytes: `fs write`/`patch` carry base64 content and hashes in a
-//!   JSON request and must reply with one bounded JSON document, under a `flock`
-//!   and an atomic same-directory replace — logic that POSIX shell plus
-//!   coreutils cannot express without inventing a fragile quoting protocol;
-//! * an already-present, capable `python3` on the target gives exactly that JSON
-//!   pump with no install step. Missing or unusable interpreter support is
-//!   reported as `REMOTE_DEPENDENCY_MISSING` before a file is touched.
-//!
-//! `docs/CONTRACT.md` explicitly leaves the helper's source language unfrozen, so
-//! this can change later if a target without python3 ever justifies it. The
-//! *protocol* is the stable part: the types below are what both halves of one
-//! rhost build agree the request and answer look like.
+//! Typed one-shot native filesystem requests; shell syntax never carries file bodies.
 
 use serde::{Deserialize, Serialize};
 
-/// The embedded helper. Its refusal codes are the CLI's own taxonomy, which is
-/// why the caller may trust a code but never an arbitrary message.
-pub const PROGRAM: &str = include_str!("remote_fs.py");
-
-/// A successful edit answer is small, so this is a ceiling rather than a request
-/// to read a whole file. `fs patch` returns the replacement's hash and length.
+/// A successful edit answer is small; bounded reads reserve their own budget.
 pub const DEFAULT_HELPER_BYTES: usize = 256 * 1024;
-
-/// This runs on the target's Python, not on the developer's interpreter. It uses
-/// only old Python syntax so even a too-old interpreter can refuse cleanly. The
-/// checks cover features every operation may need; filesystem-specific failures
-/// during an operation remain operation failures, not dependency guesses.
-const PYTHON_PREFLIGHT: &str = r#"import fcntl, os, sys
-required = (os.open, os.stat, os.mkdir, os.unlink, os.link, os.rename)
-ready = (sys.version_info >= (3, 5)
-         and hasattr(fcntl, 'flock')
-         and hasattr(os, 'O_NOFOLLOW')
-         and hasattr(os, 'O_DIRECTORY')
-         and all(fn in os.supports_dir_fd for fn in required)
-         and os.stat in os.supports_follow_symlinks
-         and hasattr(os.stat('.'), 'st_mtime_ns')
-         and hasattr(os.stat('.'), 'st_ctime_ns')
-         and hasattr(os.urandom(1), 'hex'))
-if not ready:
-    sys.exit(1)"#;
-
-/// The remote command that runs the helper. Exit 127 means no python3; exit
-/// 126 means the interpreter cannot satisfy the helper's runtime requirements.
-/// The preflight and request stay in one invocation, before any helper action.
-pub fn command() -> String {
-    format!(
-        "command -v python3 >/dev/null 2>&1 || exit 127; python3 -c {} >/dev/null 2>&1 || exit 126; python3 -c {}",
-        crate::shell::quote(PYTHON_PREFLIGHT),
-        crate::shell::quote(PROGRAM)
-    )
-}
 
 /// The transport budget for one helper answer: JSON may escape every ASCII
 /// control byte as six bytes, and the document around the payload needs room.
@@ -210,41 +149,35 @@ mod tests {
     use crate::base64;
 
     #[test]
-    fn the_helper_travels_as_one_quoted_argument() {
-        let command = command();
-        assert!(command.starts_with("command -v python3"), "{command}");
-        assert!(command.contains("python3 -c '"), "{command}");
-        // The program is quoted, not escaped: whatever it contains — newlines
-        // included — stays one argv element for the remote shell.
-        assert!(command.trim_end().ends_with('\''), "{command}");
-        assert!(
-            command.contains("CONFIG_INVALID"),
-            "the program is embedded"
-        );
+    fn file_requests_preserve_paths_and_bodies_as_data() {
+        let path = "/srv/file with 'quotes';$(command)\nnext";
+        let request = Request::Write {
+            path,
+            content: base64::encode(b"a\0b\n"),
+            if_hash: "",
+            parents: false,
+            file_mode: None,
+            max_bytes: 4096,
+        };
+        let encoded =
+            serde_json::to_vec(&request).unwrap_or_else(|e| panic!("encode request: {e}"));
+        let decoded: serde_json::Value =
+            serde_json::from_slice(&encoded).unwrap_or_else(|e| panic!("decode request: {e}"));
+        assert_eq!(decoded["path"], path);
+        assert_eq!(decoded["content"], "YQBiCg==");
+        assert_eq!(decoded["if_hash"], "");
+        assert!(decoded.get("file_mode").is_none());
     }
 
     #[test]
-    fn a_missing_interpreter_is_a_dependency_failure_not_a_silent_run() {
-        let command = command();
-        // The probe must gate execution: no python3 means exit 127 (the code the
-        // caller maps to REMOTE_DEPENDENCY_MISSING), before any helper logic.
-        assert!(
-            command.contains("command -v python3 >/dev/null 2>&1 || exit 127;"),
-            "the helper must refuse to run without python3: {command}"
-        );
-        assert!(
-            command.contains("|| exit 126; python3 -c"),
-            "an unusable interpreter must fail before the helper: {command}"
-        );
-        // The program is compiled in, never read from a remote path.
-        assert!(
-            PROGRAM.contains("import json") && PROGRAM.contains("def run("),
-            "the embedded program looks truncated"
-        );
-        assert!(
-            !command.contains('/') || command.contains("python3 -c"),
-            "the helper must be embedded, not a remote path: {command}"
-        );
+    fn escaped_response_bounds_cover_control_bytes_without_overflow() {
+        let text: String = (0..32).map(char::from).collect();
+        let encoded = serde_json::to_vec(&serde_json::json!({"content": text}))
+            .unwrap_or_else(|e| panic!("encode controls: {e}"));
+        assert!(encoded.len() <= output_budget(32));
+        assert_eq!(output_budget(0), 65536);
+        assert_eq!(output_budget(8388608), 50397184);
+        assert_eq!(output_budget(usize::MAX), usize::MAX);
     }
 
     #[test]

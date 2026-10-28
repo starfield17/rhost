@@ -1,7 +1,15 @@
 //! Embedded sources are the only source-build authority, never remote packages.
 use sha2::{Digest, Sha256};
 pub const SOURCES: &[(&str, &str)] = &[
+    ("file_edit.c", include_str!("../../helper/file_edit.c")),
+    ("file_patch.c", include_str!("../../helper/file_patch.c")),
+    ("file_path.c", include_str!("../../helper/file_path.c")),
+    ("file_read.c", include_str!("../../helper/file_read.c")),
+    ("files.c", include_str!("../../helper/files.c")),
+    ("files.h", include_str!("../../helper/files.h")),
     ("install.c", include_str!("../../helper/install.c")),
+    ("json.c", include_str!("../../helper/json.c")),
+    ("json.h", include_str!("../../helper/json.h")),
     ("main.c", include_str!("../../helper/main.c")),
     ("monitor.c", include_str!("../../helper/monitor.c")),
     ("protocol.c", include_str!("../../helper/protocol.c")),

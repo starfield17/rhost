@@ -1,6 +1,7 @@
 /* Standalone C99 helper: bounded requests and remote-owned process evidence. */
 #define _POSIX_C_SOURCE 200809L
 #include "state.h"
+#include "json.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,6 +88,7 @@ static int probe(uint32_t kind) {
     return emit(kind, body, size);
 }
 int main(int argc,char **argv) {
+    if(argc==2 && !strcmp(argv[1],"--files-json"))return rh_files_json();
     if(argc==4 && !strcmp(argv[1],"--install-cache")) {
         if(strcmp(argv[3],RHOST_SOURCE_DIGEST))return refuse(0,"HELPER_INCOMPATIBLE","candidate source identity does not match");
         return rh_install(argv[2],argv[0]);

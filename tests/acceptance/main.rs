@@ -27,6 +27,7 @@ mod exec;
 mod files;
 mod hosts;
 mod remote_fs;
+mod remote_fs_native;
 mod remote_fs_support;
 mod session;
 mod support;

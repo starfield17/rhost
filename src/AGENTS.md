@@ -64,7 +64,7 @@ it names.
   envelope in one directory.
 - `files/`: `command` (grammar), `surface` (the parsed `Fs`), `ops` (transfer,
   sync, edit, batch, the one path out), `backend` (path/argv rules, the local
-  `scp`/`rsync` runner, the remote helper program), `dto`, `render`. `transport`
+  `scp`/`rsync` runner, the typed remote helper protocol), `dto`, `render`. `transport`
   stays a neighbor, not a member.
 - `session/`: `command`/`run`/`dto`/`render` plus `ops` (create, exec, io,
   lifecycle, errors, shared) and `remote` (the helper `scripts` and their

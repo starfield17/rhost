@@ -32,6 +32,10 @@ int rh_done(const rh_reader *r);
 int rh_emit(uint32_t kind, const rh_buf *body);
 int rh_refuse(uint32_t kind, const char *code, const char *message);
 void rh_sha256(const void *data, size_t size, unsigned char out[32]);
+typedef struct {uint32_t h[8];uint64_t size;unsigned char pending[64];size_t used;} rh_hash;
+void rh_hash_init(rh_hash *h);
+void rh_hash_update(rh_hash *h,const void *data,size_t size);
+void rh_hash_finish(rh_hash *h,unsigned char out[32]);
 void rh_hex(const unsigned char *p, size_t n, char *out);
 int rh_utf8(const unsigned char *p,size_t n,int allow_nul);
 #endif
