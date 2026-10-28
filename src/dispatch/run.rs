@@ -16,6 +16,7 @@ pub(crate) fn dispatch(
     interrupt: &Interrupt,
 ) -> u8 {
     match command {
+        Command::Request(request) => crate::runs::run(sink, client, request, interrupt),
         Command::Version => {
             if json {
                 sink.envelope(&wire::version());

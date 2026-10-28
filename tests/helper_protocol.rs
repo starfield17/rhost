@@ -109,8 +109,8 @@ fn executable_probe_is_bounded_and_does_not_invent_capabilities() {
     assert!(!text(&mut body).is_empty());
     assert_eq!(
         body,
-        0u32.to_be_bytes(),
-        "scaffolding must advertise no unimplemented operations"
+        3u32.to_be_bytes(),
+        "only verified Run and monitor-control operations are advertised"
     );
 }
 

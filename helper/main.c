@@ -1,5 +1,6 @@
-/* Standalone C99 helper. No namespace or process capability is implemented yet. */
+/* Standalone C99 helper: bounded requests and remote-owned process evidence. */
 #define _POSIX_C_SOURCE 200809L
+#include "state.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,10 +83,16 @@ static int probe(uint32_t kind) {
     size += append_text(body + size, digest);
     size += append_text(body + size, TARGET_OS);
     size += append_text(body + size, TARGET_ARCH);
-    put32(body + size, 0); size += 4;
+    put32(body + size, 3); size += 4;
     return emit(kind, body, size);
 }
-int main(void) {
+int main(int argc,char **argv) {
+    if(argc==4 && !strcmp(argv[1],"--install-cache")) {
+        if(strcmp(argv[3],RHOST_SOURCE_DIGEST))return refuse(0,"HELPER_INCOMPATIBLE","candidate source identity does not match");
+        return rh_install(argv[2],argv[0]);
+    }
+    if(argc==3 && !strcmp(argv[1],"--install-cache"))return rh_install(argv[2],argv[0]);
+    if(argc!=1)return refuse(0,"PROTOCOL_ERROR","invalid helper invocation");
     unsigned char header[16];
     unsigned char *body = NULL;
     uint32_t kind = 0;
@@ -99,7 +106,7 @@ int main(void) {
         return refuse(kind, "PROTOCOL_ERROR", "request exceeds frame limit");
     if (kind == 0 || (kind & UINT32_C(0x80000000)) != 0)
         return refuse(kind, "PROTOCOL_ERROR", "invalid request kind");
-    if (kind > 6)
+    if (kind > 8)
         return refuse(kind, "PROTOCOL_ERROR", "unknown request kind");
     if (size != 0) {
         body = malloc((size_t)size);
@@ -109,12 +116,15 @@ int main(void) {
             return refuse(kind, "PROTOCOL_ERROR", "incomplete body");
         }
     }
-    free(body);
-    if (fgetc(stdin) != EOF || ferror(stdin))
+    if (fgetc(stdin) != EOF || ferror(stdin)) {
+        free(body);
         return refuse(kind, "PROTOCOL_ERROR", "trailing or unreadable input");
+    }
     if (kind == 1) {
+        free(body);
         if (size != 0) return refuse(kind, "PROTOCOL_ERROR", "probe body must be empty");
         return probe(kind);
     }
-    return refuse(kind, "HELPER_INCOMPATIBLE", "operation is not implemented");
+    rh_reader request={body,(size_t)size,0,0};
+    int result=rh_runs(kind,&request);free(body);return result;
 }

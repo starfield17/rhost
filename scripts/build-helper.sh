@@ -9,15 +9,15 @@ cd "$(dirname "$0")/.."
 out=${1:-target/helper/rhost-helper}
 cc=${CC:-cc}
 mkdir -p "$(dirname "$out")"
-digest=$(shasum -a 256 helper/main.c | cut -d ' ' -f1)
+digest=$(LC_ALL=C sh scripts/helper-source-digest.sh)
 temporary=$(mktemp "${out}.XXXXXX")
 trap 'rm -f "$temporary"' EXIT HUP INT TERM
 if [ "${RHOST_HELPER_SANITIZE:-0}" = 1 ]; then
     "$cc" -std=c99 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined \
-        -fno-omit-frame-pointer "-DRHOST_SOURCE_DIGEST=\"$digest\"" helper/main.c -o "$temporary"
+        -fno-omit-frame-pointer "-DRHOST_SOURCE_DIGEST=\"$digest\"" helper/*.c -o "$temporary"
 else
     "$cc" -std=c99 -Wall -Wextra -Werror -Os \
-        "-DRHOST_SOURCE_DIGEST=\"$digest\"" helper/main.c -o "$temporary"
+        "-DRHOST_SOURCE_DIGEST=\"$digest\"" helper/*.c -o "$temporary"
 fi
 chmod 700 "$temporary"
 mv "$temporary" "$out"

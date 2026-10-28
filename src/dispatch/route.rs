@@ -39,6 +39,7 @@ pub fn parse_invocation(argv: &[String]) -> super::Invocation {
         .map(|(_, token)| token.clone())
         .collect();
     let command = match group.as_str() {
+        "request" | "run" | "helper" => Command::Request(crate::runs::parse(&group, &rest, json)),
         "exec" => wrap(crate::exec::command(&rest, json)),
         "doctor" => wrap(crate::doctor::command(&rest, json)),
         "hosts" => wrap(crate::hosts::command(&rest, json)),
