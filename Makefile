@@ -1,16 +1,18 @@
 # Native helper test candidates are built locally; CI must supply exact bytes.
 ifeq ($(origin RHOST_HELPER_BIN), undefined)
-RHOST_HELPER_BIN := $(CURDIR)/target/helper/rhost-helper
+RHOST_TEST_HELPER_BIN := $(CURDIR)/target/helper/rhost-helper
 RHOST_BUILD_TEST_HELPER := 1
+else
+RHOST_TEST_HELPER_BIN := $(RHOST_HELPER_BIN)
 endif
-export RHOST_HELPER_BIN
-export RHOST_NO_SOURCE_BUILD := 1
+rust-check test-smoke test: export RHOST_HELPER_BIN := $(RHOST_TEST_HELPER_BIN)
+rust-check test-smoke test: export RHOST_NO_SOURCE_BUILD := 1
 .PHONY: helper-candidate
 helper-candidate:
 	@if [ -n "$(RHOST_BUILD_TEST_HELPER)" ]; then \
 		if [ -n "$$CI" ]; then echo "set RHOST_HELPER_BIN to a verified native candidate; CI never compiles helpers" >&2; exit 2; fi; \
-		sh scripts/build-helper.sh "$(RHOST_HELPER_BIN)"; \
-	else test -f "$(RHOST_HELPER_BIN)" || { echo "set RHOST_HELPER_BIN to an existing native candidate" >&2; exit 2; }; fi
+        sh scripts/build-helper.sh "$(RHOST_TEST_HELPER_BIN)"; \
+    else test -f "$(RHOST_TEST_HELPER_BIN)" || { echo "set RHOST_HELPER_BIN to an existing native candidate" >&2; exit 2; }; fi
 
 export RHOST_BIN
 export RHOST_BIN_ROOT := $(CURDIR)

@@ -84,3 +84,15 @@ Existing v2 fixtures and the published v4.1.0 validator remain untouched. Active
 DTO and CLI tests now require v3; the preserved payload projection additionally
 checks the frozen v2 validator. File write/patch success reports applied mutation;
 errors distinguish not_applied, applied, partial and unknown evidence.
+
+
+### MCP cancelled-response oracle
+
+The new queued-cancellation test incorrectly required a tools/call reply after
+sending a cancellation notification. It reached the response deadline because
+rmcp deliberately removes the cancelled request from its response pool and drops
+that reply. This was an invalid delivery expectation, not evidence of a stuck
+queue. The stdio acceptance instead verifies that cancelled queued mutations stay
+unsubmitted when capacity returns; a direct admission-state test requires waiting
+to end without obtaining a permit. EOF-during-active-observation acceptance stays
+in place and requires prompt shutdown without signaling the Run.

@@ -110,7 +110,7 @@ ALLOWED = {
     "exec": {"audit", "cli", "domain", "remote", "shell", "signals", "stdio",
              "transport", "wire"},
     "request": {"cli", "domain", "files", "remote", "runs", "signals", "transport", "wire"},
-    "mcp": {"request", "transport", "cli"},
+    "mcp": {"request", "transport", "cli", "signals"},
     "runs": {"cli", "helper", "remote", "transport", "base64", "shell", "signals"},
     "hosts": {"cli", "host", "wire"},
     "connection": {"audit", "cli", "transport", "wire"},

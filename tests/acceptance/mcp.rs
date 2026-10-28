@@ -185,3 +185,116 @@ fn mcp_cancellation_is_scoped_and_does_not_cancel_the_run() -> Result<(), String
     assert_eq!(signaled["data"]["delivered"], true, "{signaled}");
     m.close()
 }
+
+fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
+    let prepared = m.call(2, "rhost_helper_prepare", json!({"host":"gpu","params":{}}))?;
+    let generation = prepared["data"]["generation"].clone();
+    let expiry = prepared["data"]["remote_time_unix"]
+        .as_u64()
+        .ok_or("clock missing")?
+        + 3600;
+    let key = format!("{expiry}-{}", "d".repeat(64));
+    let started=m.call(3,"rhost_run_start",json!({"host":"gpu","params":{"generation":generation,"key":key,"expires_unix":expiry,"cwd":"/","program":{"argv":["/bin/sleep","30"]},"environment":{"inherit":false,"values":{}}}}))?;
+    assert_eq!(started["ok"], true, "{started}");
+    let before = harness.calls().len();
+    for id in 10..26 {
+        m.start(
+            id,
+            "rhost_run_poll",
+            json!({"host":"gpu","params":{"generation":generation,"run_id":key,"wait_ms":30000}}),
+        )?;
+    }
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while harness.calls().len() < before + 32 {
+        if Instant::now() >= deadline {
+            return Err("16 observations did not reach SSH".into());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    Ok((generation, key))
+}
+
+#[test]
+fn mcp_eof_stops_active_observers_and_never_submits_queued_work() -> Result<(), String> {
+    let harness = Harness::open("mcp-eof-active")?;
+    crate::hosts::local_host(&harness)?;
+    let state = harness.path("remote-state").to_string_lossy().into_owned();
+    let harness = harness.env("RHOST_REMOTE_STATE", &state);
+    let mut m = Mcp::open(&harness)?;
+    let (generation, key) = occupied(&mut m, &harness)?;
+    let target = harness.path("must-not-be-written");
+    m.start(
+        30,
+        "rhost_fs_write",
+        json!({"host":"gpu","params":{"path":target,"content":"queued"}}),
+    )?;
+    m.close()?;
+    assert!(!target.exists(), "EOF must cancel queued submission");
+    let (_, polled) = crate::support::envelope(
+        &harness,
+        &[
+            "run",
+            "poll",
+            "gpu",
+            &key,
+            "--generation",
+            generation.as_str().ok_or("generation missing")?,
+            "--json",
+        ],
+    )?;
+    assert_eq!(polled["data"]["run"]["status"], "running", "{polled}");
+    let (_, signaled) = crate::support::envelope(
+        &harness,
+        &[
+            "run",
+            "signal",
+            "gpu",
+            &key,
+            "--generation",
+            generation.as_str().ok_or("generation missing")?,
+            "--sig",
+            "TERM",
+            "--json",
+        ],
+    )?;
+    assert_eq!(signaled["data"]["delivered"], true, "{signaled}");
+    Ok(())
+}
+
+#[test]
+fn a_cancelled_queued_call_remains_unsubmitted_when_capacity_returns() -> Result<(), String> {
+    let harness = Harness::open("mcp-queued-cancel")?;
+    crate::hosts::local_host(&harness)?;
+    let state = harness.path("remote-state").to_string_lossy().into_owned();
+    let harness = harness.env("RHOST_REMOTE_STATE", &state);
+    let mut m = Mcp::open(&harness)?;
+    let (generation, key) = occupied(&mut m, &harness)?;
+    let target = harness.path("must-not-be-written");
+    m.start(
+        30,
+        "rhost_fs_write",
+        json!({"host":"gpu","params":{"path":target,"content":"queued"}}),
+    )?;
+    m.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":30}}))?;
+    // The SDK deliberately suppresses responses after a cancellation notice.
+    m.send(json!({"jsonrpc":"2.0","id":40,"method":"tools/list"}))?;
+    assert!(m.answer(40)?["result"]["tools"].is_array());
+    assert!(!target.exists());
+    for id in 10..26 {
+        m.send(
+            json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":id}}),
+        )?;
+    }
+    let result = m.call(
+        31,
+        "rhost_run_signal",
+        json!({"host":"gpu","params":{"generation":generation,"run_id":key,"signal":"TERM"}}),
+    )?;
+    assert_eq!(result["data"]["delivered"], true, "{result}");
+    m.close()?;
+    assert!(
+        !target.exists(),
+        "cancelled queued mutation must stay unsubmitted"
+    );
+    Ok(())
+}
