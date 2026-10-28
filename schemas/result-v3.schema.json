@@ -59,7 +59,9 @@
         "fs.changeset.apply",
         "fs.changeset.query",
         "fs.changeset.recover",
-        "fs.changeset.prune"
+        "fs.changeset.prune",
+        "fs.search",
+        "fs.read_many"
       ]
     },
     "ok": {
@@ -2170,7 +2172,9 @@
             "fs.changeset.apply",
             "fs.changeset.query",
             "fs.changeset.recover",
-            "fs.changeset.prune"
+            "fs.changeset.prune",
+            "fs.search",
+            "fs.read_many"
           ]
         },
         "ok": {
@@ -2744,6 +2748,82 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.search"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/search"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.search"
+              },
+              "ok": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.read_many"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/read_many"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.read_many"
+              },
+              "ok": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "type": "null"
+              }
+            }
+          }
         }
       ],
       "$defs": {
@@ -3186,6 +3266,305 @@
             },
             "pruned": {
               "const": true
+            }
+          }
+        },
+        "search": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "root",
+            "revision",
+            "items",
+            "skipped",
+            "scanned_files",
+            "scanned_bytes",
+            "incomplete",
+            "reasons",
+            "next_cursor"
+          ],
+          "properties": {
+            "root": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "sha256",
+                  "bytes",
+                  "matches",
+                  "matches_truncated"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 8388608
+                  },
+                  "matches": {
+                    "type": "array",
+                    "maxItems": 512,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "line",
+                        "text"
+                      ],
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "matches_truncated": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "skipped": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "code"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "code": {
+                    "enum": [
+                      "CONFIG_INVALID",
+                      "CONTEXT_CHANGED",
+                      "CONTEXT_UNAVAILABLE",
+                      "FILE_CONFLICT",
+                      "FILE_NOT_FOUND",
+                      "FILE_TOO_LARGE",
+                      "HASH_REQUIRED",
+                      "HELPER_INCOMPATIBLE",
+                      "HELPER_PREPARATION_FAILED",
+                      "HOST_KEY_FAILED",
+                      "HOST_UNKNOWN",
+                      "IDEMPOTENCY_CONFLICT",
+                      "INTERNAL",
+                      "INVALID_PATCH",
+                      "INVALID_TARGET",
+                      "INVALID_TEXT",
+                      "NAMESPACE_MISMATCH",
+                      "OUTPUT_RANGE_UNAVAILABLE",
+                      "OUTPUT_WRITE_FAILED",
+                      "PROTOCOL_ERROR",
+                      "REMOTE_COMMAND_CANCELLED",
+                      "REMOTE_COMMAND_TIMEOUT",
+                      "REMOTE_DEPENDENCY_MISSING",
+                      "REMOTE_EXECUTION_UNKNOWN",
+                      "REQUEST_EXPIRED",
+                      "RUN_CONTROL_UNAVAILABLE",
+                      "RUN_NOT_FOUND",
+                      "SESSION_BUSY",
+                      "SESSION_NOT_FOUND",
+                      "SESSION_UNHEALTHY",
+                      "SSH_AUTH_FAILED",
+                      "SSH_CONTROL_FAILED",
+                      "SSH_UNREACHABLE",
+                      "STATE_UNAVAILABLE",
+                      "SYNC_REJECTED",
+                      "TRANSFER_FAILED",
+                      "TUNNEL_FAILED",
+                      "TUNNEL_NOT_FOUND",
+                      "UNSUPPORTED_REMOTE_OS",
+                      "USAGE_ERROR"
+                    ]
+                  }
+                }
+              }
+            },
+            "scanned_files": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4096
+            },
+            "scanned_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 67108864
+            },
+            "incomplete": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "entry_limit",
+                  "depth_limit",
+                  "scan_byte_limit",
+                  "file_limit",
+                  "unreadable",
+                  "invalid_text"
+                ]
+              }
+            },
+            "next_cursor": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}:[0-9]{1,4}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "read_many": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "items",
+            "unread"
+          ],
+          "properties": {
+            "items": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "ok",
+                  "data",
+                  "error"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "ok": {
+                    "type": "boolean"
+                  },
+                  "data": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/$defs/legacy/definitions/file_read"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "error": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "code": {
+                            "enum": [
+                              "CONFIG_INVALID",
+                              "CONTEXT_CHANGED",
+                              "CONTEXT_UNAVAILABLE",
+                              "FILE_CONFLICT",
+                              "FILE_NOT_FOUND",
+                              "FILE_TOO_LARGE",
+                              "HASH_REQUIRED",
+                              "HELPER_INCOMPATIBLE",
+                              "HELPER_PREPARATION_FAILED",
+                              "HOST_KEY_FAILED",
+                              "HOST_UNKNOWN",
+                              "IDEMPOTENCY_CONFLICT",
+                              "INTERNAL",
+                              "INVALID_PATCH",
+                              "INVALID_TARGET",
+                              "INVALID_TEXT",
+                              "NAMESPACE_MISMATCH",
+                              "OUTPUT_RANGE_UNAVAILABLE",
+                              "OUTPUT_WRITE_FAILED",
+                              "PROTOCOL_ERROR",
+                              "REMOTE_COMMAND_CANCELLED",
+                              "REMOTE_COMMAND_TIMEOUT",
+                              "REMOTE_DEPENDENCY_MISSING",
+                              "REMOTE_EXECUTION_UNKNOWN",
+                              "REQUEST_EXPIRED",
+                              "RUN_CONTROL_UNAVAILABLE",
+                              "RUN_NOT_FOUND",
+                              "SESSION_BUSY",
+                              "SESSION_NOT_FOUND",
+                              "SESSION_UNHEALTHY",
+                              "SSH_AUTH_FAILED",
+                              "SSH_CONTROL_FAILED",
+                              "SSH_UNREACHABLE",
+                              "STATE_UNAVAILABLE",
+                              "SYNC_REJECTED",
+                              "TRANSFER_FAILED",
+                              "TUNNEL_FAILED",
+                              "TUNNEL_NOT_FOUND",
+                              "UNSUPPORTED_REMOTE_OS",
+                              "USAGE_ERROR"
+                            ]
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "unread": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000]+$"
+              }
             }
           }
         }
