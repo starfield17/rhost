@@ -33,6 +33,7 @@ static int row(page *p,f_error *e){
 j_value *f_read(const j_value *q,const char *path,f_error *e){
     uint64_t start,count,cap;
     if(!f_number(q,"start",1,&start) || !f_number(q,"lines",200,&count) || !start || !count || !f_number(q,"max_bytes",0,&cap) || !cap || cap>F_EDIT_LIMIT)return f_fail(e,"CONFIG_INVALID","invalid read bounds");
+    if(!f_context(e))return NULL;
     char *name=NULL;int dir=f_parent(path,0,&name,e);if(dir<0)return NULL;
     int fd=f_open(dir,name,0,e);close(dir);free(name);if(fd<0)return NULL;
     struct stat before,after;j_value *result=NULL;page p={0};p.start=start;p.count=count;p.page.limit=p.line.limit=(size_t)cap;

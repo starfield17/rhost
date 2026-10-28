@@ -12,6 +12,11 @@ struct Document {
     operation: String,
     host: String,
     params: Box<serde_json::value::RawValue>,
+    #[serde(default, deserialize_with = "nonnull_boot")]
+    if_boot_id: Option<String>,
+}
+fn nonnull_boot<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
 }
 pub fn execute(client: &Client, raw: &str, cancelled: &dyn Fn() -> bool) -> Value {
     let prepared = (|| {
@@ -32,8 +37,19 @@ pub fn execute(client: &Client, raw: &str, cancelled: &dyn Fn() -> bool) -> Valu
         Ok(q) => q,
         Err(e) => return failure("request", None, e),
     };
+    let guard = match q.if_boot_id.map(crate::domain::BootId::new).transpose() {
+        Ok(value) => value,
+        Err(e) => return invalid(e.to_string()),
+    };
     let result = if matches!(q.operation.as_str(), "fs.read" | "fs.write" | "fs.patch") {
-        crate::files::execute_params(client, &q.host, &q.operation, q.params.get(), cancelled)
+        crate::files::execute_params(
+            client,
+            &q.host,
+            &q.operation,
+            q.params.get(),
+            cancelled,
+            guard.as_ref(),
+        )
     } else if matches!(
         q.operation.as_str(),
         "metadata"
@@ -44,7 +60,14 @@ pub fn execute(client: &Client, raw: &str, cancelled: &dyn Fn() -> bool) -> Valu
             | "run.prune"
             | "run.signal"
     ) {
-        crate::runs::execute_params(client, &q.host, &q.operation, q.params.get(), cancelled)
+        crate::runs::execute_params(
+            client,
+            &q.host,
+            &q.operation,
+            q.params.get(),
+            cancelled,
+            guard.as_ref(),
+        )
     } else {
         return failure(
             "request",

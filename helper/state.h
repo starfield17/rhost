@@ -14,6 +14,7 @@ int rh_file(int directory,const char *name,unsigned char **data,size_t *size,siz
 int rh_state_open(rh_state *s,int create);
 void rh_state_close(rh_state *s);
 int rh_clock(rh_state *s,uint64_t *now);
+int rh_clock_read(rh_state *s,uint64_t *now);
 int rh_status_write(int directory,const rh_status *s);
 int rh_status_read(int directory,rh_status *s);
 int rh_key(const char *key,uint64_t *expiry);

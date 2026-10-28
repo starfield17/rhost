@@ -33,9 +33,11 @@ static int handshake(int directory) {
     rh_reader r={response,size,16,0};
     if(rh_read_byte(&r)!=0)return 0;
     char *digest=rh_read_text(&r),*os=rh_read_text(&r),*arch=rh_read_text(&r);
-    (void)rh_read_int(&r);
-    ok=rh_done(&r) && digest && !strcmp(digest,RHOST_SOURCE_DIGEST) && os && *os && arch && *arch;
-    free(digest);free(os);free(arch);return ok;
+    uint32_t capabilities=rh_read_int(&r);char *boot=rh_read_text(&r);
+    const uint32_t limits[]={8388608,12582912,8388608,67108864,1048576};
+    for(size_t i=0;i<sizeof limits/sizeof limits[0];i++)if(rh_read_int(&r)!=limits[i])ok=0;
+    ok=ok && rh_done(&r) && digest && !strcmp(digest,RHOST_SOURCE_DIGEST) && os && *os && arch && *arch && (capabilities&7)==7 && boot && (!*boot || strlen(boot)==36);
+    free(digest);free(os);free(arch);free(boot);return ok;
 }
 int rh_install(const char *path,const char *executable) {
     int directory=rh_directory(path,1);struct stat info;int result=255,lock=-1,fd=-1;

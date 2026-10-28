@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <unistd.h>
 void *f_fail(f_error *e,const char *code,const char *message){if(!e->code){e->code=code;e->message=message;}return NULL;}
+int f_context(f_error *e){const char *error=rh_context_error();if(error){f_fail(e,error,"boot guard refused file operation");return 0;}return 1;}
 void *f_os_error(f_error *e,int changed){
     const char *code="INTERNAL";
     if(errno==ENOENT)code=changed?"FILE_CONFLICT":"FILE_NOT_FOUND";

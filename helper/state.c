@@ -100,13 +100,17 @@ void rh_state_close(rh_state *s) {
     if(s->root>=0)close(s->root);
     s->root=s->runs=s->registry=-1;
 }
-int rh_clock(rh_state *s,uint64_t *now) {
+int rh_clock_read(rh_state *s,uint64_t *now) {
     time_t value=time(NULL);if(value<0)return 0;*now=(uint64_t)value;
     unsigned char *data=NULL;size_t size=0;
     if(rh_file(s->root,"clock",&data,&size,8)) {
         if(size!=8){free(data);return 0;}
         uint64_t previous=rh_u64(data);free(data);if(previous>*now)*now=previous;
     }else {struct stat info;if(fstatat(s->root,"clock",&info,AT_SYMLINK_NOFOLLOW)==0 || errno!=ENOENT)return 0;}
+    return 1;
+}
+int rh_clock(rh_state *s,uint64_t *now) {
+    if(!rh_clock_read(s,now))return 0;
     unsigned char out[8];rh_put32(out,(uint32_t)(*now>>32));rh_put32(out+4,(uint32_t)*now);
     return rh_atomic(s->root,"clock",out,8);
 }

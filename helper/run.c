@@ -70,6 +70,7 @@ static int observation(uint32_t kind,rh_state *s,const char *key,int directory,u
 static int submit(uint32_t kind,rh_reader *r) {
     rh_start q;
     if(!rh_parse_start(r,&q)){rh_start_free(&q);return rh_refuse(kind,"PROTOCOL_ERROR","invalid start request");}
+    const char *context=rh_context_error();if(context){rh_start_free(&q);return rh_refuse(kind,context,"boot guard refused Run submission");}
     rh_state s;
     if(!rh_state_open(&s,0)){rh_start_free(&q);return rh_refuse(kind,"STATE_UNAVAILABLE","prepare the remote namespace first");}
     const char *error=NULL;
@@ -156,14 +157,15 @@ int rh_runs(uint32_t kind,rh_reader *r) {
        ((kind==3 || kind==5) && !rh_key(key,&expiry)) || wait>300000 || !cap || cap>1048576 || (kind==5 && (signal_tag<1 || signal_tag>3))) {
         free(generation);free(key);return rh_refuse(kind,"PROTOCOL_ERROR","invalid Run request");
     }
+    const char *context=rh_context_error();if(context){free(generation);free(key);return rh_refuse(kind,context,"boot guard refused operation");}
     rh_state s;
     if(!rh_state_open(&s,kind==7)){free(generation);free(key);return rh_refuse(kind,"STATE_UNAVAILABLE","remote namespace is unavailable");}
     int result=255;
     if(generation && strcmp(generation,s.generation)){result=rh_refuse(kind,"NAMESPACE_MISMATCH","remote namespace changed");goto done;}
     if(kind==7 || kind==8) {
         rh_buf b={0};rh_byte(&b,0);rh_text(&b,s.generation);
-        uint64_t now=(uint64_t)time(NULL);if(kind==7 && !rh_clock(&s,&now)){free(b.data);result=rh_refuse(kind,"STATE_UNAVAILABLE","cannot persist clock");goto done;}
-        rh_long(&b,now);result=rh_emit(kind,&b);free(b.data);goto done;
+        uint64_t now=0;if(!(kind==7?rh_clock(&s,&now):rh_clock_read(&s,&now))){free(b.data);result=rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish effective clock");goto done;}
+        rh_long(&b,now);char boot[37];(void)rh_boot_id(boot);rh_text(&b,boot);result=rh_emit(kind,&b);free(b.data);goto done;
     }
     if(kind==3 || kind==5) {
         int directory=openat(s.runs,key,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);

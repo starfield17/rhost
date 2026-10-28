@@ -18,9 +18,12 @@ pub fn execute_params(
     operation: &str,
     params: &str,
     cancelled: &dyn Fn() -> bool,
+    boot_guard: Option<&crate::domain::BootId>,
 ) -> Result<Value, Error> {
     let prepared = request::prepare(operation, host, params)?;
-    let helper = Helper::new(client, &prepared.host).with_cancellation(cancelled);
+    let helper = Helper::new(client, &prepared.host)
+        .with_cancellation(cancelled)
+        .with_boot_guard(boot_guard);
     let mut binding = crate::helper::Reader::new(&prepared.body.0);
     let expected_generation = if (2..=6).contains(&prepared.kind) {
         Some(binding.text()?)
@@ -32,13 +35,19 @@ pub fn execute_params(
     } else {
         None
     };
-    if prepared.kind != 8 {
-        helper.ensure()?;
+    let mut identity = if prepared.kind != 8 {
+        helper.ensure()?
     } else {
-        helper.probe()?;
-    }
+        helper.probe()?
+    };
     let bytes = helper.call(prepared.kind, prepared.body, prepared.wait_ms)?;
-    let data = dto::decode(prepared.kind, &bytes)?;
+    let mut data = dto::decode(prepared.kind, &bytes)?;
+    if matches!(prepared.kind, 7 | 8) {
+        if let Some(map) = identity.as_object_mut() {
+            map.remove("boot_id");
+        }
+        data["helper"] = identity;
+    }
     dto::bind(
         prepared.kind,
         &data,

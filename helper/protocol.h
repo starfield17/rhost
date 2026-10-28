@@ -38,4 +38,6 @@ void rh_hash_update(rh_hash *h,const void *data,size_t size);
 void rh_hash_finish(rh_hash *h,unsigned char out[32]);
 void rh_hex(const unsigned char *p, size_t n, char *out);
 int rh_utf8(const unsigned char *p,size_t n,int allow_nul);
+int rh_boot_id(char out[37]);
+const char *rh_context_error(void);
 #endif

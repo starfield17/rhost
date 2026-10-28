@@ -4,6 +4,11 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 pub static FLAGS: &[FlagSpec] = &[
     JSON,
+    FlagSpec::value(
+        "if-boot-id",
+        true,
+        "require the observed remote boot identity",
+    ),
     FlagSpec::value("from", false, "JSON request file, or - for stdin"),
     FlagSpec::value("generation", true, "remote namespace generation"),
     FlagSpec::value("key", true, "caller-owned expiring idempotency key"),
@@ -34,9 +39,10 @@ pub struct Invocation {
 fn allowed(group: &str, leaf: Option<&str>) -> &'static [&'static str] {
     match (group, leaf) {
         ("request", _) => &["json", "from"],
-        ("helper", _) => &["json"],
+        ("helper", _) => &["json", "if-boot-id"],
         ("run", Some("start")) => &[
             "json",
+            "if-boot-id",
             "generation",
             "key",
             "cwd",
@@ -51,14 +57,15 @@ fn allowed(group: &str, leaf: Option<&str>) -> &'static [&'static str] {
         ],
         ("run", Some("poll")) => &[
             "json",
+            "if-boot-id",
             "generation",
             "wait",
             "stdout-since",
             "stderr-since",
             "max-bytes",
         ],
-        ("run", Some("signal")) => &["json", "generation", "sig"],
-        ("run", Some("list" | "prune")) => &["json", "generation"],
+        ("run", Some("signal")) => &["json", "generation", "sig", "if-boot-id"],
+        ("run", Some("list" | "prune")) => &["json", "generation", "if-boot-id"],
         _ => &[],
     }
 }
@@ -202,8 +209,13 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
             }
             format!("run.{leaf}")
         };
-        let raw = json!({"schema_version":3,"operation":operation,"host":host,"params":params})
-            .to_string();
+        let mut document =
+            json!({"schema_version":3,"operation":operation,"host":host,"params":params});
+        if let Some(guard) = p.value("if-boot-id") {
+            crate::domain::BootId::new(guard.to_string()).map_err(|e| e.to_string())?;
+            document["if_boot_id"] = guard.into();
+        }
+        let raw = document.to_string();
         super::request::prepare(&operation, host, &params.to_string()).map_err(|e| e.message)?;
         Ok(Input::Document(raw))
     })();

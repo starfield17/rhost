@@ -14,6 +14,7 @@ pub struct Helper<'a> {
     host: &'a str,
     cache: String,
     cancelled: &'a dyn Fn() -> bool,
+    boot_guard: Option<&'a crate::domain::BootId>,
 }
 impl<'a> Helper<'a> {
     pub fn new(client: &'a Client, host: &'a str) -> Self {
@@ -22,10 +23,15 @@ impl<'a> Helper<'a> {
             host,
             cache: format!("~/.cache/rhost/helper/{}/", source_digest()),
             cancelled: &never,
+            boot_guard: None,
         }
     }
     pub fn with_cancellation(mut self, cancelled: &'a dyn Fn() -> bool) -> Self {
         self.cancelled = cancelled;
+        self
+    }
+    pub fn with_boot_guard(mut self, guard: Option<&'a crate::domain::BootId>) -> Self {
+        self.boot_guard = guard;
         self
     }
     fn transport(
@@ -68,10 +74,15 @@ impl<'a> Helper<'a> {
             .unwrap_or_else(|_| "~/.local/state/rhost/v5".into());
         let executable = format!("{}rhost-helper", self.cache);
         let script = format!(
-            "printf '%s' {}; {} exec env RHOST_REMOTE_STATE={} {} {mode}",
+            "printf '%s' {}; {} exec env RHOST_REMOTE_STATE={} RHOST_EXPECT_BOOT_ID={} {} {mode}",
             crate::shell::quote(marker),
             self.cache_guard(),
             crate::shell::path_quote(&state),
+            crate::shell::quote(
+                self.boot_guard
+                    .map(crate::domain::BootId::as_str)
+                    .unwrap_or("")
+            ),
             crate::shell::path_quote(&executable)
         );
         format!("sh -c {}", crate::shell::quote(&script))
@@ -138,6 +149,16 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
         let os = r.text()?;
         let arch = r.text()?;
         let capabilities = r.int()?;
+        let boot = r.text()?;
+        if !boot.is_empty() {
+            crate::domain::BootId::new(boot.clone())
+                .map_err(|_| codec::protocol("invalid remote boot identity"))?;
+        }
+        for bound in [8388608, 12582912, 8388608, 67108864, 1048576] {
+            if r.int()? != bound {
+                return Err(codec::protocol("native limits do not match"));
+            }
+        }
         r.done()?;
         if digest != source_digest() {
             return Err(Error::new(
@@ -145,11 +166,31 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
                 "cached helper source identity does not match",
             ));
         }
+        if capabilities & 7 != 7 {
+            return Err(Error::new(
+                "HELPER_INCOMPATIBLE",
+                "native operation guarantees are unavailable",
+            ));
+        }
+        if let Some(expected) = self.boot_guard {
+            if boot.is_empty() {
+                return Err(Error::new(
+                    "CONTEXT_UNAVAILABLE",
+                    "remote boot identity is unavailable",
+                ));
+            }
+            if expected.as_str() != boot {
+                return Err(Error::new(
+                    "CONTEXT_CHANGED",
+                    "remote boot identity changed",
+                ));
+            }
+        }
         Ok(
-            serde_json::json!({"source_digest":digest,"os":os,"arch":arch,"capabilities":capabilities}),
+            serde_json::json!({"protocol":1,"source_digest":digest,"os":os,"arch":arch,"capabilities":capabilities,"boot_id":if boot.is_empty(){None}else{Some(boot)},"limits":{"run_frame_bytes":8388608,"file_request_bytes":12582912,"file_edit_bytes":8388608,"run_stream_bytes":67108864,"run_page_bytes":1048576}}),
         )
     }
-    pub fn install(&self) -> Result<(), Error> {
+    pub fn install(&self) -> Result<serde_json::Value, Error> {
         if std::env::var_os("RHOST_NO_UPLOAD").is_some() {
             return Err(Error::new(
                 "HELPER_PREPARATION_FAILED",
@@ -218,12 +259,19 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
                 ),
             ));
         }
-        self.probe().map(|_| ())
+        self.probe()
     }
-    pub fn ensure(&self) -> Result<(), Error> {
+    pub fn ensure(&self) -> Result<serde_json::Value, Error> {
         match self.probe() {
-            Ok(_) => Ok(()),
-            Err(error) if error.code == "REMOTE_COMMAND_CANCELLED" => Err(error),
+            Ok(value) => Ok(value),
+            Err(error)
+                if matches!(
+                    error.code,
+                    "REMOTE_COMMAND_CANCELLED" | "CONTEXT_CHANGED" | "CONTEXT_UNAVAILABLE"
+                ) =>
+            {
+                Err(error)
+            }
             Err(_) => self.install(),
         }
     }

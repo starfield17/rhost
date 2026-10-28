@@ -1,5 +1,6 @@
 //! Official SDK stdio delivery over the same capability requests as the CLI.
 mod input;
+mod schema;
 use crate::transport::Client;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, model::*, service::RequestContext};
 use serde::Deserialize;
@@ -22,6 +23,11 @@ struct Server {
 struct Arguments {
     host: String,
     params: Value,
+    #[serde(default, deserialize_with = "nonnull_boot")]
+    if_boot_id: Option<String>,
+}
+fn nonnull_boot<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
 }
 struct Observation {
     cancelled: Arc<AtomicBool>,
@@ -89,7 +95,11 @@ impl ServerHandler for Server {
         };
         let client = self.client.clone();
         let stopped = self.stopped.clone();
-        let raw=json!({"schema_version":3,"operation":operation,"host":arguments.host,"params":arguments.params}).to_string();
+        let mut document = json!({"schema_version":3,"operation":operation,"host":arguments.host,"params":arguments.params});
+        if let Some(guard) = arguments.if_boot_id {
+            document["if_boot_id"] = guard.into();
+        }
+        let raw = document.to_string();
         let result = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             crate::request::execute(&client, &raw, &|| {
@@ -119,21 +129,8 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
     let mut tools = Vec::new();
     for value in operations {
         let operation = value.as_str().ok_or("invalid operation")?;
-        let branches = schema["allOf"]
-            .as_array()
-            .ok_or("request branches missing")?;
-        let params = branches
-            .iter()
-            .find(|branch| {
-                let condition = &branch["if"]["properties"]["operation"];
-                condition["const"] == operation
-                    || condition["enum"]
-                        .as_array()
-                        .is_some_and(|ops| ops.iter().any(|v| v == operation))
-            })
-            .map(|branch| branch["then"]["properties"]["params"].clone())
-            .ok_or("operation parameters missing")?;
-        let input = json!({"type":"object","additionalProperties":false,"required":["host","params"],"properties":{"host":schema["properties"]["host"],"params":params},"$defs":schema["$defs"]});
+        let input = schema::input(&schema, operation)?;
+        let output = schema::output(&result, operation)?;
         let description = match operation {
             "run.start" => {
                 "Register or rediscover a detached Run using the same immutable key and payload. wait_ms only observes; deadline_ms is enforced remotely."
@@ -162,7 +159,7 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
             input.as_object().ok_or("input schema missing")?.clone(),
         );
         tool.output_schema = Some(Arc::new(
-            result.as_object().ok_or("result schema missing")?.clone(),
+            output.as_object().ok_or("result schema missing")?.clone(),
         ));
         tools.push((operation.to_string(), tool));
     }

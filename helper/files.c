@@ -19,6 +19,7 @@ static j_value *resolve(const j_value *q,const char *path,f_error *e){
         if(!actual)return f_fail(e,"INTERNAL","allocation failed");
     }
     j_value *deletion=j_get(q,"delete");if(deletion && deletion->type!=J_BOOL){free(actual);return f_fail(e,"CONFIG_INVALID","delete must be a boolean");}
+    if(!f_context(e)){free(actual);return NULL;}
     if(deletion && deletion->number){
         char *home=getenv("HOME"),*resolved_home=home?realpath(home,NULL):NULL;size_t slashes=0;for(const char *s=actual;*s;s++)if(*s=='/')slashes++;
         int broad=!strcmp(actual,"/") || slashes<2 || (resolved_home && !strcmp(actual,resolved_home));free(resolved_home);

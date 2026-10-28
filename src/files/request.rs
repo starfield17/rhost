@@ -69,6 +69,7 @@ pub fn execute_params(
     operation: &str,
     raw: &str,
     cancelled: &dyn Fn() -> bool,
+    boot_guard: Option<&crate::domain::BootId>,
 ) -> Result<Value, Error> {
     let result = (|| {
         let (payload, budget) = match operation {
@@ -138,6 +139,7 @@ pub fn execute_params(
         }
         let bytes = crate::helper::Helper::new(client, host)
             .with_cancellation(cancelled)
+            .with_boot_guard(boot_guard)
             .file_call(
                 &payload,
                 Duration::from_secs(30),

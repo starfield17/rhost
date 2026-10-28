@@ -1,5 +1,7 @@
 //! Pure values and state transitions. No wire, process, or filesystem access.
+mod context;
 mod execution;
+pub use context::BootId;
 mod files;
 mod identity;
 mod mutation;

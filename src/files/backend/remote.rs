@@ -126,7 +126,9 @@ impl HelperRefusal {
 /// an error, which the caller reports as `INTERNAL` rather than a code an agent
 /// might branch on.
 pub fn known_refusal_code(code: &str) -> Option<&'static str> {
-    const CODES: [&str; 13] = [
+    const CODES: [&str; 15] = [
+        "CONTEXT_CHANGED",
+        "CONTEXT_UNAVAILABLE",
         "STATE_UNAVAILABLE",
         "CONFIG_INVALID",
         "FILE_CONFLICT",

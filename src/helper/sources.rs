@@ -7,6 +7,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("file_read.c", include_str!("../../helper/file_read.c")),
     ("files.c", include_str!("../../helper/files.c")),
     ("files.h", include_str!("../../helper/files.h")),
+    ("host.c", include_str!("../../helper/host.c")),
     ("install.c", include_str!("../../helper/install.c")),
     ("json.c", include_str!("../../helper/json.c")),
     ("json.h", include_str!("../../helper/json.h")),

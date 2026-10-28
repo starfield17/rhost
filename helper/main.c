@@ -84,7 +84,10 @@ static int probe(uint32_t kind) {
     size += append_text(body + size, digest);
     size += append_text(body + size, TARGET_OS);
     size += append_text(body + size, TARGET_ARCH);
-    put32(body + size, 3); size += 4;
+    put32(body + size, 7); size += 4;
+    char boot[37];(void)rh_boot_id(boot);size+=append_text(body+size,boot);
+    const uint32_t limits[]={8388608,12582912,8388608,67108864,1048576};
+    for(size_t i=0;i<sizeof limits/sizeof limits[0];i++){put32(body+size,limits[i]);size+=4;}
     return emit(kind, body, size);
 }
 int main(int argc,char **argv) {

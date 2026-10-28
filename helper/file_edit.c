@@ -22,6 +22,7 @@ j_value *f_edit(const j_value *q,const char *path,int patch,f_error *e){
     if(!expected || (parents_value && parents_value->type!=J_BOOL))return f_fail(e,"CONFIG_INVALID","invalid edit policy");
     j_buf old={0},data={0};mode_t permissions=0600;
     if(!mode(q,&permissions,e) || (!patch && !f_decode(j_get(q,"content"),&data,e))){free(data.data);return NULL;}
+    if(!patch && !f_context(e)){free(data.data);return NULL;}
     int parents=!patch && parents_value && parents_value->number;char *name=NULL;int dir=f_parent(path,parents,&name,e);if(dir<0){free(data.data);return NULL;}
     int fd=-1,exists=0;struct stat info,loaded;j_value *result=NULL;char temporary[64]={0};
     if(flock(dir,LOCK_EX)<0){f_fail(e,"STATE_UNAVAILABLE","filesystem locking is unavailable");goto done;}
@@ -42,6 +43,7 @@ j_value *f_edit(const j_value *q,const char *path,int patch,f_error *e){
     if(exists && !*expected){f_fail(e,"HASH_REQUIRED","an existing file requires if_hash from fs read");goto done;}
     if((exists && strcmp(expected,old_hash)) || (!exists && (*expected || patch))){f_fail(e,"FILE_CONFLICT","file changed or expected target is missing");goto done;}
     if(patch){if(!f_patch(j_get(q,"edits"),&old,&data,e))goto done;}
+    if(patch && !f_context(e))goto done;
     for(unsigned attempt=0;attempt<100;attempt++){
         char random[33];if(!rh_random(random,16)){f_fail(e,"INTERNAL","random source failed");goto done;}
         snprintf(temporary,sizeof temporary,".rhost-write-%s",random);fd=openat(dir,temporary,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);

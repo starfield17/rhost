@@ -120,6 +120,8 @@ pub fn answer(bytes: &[u8], kind: u32) -> Result<Vec<u8>, Error> {
                 "RUN_CONTROL_UNAVAILABLE" => "RUN_CONTROL_UNAVAILABLE",
                 "OUTPUT_RANGE_UNAVAILABLE" => "OUTPUT_RANGE_UNAVAILABLE",
                 "CONFIG_INVALID" => "CONFIG_INVALID",
+                "CONTEXT_CHANGED" => "CONTEXT_CHANGED",
+                "CONTEXT_UNAVAILABLE" => "CONTEXT_UNAVAILABLE",
                 _ => return Err(protocol("unknown helper refusal")),
             };
             Err(Error {

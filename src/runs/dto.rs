@@ -77,7 +77,13 @@ pub fn decode(kind: u32, bytes: &[u8]) -> Result<Value, Error> {
         7 | 8 => {
             let generation = r.text()?;
             super::request::generation(&generation)?;
-            json!({"schema_generations":[3],"generation":generation,"remote_time_unix":r.long()?})
+            let now = r.long()?;
+            let boot = r.text()?;
+            if !boot.is_empty() {
+                crate::domain::BootId::new(boot.clone())
+                    .map_err(|_| protocol("invalid namespace boot identity"))?;
+            }
+            json!({"schema_generations":[3],"generation":generation,"remote_time_unix":now,"context":{"boot_id":if boot.is_empty(){None}else{Some(boot)}}})
         }
         2 | 3 => {
             json!({"run":record(&mut r)?,"stdout":stream(&mut r)?,"stderr":stream(&mut r)?,"stale":false})

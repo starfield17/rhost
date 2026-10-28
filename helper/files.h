@@ -7,6 +7,7 @@
 typedef struct {const char *code,*message,*mutation;} f_error;
 void *f_fail(f_error *e,const char *code,const char *message);
 void *f_os_error(f_error *e,int changed);
+int f_context(f_error *e);
 int f_number(const j_value *q,const char *key,uint64_t fallback,uint64_t *out);
 char *f_path(const j_value *q,f_error *e);
 int f_directory(const char *path,int parents,f_error *e);
