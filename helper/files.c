@@ -47,6 +47,7 @@ int rh_files_json(void){
     if(!result){
         result=j_new(J_OBJECT);const char *code=error.code?error.code:"INTERNAL",*message=error.message?error.message:"native file operation failed";
         if(!result || !j_text(result,"error",code,strlen(code)) || !j_text(result,"message",message,strlen(message))){j_free(result);j_free(q);free(input.data);return 255;}
+        if(!j_text(result,"mutation",error.mutation,strlen(error.mutation))){j_free(result);j_free(q);free(input.data);return 255;}
     }
     j_buf out={0};out.limit=J_OUTPUT_LIMIT;int ok=j_dump(result,&out);
     if(ok)ok=fwrite(out.data,1,out.size,stdout)==out.size && fputc('\n',stdout)!=EOF && fflush(stdout)==0;

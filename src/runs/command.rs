@@ -204,7 +204,7 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
         };
         let raw = json!({"schema_version":3,"operation":operation,"host":host,"params":params})
             .to_string();
-        super::request::prepare(&raw).map_err(|e| e.message)?;
+        super::request::prepare(&operation, host, &params.to_string()).map_err(|e| e.message)?;
         Ok(Input::Document(raw))
     })();
     Invocation {

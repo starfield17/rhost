@@ -48,10 +48,12 @@ pub(super) fn decide(
     output: &ProcessOutput,
     cancellation: Cancel<'_>,
 ) -> Ended {
-    if code.is_none() && !run.timed_out && !run.cancelled {
-        if let Some(reason) = pre_submission(run) {
-            return Ended::NotStarted(reason);
-        }
+    if code.is_none()
+        && !run.timed_out
+        && !run.cancelled
+        && let Some(reason) = pre_submission(run)
+    {
+        return Ended::NotStarted(reason);
     }
     if matches!(run.failure, Some(RunFailure::Stream(_))) {
         return Ended::Undeliverable {

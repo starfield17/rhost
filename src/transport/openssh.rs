@@ -15,6 +15,7 @@ const CONNECT_TIMEOUT_SECS: u64 = 15;
 /// master that cannot answer in this long is not worth waiting for.
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Clone)]
 pub struct Config {
     pub ssh_bin: String,
     pub control_path: String,
@@ -40,6 +41,7 @@ impl Default for Config {
     }
 }
 
+#[derive(Clone)]
 pub struct Client {
     cfg: Config,
 }

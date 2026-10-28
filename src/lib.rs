@@ -5,7 +5,7 @@
 //! change (`exec`, `files`, `session`, ...), and the shared foundation they all
 //! rest on is `domain` (pure values), `transport` (the OpenSSH child),
 //! `remote` (the one submit-a-program path and the error taxonomy) and `wire`
-//! (the schema-v2 envelope). `cli` holds the flag/argv primitives every
+//! (the schema-v3 envelope). `cli` holds the flag/argv primitives every
 //! capability parses with, and `dispatch` is the thin composition root.
 #![forbid(unsafe_code)]
 
@@ -25,7 +25,9 @@ pub mod files;
 pub mod helper;
 pub mod host;
 pub mod hosts;
+pub mod mcp;
 pub mod remote;
+pub mod request;
 pub mod runs;
 pub mod session;
 pub mod shell;

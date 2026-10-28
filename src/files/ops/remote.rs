@@ -46,24 +46,46 @@ pub(crate) fn helper<T>(
 where
     T: DeserializeOwned,
 {
-    let payload = serde_json::to_vec(request).map_err(|error| internal(error.to_string()))?;
-    let stdout = crate::helper::Helper::new(client, host).file_call(
-        &payload,
-        timeout,
-        helper_protocol::output_budget(max_bytes),
-    )?;
-    let answer: Answer<T> = serde_json::from_slice(&stdout)
-        .map_err(|_| internal("remote file helper returned no usable answer"))?;
-    match answer {
-        Answer::Done(result) => Ok(result),
-        Answer::Refused(refusal) => match helper_protocol::known_refusal_code(&refusal.error) {
-            Some(known) => Err(Error::new(known, refusal.message())),
-            None => Err(internal(format!(
-                "unknown remote file error {}",
-                refusal.error
-            ))),
-        },
-    }
+    let result = (|| {
+        let payload = serde_json::to_vec(request).map_err(|error| internal(error.to_string()))?;
+        let stdout = crate::helper::Helper::new(client, host).file_call(
+            &payload,
+            timeout,
+            helper_protocol::output_budget(max_bytes),
+        )?;
+        let answer: Answer<T> = serde_json::from_slice(&stdout).map_err(|_| {
+            internal("remote file helper returned no usable answer")
+                .with_mutation(crate::domain::MutationEvidence::Unknown)
+        })?;
+        match answer {
+            Answer::Done(result) => Ok(result),
+            Answer::Refused(refusal) => match helper_protocol::known_refusal_code(&refusal.error) {
+                Some(known) => {
+                    let mut error = Error::new(known, refusal.message());
+                    let evidence = refusal
+                        .mutation
+                        .as_deref()
+                        .and_then(crate::domain::MutationEvidence::parse)
+                        .ok_or_else(|| {
+                            internal("invalid native mutation evidence")
+                                .with_mutation(crate::domain::MutationEvidence::Unknown)
+                        })?;
+                    error = error.with_mutation(evidence);
+                    Err(error)
+                }
+                None => Err(
+                    internal(format!("unknown remote file error {}", refusal.error))
+                        .with_mutation(crate::domain::MutationEvidence::Unknown),
+                ),
+            },
+        }
+    })();
+    result.map_err(|mut error: Error| {
+        if !(matches!(request, Request::Write { .. } | Request::Patch { .. })) {
+            error.mutation = None;
+        }
+        error
+    })
 }
 
 /// The capability question `fs sync` cannot work without. Asking first keeps

@@ -33,7 +33,7 @@ pub use sync::{SyncRequest, pull_args, push_args, reject_sync_target};
 // The two submodules below reach a process and a remote helper. They are private
 // so a caller names the capability, not the internal split: changing the runner
 // or the helper protocol must not require finding every deep import.
-pub(crate) use remote::Answer;
+pub(crate) use remote::{Answer, HelperRefusal};
 pub use remote::{
     DEFAULT_HELPER_BYTES, Edit, RangeEdit, ReadResult, ReplaceEdit, Request, ResolveResult,
     WriteResult, known_refusal_code, output_budget,

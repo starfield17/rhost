@@ -18,6 +18,7 @@ pub struct Error {
     pub code: &'static str,
     pub message: String,
     pub retryable: bool,
+    pub mutation: Option<crate::domain::MutationEvidence>,
 }
 
 impl Error {
@@ -26,12 +27,18 @@ impl Error {
             code,
             message: message.into(),
             retryable: false,
+            mutation: None,
         }
     }
 
     /// Marked only where retrying cannot compound a side effect.
     pub fn retryable(mut self) -> Self {
         self.retryable = true;
+        self
+    }
+    pub fn with_mutation(mut self, evidence: crate::domain::MutationEvidence) -> Self {
+        self.mutation = Some(evidence);
+        self.retryable = false;
         self
     }
 }

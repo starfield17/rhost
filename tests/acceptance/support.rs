@@ -179,10 +179,10 @@ impl Harness {
                     program: program.to_string(),
                     args: Vec::new(),
                 });
-            } else if let Some(argument) = line.strip_prefix("arg ") {
-                if let Some(current) = calls.last_mut() {
-                    current.args.push(argument.to_string());
-                }
+            } else if let Some(argument) = line.strip_prefix("arg ")
+                && let Some(current) = calls.last_mut()
+            {
+                current.args.push(argument.to_string());
             }
         }
         calls

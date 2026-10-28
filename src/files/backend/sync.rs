@@ -24,12 +24,12 @@ pub fn reject_sync_target(destination: &str, delete: bool) -> Result<(), Refusal
             "--delete refuses an entire home directory ({cleaned:?}); choose a subdirectory"
         )));
     }
-    if let Some(rest) = cleaned.strip_prefix('~') {
-        if !rest.contains('/') {
-            return Err(reject(format!(
-                "--delete refuses an entire home directory ({cleaned:?}); choose a subdirectory"
-            )));
-        }
+    if let Some(rest) = cleaned.strip_prefix('~')
+        && !rest.contains('/')
+    {
+        return Err(reject(format!(
+            "--delete refuses an entire home directory ({cleaned:?}); choose a subdirectory"
+        )));
     }
     if Path::new(&cleaned).is_absolute() && cleaned.trim_matches('/').split('/').count() == 1 {
         return Err(reject(format!(

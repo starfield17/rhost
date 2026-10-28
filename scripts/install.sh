@@ -86,7 +86,7 @@ def active_standalone_rhost():
     except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired):
         return None
     if (result.returncode == 0 and isinstance(answer, dict) and
-            answer.get("schema_version") == 2 and
+            answer.get("schema_version") in (2, 3) and
             answer.get("operation") == "version" and answer.get("ok") is True and
             isinstance(answer.get("data"), dict) and
             isinstance(answer["data"].get("version"), str)):

@@ -27,7 +27,7 @@ pub struct DoctorDto {
 
 pub fn doctor(report: &super::app::Report) -> Envelope<DoctorDto> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "doctor",
         ok: true,
         host: Some(report.host.clone()),
@@ -66,7 +66,7 @@ pub fn doctor_failure(
 ) -> Envelope<DoctorDto> {
     let Envelope { error, .. } = exec(&report.host, outcome);
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "doctor",
         ok: false,
         host: Some(report.host.clone()),

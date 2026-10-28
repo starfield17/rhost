@@ -42,7 +42,7 @@ pub(crate) fn decode(text: &str) -> Option<Vec<u8>> {
     if clean.is_empty() {
         return Some(Vec::new());
     }
-    if clean.len() % 4 != 0 {
+    if !clean.len().is_multiple_of(4) {
         return None;
     }
     let mut out = Vec::with_capacity(clean.len() / 4 * 3);

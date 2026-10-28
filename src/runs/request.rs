@@ -5,14 +5,6 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Request {
-    pub schema_version: u8,
-    pub operation: String,
-    pub host: String,
-    pub params: Box<serde_json::value::RawValue>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Empty {}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -113,7 +105,6 @@ struct Signal {
 }
 pub struct Prepared {
     pub host: String,
-    pub operation: &'static str,
     pub kind: u32,
     pub body: Writer,
     pub wait_ms: u32,
@@ -153,27 +144,20 @@ pub fn key(value: &str) -> Result<u64, Error> {
     }
     Ok(seconds)
 }
-pub fn prepare(raw: &str) -> Result<Prepared, Error> {
-    if raw.len() > 16 * 1024 * 1024 {
-        return Err(invalid("JSON request exceeds 16 MiB"));
-    }
-    let q: Request = parse(raw)?;
-    if q.schema_version != 3 || q.host.is_empty() || q.host.contains('\0') {
-        return Err(invalid("request requires schema v3 and a host"));
-    }
+pub fn prepare(operation: &str, host: &str, params: &str) -> Result<Prepared, Error> {
     let mut body = Writer::default();
     let mut wait_ms = 0;
-    let (kind, operation) = match q.operation.as_str() {
+    let (kind, _operation) = match operation {
         "metadata" => {
-            let _: Empty = parse(q.params.get())?;
+            let _: Empty = parse(params)?;
             (8, "metadata")
         }
         "helper.prepare" => {
-            let _: Empty = parse(q.params.get())?;
+            let _: Empty = parse(params)?;
             (7, "helper.prepare")
         }
         "run.start" => {
-            let p: Start = parse(q.params.get())?;
+            let p: Start = parse(params)?;
             generation(&p.generation)?;
             if key(&p.key)? != p.expires_unix
                 || p.cwd.is_empty()
@@ -234,7 +218,7 @@ pub fn prepare(raw: &str) -> Result<Prepared, Error> {
             (2, "run.start")
         }
         "run.poll" => {
-            let p: Poll = parse(q.params.get())?;
+            let p: Poll = parse(params)?;
             generation(&p.generation)?;
             key(&p.run_id)?;
             if p.wait_ms > 300000 || p.max_bytes == 0 || p.max_bytes > 1048576 {
@@ -250,17 +234,17 @@ pub fn prepare(raw: &str) -> Result<Prepared, Error> {
             (3, "run.poll")
         }
         "run.list" | "run.prune" => {
-            let p: Namespace = parse(q.params.get())?;
+            let p: Namespace = parse(params)?;
             generation(&p.generation)?;
             body.text(&p.generation)?;
-            if q.operation == "run.list" {
+            if operation == "run.list" {
                 (4, "run.list")
             } else {
                 (6, "run.prune")
             }
         }
         "run.signal" => {
-            let p: Signal = parse(q.params.get())?;
+            let p: Signal = parse(params)?;
             generation(&p.generation)?;
             key(&p.run_id)?;
             body.text(&p.generation)?;
@@ -279,8 +263,7 @@ pub fn prepare(raw: &str) -> Result<Prepared, Error> {
         return Err(invalid("encoded request exceeds 8 MiB"));
     }
     Ok(Prepared {
-        host: q.host,
-        operation,
+        host: host.to_string(),
         kind,
         body,
         wait_ms,

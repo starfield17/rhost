@@ -2,7 +2,7 @@
 //! bounded read/write results.
 
 use super::ops;
-use crate::wire::{Envelope, ErrorPayload, error_payload, failure};
+use crate::wire::{Envelope, ErrorPayload, error_payload};
 use serde::Serialize;
 
 /// One single-file copy, with the endpoints that actually hold the bytes.
@@ -39,7 +39,7 @@ pub fn transfer<'a>(
     result: &'a ops::Transfer,
 ) -> Envelope<TransferDto<'a>> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation,
         ok: true,
         host: Some(host.to_string()),
@@ -79,7 +79,7 @@ pub fn sync<'a>(
     result: &'a ops::Sync,
 ) -> Envelope<SyncDto<'a>> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation,
         ok: true,
         host: Some(host.to_string()),
@@ -135,7 +135,7 @@ pub struct BatchDto<'a> {
 /// different claims, and an agent must be able to tell them apart.
 pub fn batch<'a>(host: &str, result: &'a ops::Batch) -> Envelope<BatchDto<'a>> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "fs.batch",
         ok: true,
         host: Some(host.to_string()),
@@ -175,7 +175,7 @@ pub struct FileReadDto<'a> {
 
 pub fn file_read<'a>(host: &str, result: &'a ops::Read) -> Envelope<FileReadDto<'a>> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "fs.read",
         ok: true,
         host: Some(host.to_string()),
@@ -197,6 +197,7 @@ pub struct FileWriteDto<'a> {
     path: &'a str,
     sha256: &'a str,
     bytes: u64,
+    mutation: &'static str,
 }
 
 pub fn file_write<'a>(
@@ -205,7 +206,7 @@ pub fn file_write<'a>(
     result: &'a ops::Write,
 ) -> Envelope<FileWriteDto<'a>> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation,
         ok: true,
         host: Some(host.to_string()),
@@ -214,6 +215,7 @@ pub fn file_write<'a>(
             path: &result.path,
             sha256: &result.sha256,
             bytes: result.bytes,
+            mutation: "applied",
         },
     }
 }
@@ -224,5 +226,12 @@ pub fn file_failure(
     host: &str,
     error: &crate::remote::Error,
 ) -> Envelope<Option<()>> {
-    failure(operation, host, error.code, &error.message, error.retryable)
+    crate::wire::failure_with_mutation(
+        operation,
+        host,
+        error.code,
+        &error.message,
+        error.retryable,
+        error.mutation,
+    )
 }

@@ -16,7 +16,15 @@ pub(crate) fn dispatch(
     interrupt: &Interrupt,
 ) -> u8 {
     match command {
-        Command::Request(request) => crate::runs::run(sink, client, request, interrupt),
+        Command::Mcp { help } => {
+            if help {
+                sink.line("Usage: rhost mcp\nServe schema-v3 operations over MCP stdio. Configure the MCP client with command rhost and args [\"mcp\"]. OpenSSH retains authentication and host-key ownership.");
+                0
+            } else {
+                crate::mcp::run(client, interrupt)
+            }
+        }
+        Command::Request(request) => crate::request::run(sink, client, request, interrupt),
         Command::Version => {
             if json {
                 sink.envelope(&wire::version());
@@ -71,5 +79,5 @@ fn version(sink: &mut Sink) {
         "build date",
         option_env!("RHOST_BUILD_DATE").unwrap_or("unknown"),
     );
-    field(sink, "schema version", "2");
+    field(sink, "schema version", "3");
 }

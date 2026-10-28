@@ -42,6 +42,8 @@ pub struct ErrorPayload {
     code: &'static str,
     message: String,
     retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mutation: Option<&'static str>,
 }
 
 pub(crate) fn error(code: &'static str, message: &str, retryable: bool) -> ErrorPayload {
@@ -49,6 +51,7 @@ pub(crate) fn error(code: &'static str, message: &str, retryable: bool) -> Error
         code,
         message: message.into(),
         retryable,
+        mutation: None,
     }
 }
 
@@ -66,13 +69,28 @@ pub fn failure(
     message: &str,
     retryable: bool,
 ) -> Envelope<Option<()>> {
+    failure_with_mutation(operation, host, code, message, retryable, None)
+}
+
+pub fn failure_with_mutation(
+    operation: &'static str,
+    host: &str,
+    code: &'static str,
+    message: &str,
+    retryable: bool,
+    mutation: Option<crate::domain::MutationEvidence>,
+) -> Envelope<Option<()>> {
+    let mut payload = error(code, message, retryable);
+    payload.mutation = mutation
+        .map(crate::domain::MutationEvidence::as_str)
+        .or_else(|| matches!(operation, "fs.write" | "fs.patch").then_some("not_applied"));
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation,
         ok: false,
         host: (!host.is_empty()).then(|| host.to_string()),
         data: None,
-        error: Some(error(code, message, retryable)),
+        error: Some(payload),
     }
 }
 
@@ -86,7 +104,7 @@ pub struct VersionDto {
 
 pub fn version() -> Envelope<VersionDto> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "version",
         ok: true,
         host: None,
@@ -95,14 +113,14 @@ pub fn version() -> Envelope<VersionDto> {
             version: env!("CARGO_PKG_VERSION"),
             commit: option_env!("RHOST_BUILD_COMMIT").unwrap_or("none"),
             build_date: option_env!("RHOST_BUILD_DATE").unwrap_or("unknown"),
-            schema_version: 2,
+            schema_version: 3,
         },
     }
 }
 
 pub fn usage(message: &str) -> Envelope<Option<()>> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "usage",
         ok: false,
         host: None,
@@ -122,7 +140,7 @@ pub fn group_usage(group: &str, message: &str) -> Envelope<Option<()>> {
         message.to_string()
     };
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: match group {
             "session" => "session.usage",
             "connection" => "connection.usage",

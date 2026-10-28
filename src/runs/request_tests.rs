@@ -1,10 +1,12 @@
-use super::request::prepare;
+fn prepare(raw: &str) -> Result<super::request::Prepared, crate::remote::Error> {
+    super::request::prepare("run.start", "gpu", raw)
+}
 use serde_json::json;
 fn request() -> String {
-    json!({"schema_version":3,"operation":"run.start","host":"gpu","params":{
+    json!({
         "generation":"a".repeat(32),"key":format!("2000000000-{}","b".repeat(64)),"expires_unix":2000000000u64,
         "cwd":"/tmp","program":{"argv":["/bin/true"]},"environment":{"inherit":false,"values":{}}
-    }}).to_string()
+    }).to_string()
 }
 #[test]
 fn request_identity_and_closed_fields_are_validated_before_transport() {
@@ -19,7 +21,7 @@ fn request_identity_and_closed_fields_are_validated_before_transport() {
     ] {
         let mut document: serde_json::Value =
             serde_json::from_str(&request()).unwrap_or_else(|e| panic!("fixture: {e}"));
-        document["params"][name] = value;
+        document[name] = value;
         assert!(prepare(&document.to_string()).is_err(), "{name}");
     }
 }

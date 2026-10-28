@@ -18,10 +18,12 @@ it names.
 | --- | --- |
 | `domain/` | values, transitions, completion evidence, CAS intents (pure) |
 | `helper/` | native helper sources, RH01 codec, preparation and raw SSH invocation |
+| `request/` | closed outer JSON requests and delivery-neutral capability composition |
+| `mcp/` | official SDK stdio adapter, scoped observation cancellation |
 | `runs/` | recoverable Run requests, CLI views, validation and observation DTOs |
 | `transport/` | the OpenSSH child, the wrapper protocol, the process loop |
 | `remote/` | the one submit-a-program path and the `Error` taxonomy |
-| `wire/` | the schema-v2 envelope, delivery, and the shared execution DTO |
+| `wire/` | the schema-v3 envelope, delivery, and the shared execution DTO |
 | `cli/` | flag tables, the argv scanner, `Sink`/`Failure` — capability-agnostic |
 | `dispatch/` | the whole-argv grammar, the subcommand inventory, help prose, routing |
 | `audit/` | the local JSON Lines trail, its command, and the shared `Timer` |

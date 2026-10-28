@@ -85,3 +85,32 @@ fn sync_resolution_preserves_missing_trailing_directories() -> Result<(), String
     assert!(!path.exists(), "resolution is read-only");
     Ok(())
 }
+
+#[test]
+fn a_lost_file_reply_preserves_unknown_mutation_after_the_bytes_changed() -> Result<(), String> {
+    let harness = Harness::open("native-file-lost-reply")?;
+    crate::hosts::local_host(&harness)?;
+    harness.stub("ssh", "for argument in \"$@\"; do remote=\"$argument\"; done\ncase \"$remote\" in *--files-json*) /bin/sh -c \"$remote\" >/dev/null; exit 255;; *) exec /bin/sh -c \"$remote\";; esac")?;
+    let target = harness.path("target");
+    harness.write("source", "changed\n", None)?;
+    let (outcome, answer) = crate::support::envelope(
+        &harness,
+        &[
+            "fs",
+            "write",
+            "gpu",
+            &target.to_string_lossy(),
+            "--from",
+            &harness.path("source").to_string_lossy(),
+            "--json",
+        ],
+    )?;
+    assert_eq!(outcome.status, 255, "{answer}");
+    assert_eq!(answer["error"]["code"], "REMOTE_EXECUTION_UNKNOWN");
+    assert_eq!(answer["error"]["mutation"], "unknown");
+    assert_eq!(
+        std::fs::read(&target).map_err(|e| e.to_string())?,
+        b"changed\n"
+    );
+    Ok(())
+}

@@ -69,13 +69,13 @@ pub fn write(client: &Client, options: &WriteOptions<'_>) -> Result<Write, Error
     }
     // The helper enforces this too; checking here costs nothing and saves a
     // round trip on a request that cannot succeed.
-    if let Some(mode) = &options.mode {
-        if !is_octal_mode(mode) {
-            return Err(Error::new(
-                "CONFIG_INVALID",
-                "--mode must be an octal permission such as 0644",
-            ));
-        }
+    if let Some(mode) = &options.mode
+        && !is_octal_mode(mode)
+    {
+        return Err(Error::new(
+            "CONFIG_INVALID",
+            "--mode must be an octal permission such as 0644",
+        ));
     }
     let answer: WriteResult = helper(
         client,

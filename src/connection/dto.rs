@@ -54,7 +54,7 @@ pub fn connection(
     status: &ConnectionDto,
 ) -> Envelope<ConnectionDto> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation,
         ok: true,
         host: Some(host.to_string()),
@@ -69,7 +69,7 @@ pub fn connection_failure(
     reason: &str,
 ) -> Envelope<ConnectionDto> {
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "connection.reset",
         ok: false,
         host: Some(host.to_string()),

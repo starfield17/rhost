@@ -14,6 +14,7 @@
 
 mod batch;
 mod edit;
+pub(crate) use edit::is_octal_mode;
 mod remote;
 mod sync;
 mod transfer;

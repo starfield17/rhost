@@ -110,6 +110,8 @@ pub(crate) struct HelperRefusal {
     pub(crate) error: String,
     #[serde(default)]
     pub(crate) message: Option<String>,
+    #[serde(default)]
+    pub(crate) mutation: Option<String>,
 }
 
 impl HelperRefusal {
@@ -124,7 +126,8 @@ impl HelperRefusal {
 /// an error, which the caller reports as `INTERNAL` rather than a code an agent
 /// might branch on.
 pub fn known_refusal_code(code: &str) -> Option<&'static str> {
-    const CODES: [&str; 12] = [
+    const CODES: [&str; 13] = [
+        "STATE_UNAVAILABLE",
         "CONFIG_INVALID",
         "FILE_CONFLICT",
         "HASH_REQUIRED",

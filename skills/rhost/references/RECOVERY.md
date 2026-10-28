@@ -158,3 +158,6 @@ an argument, an environment variable or a temporary plaintext file.
 After an account's state changes, run `doctor --fresh` to verify what the new
 login resolves to, then `connection reset` to retire the old authentication
 snapshot so the next call re-authenticates cleanly.
+
+
+Native helper and Run refusals: `HELPER_INCOMPATIBLE`, `HELPER_PREPARATION_FAILED`, `IDEMPOTENCY_CONFLICT`, `NAMESPACE_MISMATCH`, `OUTPUT_RANGE_UNAVAILABLE`, `PROTOCOL_ERROR`, `REQUEST_EXPIRED`, `RUN_CONTROL_UNAVAILABLE`, `RUN_NOT_FOUND`, `STATE_UNAVAILABLE`. Preserve the generation and request key. Preparation refusals do not launch a Run; an unknown submission must be inspected or retried only with the same key and payload. Run control refuses when no live owner proves its authority. Output range errors require a retained cursor. File errors also carry `error.mutation`: `not_applied`, `applied`, `partial` or `unknown`; an error is not proof that bytes stayed unchanged.

@@ -73,20 +73,34 @@ pub(super) fn parse_patch_document(
             })?,
     };
 
-    let mut edits = Vec::with_capacity(raw_edits.len());
-    let mut ranges = Vec::with_capacity(raw_edits.len());
+    let edits: Vec<Edit> = raw_edits
+        .iter()
+        .map(|raw| {
+            serde_json::from_value(raw.clone()).map_err(|_| {
+                Error::new(
+                    "INVALID_PATCH",
+                    "each edit needs either (start, end, text) or (old, new)",
+                )
+            })
+        })
+        .collect::<Result<_, _>>()?;
+    validate_edits(&edits)?;
+    Ok((edits, Some(carried)))
+}
+
+pub(super) fn validate_edits(edits: &[Edit]) -> Result<(), Error> {
+    if edits.is_empty() || edits.len() > 4096 {
+        return Err(Error::new(
+            "INVALID_PATCH",
+            "patch requires between 1 and 4096 edits",
+        ));
+    }
+    let mut ranges = Vec::with_capacity(edits.len());
     let mut replace_olds = std::collections::HashSet::new();
     let mut has_range = false;
     let mut has_replace = false;
-
-    for raw_edit in raw_edits {
-        let edit: Edit = serde_json::from_value(raw_edit.clone()).map_err(|_| {
-            Error::new(
-                "INVALID_PATCH",
-                "each edit needs either (start, end, text) or (old, new)",
-            )
-        })?;
-        match &edit {
+    for edit in edits {
+        match edit {
             Edit::Range(RangeEdit { start, end, .. }) => {
                 has_range = true;
                 if *start < 1 || *end < *start {
@@ -110,7 +124,6 @@ pub(super) fn parse_patch_document(
                 }
             }
         }
-        edits.push(edit);
     }
 
     if has_range && has_replace {
@@ -133,7 +146,7 @@ pub(super) fn parse_patch_document(
             previous_end = end;
         }
     }
-    Ok((edits, Some(carried)))
+    Ok(())
 }
 
 #[cfg(test)]

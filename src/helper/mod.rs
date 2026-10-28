@@ -245,12 +245,14 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
             "RHOST_FILE_{}\n",
             crate::random::hex(16).map_err(|e| Error::new("INTERNAL", e.to_string()))?
         );
-        let (run, stdout, _) = self.transport(
-            &self.command_mode(&marker, "--files-json"),
-            request,
-            timeout,
-            cap.saturating_add(65536),
-        )?;
+        let (run, stdout, _) = self
+            .transport(
+                &self.command_mode(&marker, "--files-json"),
+                request,
+                timeout,
+                cap.saturating_add(65536),
+            )
+            .map_err(|e| e.with_mutation(crate::domain::MutationEvidence::Unknown))?;
         if let Some(at) = stdout
             .windows(marker.len())
             .position(|s| s == marker.as_bytes())
@@ -264,12 +266,14 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
             return Err(Error::new(
                 "REMOTE_COMMAND_CANCELLED",
                 "file observation cancelled; mutation outcome is unknown",
-            ));
+            )
+            .with_mutation(crate::domain::MutationEvidence::Unknown));
         }
         Err(Error::new(
             "REMOTE_EXECUTION_UNKNOWN",
             "no complete native file helper answer; mutation outcome is unknown",
-        ))
+        )
+        .with_mutation(crate::domain::MutationEvidence::Unknown))
     }
 }
 fn never() -> bool {

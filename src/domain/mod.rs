@@ -2,6 +2,7 @@
 mod execution;
 mod files;
 mod identity;
+mod mutation;
 mod session;
 
 pub use execution::{
@@ -12,4 +13,5 @@ pub use files::{FileWrite, Sha256};
 pub use identity::{
     DomainError, ExitCode, InvocationToken, RemotePath, SessionId, SessionRef, VerifiedCompletion,
 };
+pub use mutation::MutationEvidence;
 pub use session::{PtyOutput, SessionExecOutcome, SessionFailure};

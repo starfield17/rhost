@@ -179,7 +179,7 @@ pub fn exec<'a>(host: &str, result: &'a domain::ExecOutcome) -> Envelope<ExecDto
         _ => None,
     };
     Envelope {
-        schema_version: 2,
+        schema_version: 3,
         operation: "exec",
         ok: failure.is_none(),
         host: Some(host.into()),

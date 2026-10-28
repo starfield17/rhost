@@ -203,10 +203,10 @@ pub fn ids() -> Result<Vec<String>, Fault> {
         let name = name.to_string_lossy();
         // A file that is not named after a tunnel is not one: it belongs to
         // something else in this directory, or to nothing.
-        if let Some(id) = name.strip_suffix(".json") {
-            if is_id(id) {
-                ids.push(id.to_string());
-            }
+        if let Some(id) = name.strip_suffix(".json")
+            && is_id(id)
+        {
+            ids.push(id.to_string());
         }
     }
     ids.sort();

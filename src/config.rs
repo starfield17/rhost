@@ -118,10 +118,10 @@ fn canonical_token(root: &Path) -> Vec<u8> {
     let text = root.to_string_lossy();
     let trimmed = text.trim_end_matches('/');
     let normalized = if trimmed.is_empty() { "/" } else { trimmed };
-    if Path::new(normalized).is_relative() {
-        if let Ok(absolute) = std::path::absolute(Path::new(normalized)) {
-            return absolute.to_string_lossy().into_owned().into_bytes();
-        }
+    if Path::new(normalized).is_relative()
+        && let Ok(absolute) = std::path::absolute(Path::new(normalized))
+    {
+        return absolute.to_string_lossy().into_owned().into_bytes();
     }
     normalized.as_bytes().to_vec()
 }
@@ -153,14 +153,13 @@ pub fn ensure_control_dir() -> Result<(), UnsafeLocalState> {
     let dir = control_dir();
     // The fallback lives in a world-writable root, so the root of the socket
     // directory is created and proved private before the sockets go inside it.
-    if dir.starts_with(SOCKET_FALLBACK_ROOT) {
-        if let Some(root) = dir
+    if dir.starts_with(SOCKET_FALLBACK_ROOT)
+        && let Some(root) = dir
             .parent()
             .filter(|p| *p != Path::new(SOCKET_FALLBACK_ROOT))
-        {
-            ensure_private_dir(root)
-                .map_err(|error| UnsafeLocalState(format!("control root: {error}")))?;
-        }
+    {
+        ensure_private_dir(root)
+            .map_err(|error| UnsafeLocalState(format!("control root: {error}")))?;
     }
     ensure_private_dir(&dir)
         .map_err(|error| UnsafeLocalState(format!("control directory: {error}")))

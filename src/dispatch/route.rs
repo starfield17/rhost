@@ -39,6 +39,15 @@ pub fn parse_invocation(argv: &[String]) -> super::Invocation {
         .map(|(_, token)| token.clone())
         .collect();
     let command = match group.as_str() {
+        "mcp" => match parse(&rest, crate::cli::PLAIN_FLAGS) {
+            Ok(p) if p.operands.is_empty() && !json => Command::Mcp {
+                help: p.bool_flag("help"),
+            },
+            _ => Command::Usage(Rejection::new(
+                Scope::Root,
+                "rhost mcp accepts only --help; MCP messages use stdin/stdout",
+            )),
+        },
         "request" | "run" | "helper" => Command::Request(crate::runs::parse(&group, &rest, json)),
         "exec" => wrap(crate::exec::command(&rest, json)),
         "doctor" => wrap(crate::doctor::command(&rest, json)),

@@ -89,6 +89,7 @@ impl Created {
                 code,
                 message: message.to_string(),
                 retryable,
+                mutation: None,
             }),
         }
     }
@@ -139,10 +140,10 @@ pub fn create(client: &Client, options: &CreateOptions<'_>) -> Result<Created, E
     // created, so there is no candidate session to report and this stays the
     // ordinary null-data failure. Once the request may have reached the host,
     // the candidate travels with the answer instead.
-    if let Some(failure) = &run.failure {
-        if !reached_host(failure.code) {
-            return Err(failure.clone());
-        }
+    if let Some(failure) = &run.failure
+        && !reached_host(failure.code)
+    {
+        return Err(failure.clone());
     }
     Ok(classify(&meta, options.cwd, &run))
 }

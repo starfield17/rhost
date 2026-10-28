@@ -39,16 +39,16 @@ pub fn remote_spec(host: &str, path: &str) -> String {
 /// the path part; the host travels to OpenSSH untouched.
 pub fn split_remote_spec(argument: &str) -> Option<(&str, &str)> {
     let mut at = argument.find(':');
-    if let Some(bracket) = argument.find('[') {
-        if at.is_none() || bracket < at.unwrap_or(usize::MAX) {
-            let rest = &argument[bracket..];
-            let end = rest.find(']')?;
-            let after = bracket + end + 1;
-            if argument[after..].starts_with(':') {
-                at = Some(after);
-            } else {
-                return None;
-            }
+    if let Some(bracket) = argument.find('[')
+        && (at.is_none() || bracket < at.unwrap_or(usize::MAX))
+    {
+        let rest = &argument[bracket..];
+        let end = rest.find(']')?;
+        let after = bracket + end + 1;
+        if argument[after..].starts_with(':') {
+            at = Some(after);
+        } else {
+            return None;
         }
     }
     let at = at?;

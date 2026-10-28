@@ -126,6 +126,7 @@ pub fn answer(bytes: &[u8], kind: u32) -> Result<Vec<u8>, Error> {
                 code,
                 message,
                 retryable,
+                mutation: None,
             })
         }
         _ => Err(protocol("invalid helper result tag")),

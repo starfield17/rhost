@@ -32,6 +32,9 @@ pub struct Invocation {
 /// capability variants carry that capability's own parsed request; the rest are
 /// the commands the composition root owns directly (version/help/usage).
 pub enum Command {
+    Mcp {
+        help: bool,
+    },
     Request(crate::runs::Invocation),
     Version,
     Help(Help),

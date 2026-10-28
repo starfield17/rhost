@@ -275,15 +275,15 @@ pub fn run(spec: &Spec<'_>, stdout: &mut dyn Stream, stderr: &mut dyn Stream) ->
         }
     }
 
-    if let Err(error) = stdout.finish() {
-        if failure.is_none() {
-            failure = Some(RunFailure::Stream(error));
-        }
+    if let Err(error) = stdout.finish()
+        && failure.is_none()
+    {
+        failure = Some(RunFailure::Stream(error));
     }
-    if let Err(error) = stderr.finish() {
-        if failure.is_none() {
-            failure = Some(RunFailure::Stream(error));
-        }
+    if let Err(error) = stderr.finish()
+        && failure.is_none()
+    {
+        failure = Some(RunFailure::Stream(error));
     }
     let _ = readers;
     settle(start, exit, timed_out, cancelled, failure)

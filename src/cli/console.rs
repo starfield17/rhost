@@ -5,7 +5,7 @@
 
 use super::Delivery;
 use crate::stdio::Stdout;
-use crate::wire::{Envelope, failure};
+use crate::wire::{Envelope, failure_with_mutation};
 use serde::Serialize;
 use std::io::{self, Write};
 
@@ -103,6 +103,7 @@ pub struct Failure {
     code: &'static str,
     message: String,
     retryable: bool,
+    mutation: Option<crate::domain::MutationEvidence>,
 }
 
 impl Failure {
@@ -118,6 +119,7 @@ impl Failure {
             code,
             message: message.into(),
             retryable: false,
+            mutation: None,
         }
     }
 
@@ -130,6 +132,7 @@ impl Failure {
             code: error.code,
             message: error.message,
             retryable: error.retryable,
+            mutation: error.mutation,
         }
     }
 
@@ -160,12 +163,13 @@ impl Failure {
     pub fn deliver(self, sink: &mut Sink, json: bool) -> u8 {
         let status = self.status();
         if json {
-            sink.envelope(&failure(
+            sink.envelope(&failure_with_mutation(
                 self.operation,
                 &self.host,
                 self.code,
                 &self.message,
                 self.retryable,
+                self.mutation,
             ));
         } else {
             warn(&format!("rhost: {}: {}", self.code, self.message));
