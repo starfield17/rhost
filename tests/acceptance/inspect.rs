@@ -63,3 +63,92 @@ fn per_file_match_truncation_and_scan_incompleteness_are_distinct() -> Result<()
     assert_eq!(partial["skipped"][0]["code"], "INVALID_TEXT");
     Ok(())
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn changing_files_still_charge_the_actual_scan_read_budget() -> Result<(), String> {
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::{Duration, Instant, SystemTime},
+    };
+    let h = Harness::open("search-read-budget")?;
+    std::fs::create_dir(h.path("tree")).map_err(|e| e.to_string())?;
+    let mut files = Vec::new();
+    for i in 0..64 {
+        let file =
+            std::fs::File::create(h.path(&format!("tree/f{i:03}"))).map_err(|e| e.to_string())?;
+        file.set_len(8 * 1024 * 1024).map_err(|e| e.to_string())?;
+        files.push(file);
+    }
+    let stop = Arc::new(AtomicBool::new(false));
+    let flag = stop.clone();
+    let writer = std::thread::spawn(move || {
+        while !flag.load(Ordering::SeqCst) {
+            for file in &files {
+                let _ = file.set_modified(SystemTime::now());
+            }
+        }
+    });
+    let payload =
+        serde_json::to_vec(&json!({"op":"search","root":h.path("tree"),"pattern":"absent"}))
+            .map_err(|e| e.to_string())?;
+    let output_path = h.path("answer");
+    let mut child =
+        Command::new(std::env::var_os("RHOST_HELPER_BIN").ok_or("set RHOST_HELPER_BIN")?)
+            .arg("--files-json")
+            .env_remove("RHOST_EXPECT_BOOT_ID")
+            .stdin(Stdio::piped())
+            .stdout(std::fs::File::create(&output_path).map_err(|e| e.to_string())?)
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .take()
+        .ok_or("stdin")?
+        .write_all(&payload)
+        .map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let mut answer = None;
+    while Instant::now() < deadline {
+        if let Ok(bytes) = std::fs::read(&output_path)
+            && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes)
+        {
+            answer = Some(value);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    // Keep the child unreaped until IO accounting is read. rchar counts read()
+    // and pread() bytes, including page-cache reads (Linux proc documentation).
+    let accounting = std::fs::read_to_string(format!("/proc/{}/io", child.id()));
+    stop.store(true, Ordering::SeqCst);
+    writer.join().map_err(|_| "writer panicked")?;
+    if answer.is_none() {
+        let _ = child.kill();
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let answer = answer.ok_or("bounded search did not finish")?;
+    assert!(status.success(), "{answer}");
+    let chars = accounting
+        .map_err(|e| e.to_string())?
+        .lines()
+        .find_map(|s| {
+            s.strip_prefix("rchar: ")
+                .and_then(|v| v.trim().parse::<u64>().ok())
+        })
+        .ok_or("read accounting missing")?;
+    let scanned = answer["scanned_bytes"].as_u64().ok_or("scanned bytes")?;
+    assert!(scanned <= 64 * 1024 * 1024, "{answer}");
+    assert!(
+        chars <= scanned + payload.len() as u64 + 1024 * 1024,
+        "kernel read counter {chars} exceeds reported scan {scanned}"
+    );
+    assert_eq!(answer["incomplete"], true);
+    Ok(())
+}
