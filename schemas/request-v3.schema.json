@@ -28,7 +28,9 @@
         "fs.changeset.apply",
         "fs.changeset.query",
         "fs.changeset.recover",
-        "fs.changeset.prune"
+        "fs.changeset.prune",
+        "fs.search",
+        "fs.read_many"
       ]
     },
     "host": {
@@ -240,6 +242,38 @@
         "properties": {
           "params": {
             "$ref": "#/$defs/changeset_id"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.search"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_search"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.read_many"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_read_many"
           }
         }
       }
@@ -747,6 +781,78 @@
             "resume",
             "rollback"
           ]
+        }
+      }
+    },
+    "fs_search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^[^\\u0000]*$"
+        },
+        "glob": {
+          "type": "string",
+          "pattern": "^[^\\u0000]*$"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "cursor": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}:[0-9]{1,4}$"
+        },
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_matches": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      }
+    },
+    "fs_read_many": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paths"
+      ],
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\u0000]*$"
+          }
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8388608
         }
       }
     }
