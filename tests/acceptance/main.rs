@@ -29,6 +29,7 @@ mod hosts;
 mod remote_fs;
 mod remote_fs_native;
 mod remote_fs_support;
+mod request;
 mod session;
 mod support;
 mod transport;
