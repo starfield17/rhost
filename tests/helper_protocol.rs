@@ -116,6 +116,16 @@ fn executable_probe_is_bounded_and_does_not_invent_capabilities() {
     body = &body[4..];
     let boot = text(&mut body);
     assert!(matches!(boot.len(), 0 | 36));
+    let image = text(&mut body);
+    let bytes = std::fs::read(
+        std::env::var_os("RHOST_HELPER_BIN").unwrap_or_else(|| panic!("set RHOST_HELPER_BIN")),
+    )
+    .unwrap_or_else(|e| panic!("image: {e}"));
+    let expected_image = Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    assert_eq!(image, expected_image);
     for expected in [8388608u32, 12582912, 8388608, 67108864, 1048576] {
         assert!(body.len() >= 4);
         assert_eq!(&body[..4], &expected.to_be_bytes());

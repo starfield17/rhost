@@ -196,16 +196,21 @@ fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
     let key = format!("{expiry}-{}", "d".repeat(64));
     let started=m.call(3,"rhost_run_start",json!({"host":"gpu","params":{"generation":generation,"key":key,"expires_unix":expiry,"cwd":"/","program":{"argv":["/bin/sleep","30"]},"environment":{"inherit":false,"values":{}}}}))?;
     assert_eq!(started["ok"], true, "{started}");
+    let submissions = harness.path("submitted-polls");
+    std::fs::create_dir(&submissions).map_err(|e| e.to_string())?;
+    let observed = crate::hosts::LOCAL_HOST.replace(
+        "exec /bin/bash",
+        &format!(
+            "case \"$remote\" in *RHOST_FRAME_3_*) : > {}/\"$$\";; esac\nexec /bin/bash",
+            crate::support::shell_quote(&submissions.to_string_lossy())
+        ),
+    );
+    harness.stub("ssh", &observed)?;
     let submitted = || {
-        harness
-            .calls()
-            .iter()
-            .filter(|call| {
-                call.program == "ssh" && call.args.iter().any(|arg| arg.contains("RHOST_FRAME_3_"))
-            })
-            .count()
+        std::fs::read_dir(&submissions)
+            .map(|entries| entries.count())
+            .unwrap_or(0)
     };
-    let before = submitted();
     for id in 10..26 {
         m.start(
             id,
@@ -214,7 +219,7 @@ fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
         )?;
     }
     let deadline = Instant::now() + Duration::from_secs(10);
-    while submitted() < before + 16 {
+    while submitted() < 16 {
         if Instant::now() >= deadline {
             return Err("16 observations did not reach SSH".into());
         }

@@ -96,3 +96,13 @@ queue. The stdio acceptance instead verifies that cancelled queued mutations sta
 unsubmitted when capacity returns; a direct admission-state test requires waiting
 to end without obtaining a permit. EOF-during-active-observation acceptance stays
 in place and requires prompt shutdown without signaling the Run.
+
+
+### Concurrent MCP submission oracle
+
+The per-operation occupancy measurement initially reused the harness's shared
+line log. Concurrent SSH stand-ins can interleave their argv lines, so counting
+records containing a poll marker undercounted real submissions and hit the
+fixture deadline. MCP occupancy now uses one private marker file per submitted
+poll process; it still requires all 16 active poll submissions before queuing a
+mutation. The shared diagnostic log is not a concurrency synchronization oracle.

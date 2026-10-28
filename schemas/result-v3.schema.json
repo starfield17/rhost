@@ -2323,7 +2323,8 @@
                       "os",
                       "arch",
                       "capabilities",
-                      "limits"
+                      "limits",
+                      "binary_sha256"
                     ],
                     "properties": {
                       "protocol": {
@@ -2381,6 +2382,10 @@
                             "const": 1048576
                           }
                         }
+                      },
+                      "binary_sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
                       }
                     }
                   },

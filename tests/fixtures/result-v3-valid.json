@@ -561,7 +561,8 @@
             "file_edit_bytes": 8388608,
             "run_stream_bytes": 67108864,
             "run_page_bytes": 1048576
-          }
+          },
+          "binary_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         }
       },
       "error": null
@@ -595,7 +596,8 @@
             "file_edit_bytes": 8388608,
             "run_stream_bytes": 67108864,
             "run_page_bytes": 1048576
-          }
+          },
+          "binary_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
         }
       },
       "error": null
