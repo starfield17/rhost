@@ -111,7 +111,7 @@ ALLOWED = {
              "transport", "wire"},
     "request": {"cli", "domain", "files", "remote", "runs", "signals", "transport", "wire"},
     "mcp": {"request", "transport", "cli", "signals"},
-    "runs": {"cli", "helper", "remote", "transport", "base64", "shell", "signals"},
+    "runs": {"domain", "cli", "helper", "remote", "transport", "base64", "shell", "signals"},
     "hosts": {"cli", "host", "wire"},
     "connection": {"audit", "cli", "transport", "wire"},
     "doctor": {"audit", "cli", "connection", "domain", "remote", "transport", "wire"},
