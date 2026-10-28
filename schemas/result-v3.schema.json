@@ -55,7 +55,11 @@
         "run.list",
         "run.signal",
         "run.prune",
-        "helper.prepare"
+        "helper.prepare",
+        "fs.changeset.apply",
+        "fs.changeset.query",
+        "fs.changeset.recover",
+        "fs.changeset.prune"
       ]
     },
     "ok": {
@@ -2162,7 +2166,11 @@
             "run.list",
             "run.signal",
             "run.prune",
-            "helper.prepare"
+            "helper.prepare",
+            "fs.changeset.apply",
+            "fs.changeset.query",
+            "fs.changeset.recover",
+            "fs.changeset.prune"
           ]
         },
         "ok": {
@@ -2236,16 +2244,6 @@
             "properties": {
               "error": {
                 "$ref": "#/$defs/native/$defs/error"
-              },
-              "data": {
-                "oneOf": [
-                  {
-                    "type": "null"
-                  },
-                  {
-                    "$ref": "#/$defs/native/$defs/stale"
-                  }
-                ]
               }
             }
           }
@@ -2511,6 +2509,241 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "ok": {
+                "const": false
+              },
+              "operation": {
+                "enum": [
+                  "metadata",
+                  "request",
+                  "run.start",
+                  "run.poll",
+                  "run.list",
+                  "run.signal",
+                  "run.prune",
+                  "helper.prepare"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/$defs/native/$defs/stale"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.apply"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/changeset"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.apply"
+              },
+              "ok": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/native/$defs/changeset"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "required": [
+                  "mutation"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.query"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/changeset"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.query"
+              },
+              "ok": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/native/$defs/changeset"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "required": [
+                  "mutation"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.recover"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/changeset"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.recover"
+              },
+              "ok": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/native/$defs/changeset"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "required": [
+                  "mutation"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.prune"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/change_pruned"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.prune"
+              },
+              "ok": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/native/$defs/changeset"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "error": {
+                "required": [
+                  "mutation"
+                ]
+              }
+            }
+          }
         }
       ],
       "$defs": {
@@ -2749,6 +2982,209 @@
               "$ref": "#/$defs/native/$defs/run"
             },
             "stale": {
+              "const": true
+            }
+          }
+        },
+        "change_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "state",
+            "before_hash",
+            "after_hash",
+            "ever_applied"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^[^\\u0000]*$"
+            },
+            "state": {
+              "enum": [
+                "pending",
+                "installing",
+                "installed",
+                "restoring",
+                "restored"
+              ]
+            },
+            "before_hash": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "after_hash": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ever_applied": {
+              "type": "boolean"
+            }
+          }
+        },
+        "changeset": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "generation",
+            "id",
+            "fingerprint",
+            "expires_unix",
+            "status",
+            "mutation",
+            "owner_active",
+            "cleanup_pending",
+            "files",
+            "failure"
+          ],
+          "properties": {
+            "generation": {
+              "$ref": "#/$defs/native/$defs/generation"
+            },
+            "id": {
+              "$ref": "#/$defs/native/$defs/key"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "expires_unix": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999999999999
+            },
+            "status": {
+              "enum": [
+                "registered",
+                "prepared",
+                "applying",
+                "applied",
+                "partial",
+                "rolling_back",
+                "rolled_back",
+                "refused",
+                "unknown"
+              ]
+            },
+            "mutation": {
+              "enum": [
+                "not_applied",
+                "applied",
+                "partial",
+                "unknown"
+              ]
+            },
+            "owner_active": {
+              "type": "boolean"
+            },
+            "cleanup_pending": {
+              "type": "boolean"
+            },
+            "files": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/native/$defs/change_file"
+              }
+            },
+            "failure": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "CONFIG_INVALID",
+                        "CONTEXT_CHANGED",
+                        "CONTEXT_UNAVAILABLE",
+                        "FILE_CONFLICT",
+                        "FILE_NOT_FOUND",
+                        "FILE_TOO_LARGE",
+                        "HASH_REQUIRED",
+                        "HELPER_INCOMPATIBLE",
+                        "HELPER_PREPARATION_FAILED",
+                        "HOST_KEY_FAILED",
+                        "HOST_UNKNOWN",
+                        "IDEMPOTENCY_CONFLICT",
+                        "INTERNAL",
+                        "INVALID_PATCH",
+                        "INVALID_TARGET",
+                        "INVALID_TEXT",
+                        "NAMESPACE_MISMATCH",
+                        "OUTPUT_RANGE_UNAVAILABLE",
+                        "OUTPUT_WRITE_FAILED",
+                        "PROTOCOL_ERROR",
+                        "REMOTE_COMMAND_CANCELLED",
+                        "REMOTE_COMMAND_TIMEOUT",
+                        "REMOTE_DEPENDENCY_MISSING",
+                        "REMOTE_EXECUTION_UNKNOWN",
+                        "REQUEST_EXPIRED",
+                        "RUN_CONTROL_UNAVAILABLE",
+                        "RUN_NOT_FOUND",
+                        "SESSION_BUSY",
+                        "SESSION_NOT_FOUND",
+                        "SESSION_UNHEALTHY",
+                        "SSH_AUTH_FAILED",
+                        "SSH_CONTROL_FAILED",
+                        "SSH_UNREACHABLE",
+                        "STATE_UNAVAILABLE",
+                        "SYNC_REJECTED",
+                        "TRANSFER_FAILED",
+                        "TUNNEL_FAILED",
+                        "TUNNEL_NOT_FOUND",
+                        "UNSUPPORTED_REMOTE_OS",
+                        "USAGE_ERROR"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "change_pruned": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "generation",
+            "id",
+            "pruned"
+          ],
+          "properties": {
+            "generation": {
+              "$ref": "#/$defs/native/$defs/generation"
+            },
+            "id": {
+              "$ref": "#/$defs/native/$defs/key"
+            },
+            "pruned": {
               "const": true
             }
           }

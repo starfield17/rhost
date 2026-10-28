@@ -24,7 +24,11 @@
         "helper.prepare",
         "fs.read",
         "fs.write",
-        "fs.patch"
+        "fs.patch",
+        "fs.changeset.apply",
+        "fs.changeset.query",
+        "fs.changeset.recover",
+        "fs.changeset.prune"
       ]
     },
     "host": {
@@ -172,6 +176,70 @@
         "properties": {
           "params": {
             "$ref": "#/$defs/fs_patch"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.apply"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_apply"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.query"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_id"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.recover"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_recover"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.prune"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_id"
           }
         }
       }
@@ -507,6 +575,178 @@
               }
             ]
           }
+        }
+      }
+    },
+    "changeset_apply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "key",
+        "expires_unix",
+        "changes"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "expires_unix": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999999999
+        },
+        "changes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "content",
+                  "op"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "if_hash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "pattern": "^[0-7]{3,4}$"
+                  },
+                  "op": {
+                    "const": "write"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "if_hash",
+                  "edits",
+                  "op"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "if_hash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "edits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "start",
+                            "end",
+                            "text"
+                          ],
+                          "properties": {
+                            "start": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "end": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "old",
+                            "new"
+                          ],
+                          "properties": {
+                            "old": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "new": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "op": {
+                    "const": "patch"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "changeset_id": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "id"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "id": {
+          "$ref": "#/$defs/key"
+        }
+      }
+    },
+    "changeset_recover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "id",
+        "action"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "id": {
+          "$ref": "#/$defs/key"
+        },
+        "action": {
+          "enum": [
+            "resume",
+            "rollback"
+          ]
         }
       }
     }
