@@ -186,7 +186,7 @@ fn mcp_cancellation_is_scoped_and_does_not_cancel_the_run() -> Result<(), String
     m.close()
 }
 
-fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
+pub(super) fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
     let prepared = m.call(2, "rhost_helper_prepare", json!({"host":"gpu","params":{}}))?;
     let generation = prepared["data"]["generation"].clone();
     let expiry = prepared["data"]["remote_time_unix"]
