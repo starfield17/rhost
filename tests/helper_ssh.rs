@@ -235,11 +235,24 @@ fn observer_cancellation_preserves_work_and_signals_are_explicit() -> Result<(),
     let h = Host::new()?;
     let (g, expiry) = h.prepare()?;
     let key = Host::key(expiry);
-    let started = h.ok("run.start", h.start(&g, expiry, &key, "sleep 20", 0, 25000))?;
-    assert!(matches!(
-        started["run"]["status"].as_str(),
-        Some("running" | "starting")
-    ));
+    let started = h.ok(
+        "run.start",
+        h.start(
+            &g,
+            expiry,
+            &key,
+            "while [ ! -f release ]; do sleep 0.05; done",
+            0,
+            120000,
+        ),
+    )?;
+    assert!(
+        matches!(
+            started["run"]["status"].as_str(),
+            Some("accepted" | "running" | "starting")
+        ),
+        "{started}"
+    );
     let observer = h.spawn(
         "run.poll",
         json!({"generation":g,"run_id":key,"wait_ms":30000}),
@@ -283,10 +296,16 @@ fn deadlines_and_inherited_pipes_have_bounded_observation() -> Result<(), String
     assert_eq!(done["run"]["status"], "exited");
     assert!(done["run"]["completion"]["signal"].as_u64().is_some());
     let key = Host::key(expiry);
-    let before = Instant::now();
     h.ok(
         "run.start",
-        h.start(&g, expiry, &key, "sleep 5 & printf leader", 0, 10000),
+        h.start(
+            &g,
+            expiry,
+            &key,
+            "(while [ ! -f release ]; do sleep 0.05; done) & printf leader",
+            0,
+            10000,
+        ),
     )?;
     let done = h.ok(
         "run.poll",
@@ -294,7 +313,16 @@ fn deadlines_and_inherited_pipes_have_bounded_observation() -> Result<(), String
     )?;
     assert_eq!(done["run"]["completion"]["exit_code"], 0);
     assert_eq!(done["stdout"]["content"], "leader");
-    assert!(before.elapsed() < Duration::from_secs(5));
+    // The descendant still holds the pipes: completion cannot depend on EOF.
+    let final_page = h.ok(
+        "run.poll",
+        json!({"generation":g,"run_id":key,"wait_ms":5000}),
+    )?;
+    assert_eq!(final_page["stdout"]["incomplete"], true);
+    h.ok(
+        "fs.write",
+        json!({"path":format!("{}/release",h.root),"content":"release"}),
+    )?;
     Ok(())
 }
 

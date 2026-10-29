@@ -106,3 +106,12 @@ records containing a poll marker undercounted real submissions and hit the
 fixture deadline. MCP occupancy now uses one private marker file per submitted
 poll process; it still requires all 16 active poll submissions before queuing a
 mutation. The shared diagnostic log is not a concurrency synchronization oracle.
+
+### Remote Run lifecycle acceptance
+
+The first real-SSH helper suite incorrectly excluded the documented `accepted`
+state from a zero-wait start and used total client round-trip time to measure
+the remote pipe-drain grace. The suite now accepts the registered launch state,
+holds work behind an explicit release file, and requires an exited leader plus
+incomplete stream evidence while its descendant still holds the pipe. Network
+latency is not the oracle for remote process/stream independence.
