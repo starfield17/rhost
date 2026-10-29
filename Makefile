@@ -46,8 +46,10 @@ rust-check: helper-candidate
 	cargo fmt --check
 	cargo clippy --locked --all-targets -- -D warnings
 	cargo clippy --locked --features live-tests --test live -- -D warnings
+	cargo clippy --locked --features helper-live-tests --test helper_ssh -- -D warnings
 	cargo test --locked
 	cargo test --locked --features live-tests --test live --no-run
+	cargo test --locked --features helper-live-tests --test helper_ssh --no-run
 	@mkdir -p target/domain-check
 	rustc --edition=2024 --crate-type lib --crate-name rhost_domain src/domain/mod.rs -D warnings --out-dir target/domain-check
 portability:
@@ -129,6 +131,13 @@ test-live-all:
 	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" >&2; exit 1)
 	@test -n "$(RHOST_BIN)" || (echo "set RHOST_BIN to an explicit binary" >&2; exit 1)
 	cargo test --locked --features live-tests --test live -- --nocapture --test-threads=1
+
+.PHONY: test-live-helper
+test-live-helper:
+	@test -n "$(RHOST_TEST_HOST)" || (echo "set RHOST_TEST_HOST=<user>@<host>" >&2; exit 1)
+	@test -n "$(RHOST_BIN)" || (echo "set RHOST_BIN to an explicit binary" >&2; exit 1)
+	@test -n "$(RHOST_HELPER_BIN)" || (echo "set RHOST_HELPER_BIN to the exact remote native candidate" >&2; exit 1)
+	cargo test --locked --features helper-live-tests --test helper_ssh -- --nocapture --test-threads=1
 
 
 .PHONY: native-helper-check
