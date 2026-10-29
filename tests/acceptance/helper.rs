@@ -113,7 +113,10 @@ fn configured_linker_keeps_its_driver_name() -> Result<(), String> {
     )?;
     h.write(
         "compiler",
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$RHOST_LINKER_ARGS\"\nexit 8\n",
+        &format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > {}\nexit 8\n",
+            crate::support::shell_quote(&h.path("arguments").to_string_lossy())
+        ),
         Some(0o700),
     )?;
     h.write("builtins", "library", None)?;
@@ -127,7 +130,6 @@ fn configured_linker_keeps_its_driver_name() -> Result<(), String> {
         .env("RHOST_HELPER_SYSROOT", h.path("sysroot"))
         .env("RHOST_HELPER_BUILTINS", h.path("builtins"))
         .env("RHOST_HELPER_LD", h.path("ld.lld"))
-        .env("RHOST_LINKER_ARGS", h.path("arguments"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped());
     let mut child = command.spawn().map_err(|e| e.to_string())?;
