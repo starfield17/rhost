@@ -88,7 +88,7 @@ impl Mcp {
         let response = self.answer(id)?;
         let value = response["result"]["structuredContent"].clone();
         let schema: Value =
-            serde_json::from_str(include_str!("../../schemas/result-v3.schema.json"))
+            serde_json::from_str(include_str!("../../schemas/result-v4.schema.json"))
                 .map_err(|e| e.to_string())?;
         assert!(
             jsonschema::validator_for(&schema)

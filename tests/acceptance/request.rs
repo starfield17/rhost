@@ -10,7 +10,7 @@ fn structured_files_share_cas_and_do_not_require_shell_quoting() -> Result<(), S
         .to_string_lossy()
         .into_owned();
     let request = |operation: &str, params| {
-        json!({"schema_version":3,"host":"gpu","operation":operation,"params":params}).to_string()
+        json!({"schema_version":4,"host":"gpu","operation":operation,"params":params}).to_string()
     };
     let (outcome, written) = envelope_with_stdin(
         &harness,
@@ -54,13 +54,13 @@ fn structured_files_share_cas_and_do_not_require_shell_quoting() -> Result<(), S
 #[test]
 fn raw_request_duplicates_and_invalid_file_parameters_stop_before_ssh() -> Result<(), String> {
     for (index, raw) in [
-        r#"{"schema_version":3,"operation":"fs.write","host":"gpu","params":{"path":"/srv/file","content":"a","content":"b"}}"#,
-        r#"{"schema_version":3,"operation":"fs.write","host":"gpu","params":{"path":"/srv/file","content":true}}"#,
-        r#"{"schema_version":3,"operation":"fs.read","host":"gpu","params":{"path":"/srv/file","max_bytes":0}}"#,
-        r#"{"schema_version":3,"operation":"fs.patch","host":"gpu","params":{"path":"/srv/file","if_hash":"","edits":[]}}"#,
-        r#"{"schema_version":3,"operation":"run.list","host":"gpu","host":"other","params":{}}"#,
-        r#"{"schema_version":3,"operation":"metadata","host":"gpu","if_boot_id":"invalid","params":{}}"#,
-        r#"{"schema_version":3,"operation":"metadata","host":"gpu","if_boot_id":null,"params":{}}"#,
+        r#"{"schema_version":4,"operation":"fs.write","host":"gpu","params":{"path":"/srv/file","content":"a","content":"b"}}"#,
+        r#"{"schema_version":4,"operation":"fs.write","host":"gpu","params":{"path":"/srv/file","content":true}}"#,
+        r#"{"schema_version":4,"operation":"fs.read","host":"gpu","params":{"path":"/srv/file","max_bytes":0}}"#,
+        r#"{"schema_version":4,"operation":"fs.patch","host":"gpu","params":{"path":"/srv/file","if_hash":"","edits":[]}}"#,
+        r#"{"schema_version":4,"operation":"run.list","host":"gpu","host":"other","params":{}}"#,
+        r#"{"schema_version":4,"operation":"metadata","host":"gpu","if_boot_id":"invalid","params":{}}"#,
+        r#"{"schema_version":4,"operation":"metadata","host":"gpu","if_boot_id":null,"params":{}}"#,
     ].into_iter().enumerate() {
         let harness = Harness::open(&format!("request-invalid-{index}"))?;
         let (outcome, answer) = envelope_with_stdin(&harness, &["request","--from","-"],raw.as_bytes())?;
@@ -81,7 +81,7 @@ fn changeset_failure_keeps_its_record_in_the_public_envelope() -> Result<(), Str
         envelope_with_stdin(
             &harness,
             &["request", "--from", "-"],
-            json!({"schema_version":3,"operation":op,"host":"gpu","params":params})
+            json!({"schema_version":4,"operation":op,"host":"gpu","params":params})
                 .to_string()
                 .as_bytes(),
         )
@@ -105,7 +105,7 @@ fn changeset_failure_keeps_its_record_in_the_public_envelope() -> Result<(), Str
     assert_eq!(result["data"]["files"].as_array().ok_or("files")?.len(), 2);
     assert!(!std::path::Path::new(&a).exists());
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../../schemas/result-v3.schema.json"))
+        serde_json::from_str(include_str!("../../schemas/result-v4.schema.json"))
             .map_err(|e| e.to_string())?;
     let validator = jsonschema::validator_for(&schema).map_err(|e| e.to_string())?;
     assert!(validator.is_valid(&result), "{result}");
@@ -121,7 +121,7 @@ fn fs_changeset_cli_uses_the_same_typed_json_parameters() -> Result<(), String> 
     let (_, p) = envelope_with_stdin(
         &h,
         &["request", "--from", "-"],
-        br#"{"schema_version":3,"operation":"helper.prepare","host":"gpu","params":{}}"#,
+        br#"{"schema_version":4,"operation":"helper.prepare","host":"gpu","params":{}}"#,
     )?;
     let expiry = p["data"]["remote_time_unix"].as_u64().ok_or("time")? + 3600;
     let id = format!("{expiry}-{}", "4".repeat(64));
@@ -146,7 +146,7 @@ fn structured_inspection_cli_results_match_the_active_schema() -> Result<(), Str
     std::fs::create_dir_all(path.parent().ok_or("parent")?).map_err(|e| e.to_string())?;
     std::fs::write(&path, b"needle\n").map_err(|e| e.to_string())?;
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../../schemas/result-v3.schema.json"))
+        serde_json::from_str(include_str!("../../schemas/result-v4.schema.json"))
             .map_err(|e| e.to_string())?;
     let validator = jsonschema::validator_for(&schema).map_err(|e| e.to_string())?;
     for (leaf, params) in [

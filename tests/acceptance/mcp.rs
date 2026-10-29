@@ -72,7 +72,7 @@ impl Mcp {
         let response = self.answer(id)?;
         let envelope = response["result"]["structuredContent"].clone();
         let schema: Value =
-            serde_json::from_str(include_str!("../../schemas/result-v3.schema.json"))
+            serde_json::from_str(include_str!("../../schemas/result-v4.schema.json"))
                 .map_err(|e| e.to_string())?;
         let validator = jsonschema::validator_for(&schema).map_err(|e| e.to_string())?;
         assert!(validator.is_valid(&envelope), "{response}");

@@ -5,10 +5,10 @@ use serde_json::{Value, json};
 #[test]
 fn tool_schemas_preserve_contract_acceptance_and_stay_bounded()
 -> Result<(), Box<dyn std::error::Error>> {
-    let input: Value = serde_json::from_str(include_str!("../schemas/request-v3.schema.json"))?;
-    let result: Value = serde_json::from_str(include_str!("../schemas/result-v3.schema.json"))?;
+    let input: Value = serde_json::from_str(include_str!("../schemas/request-v4.schema.json"))?;
+    let result: Value = serde_json::from_str(include_str!("../schemas/result-v4.schema.json"))?;
     let fixtures: Value =
-        serde_json::from_str(include_str!("../tests/fixtures/result-v3-valid.json"))?;
+        serde_json::from_str(include_str!("../tests/fixtures/result-v4-valid.json"))?;
     let full = jsonschema::validator_for(&result)?;
     let mut bytes = 0;
     for operation in input["properties"]["operation"]["enum"]
@@ -44,7 +44,7 @@ fn tool_schemas_preserve_contract_acceptance_and_stay_bounded()
             assert!(!validator.is_valid(&extra));
         }
         assert!(!validator.is_valid(
-            &json!({"schema_version":3,"operation":"unrelated","ok":false,"data":null,"error":null})
+            &json!({"schema_version":4,"operation":"unrelated","ok":false,"data":null,"error":null})
         ));
     }
     assert!(
@@ -57,7 +57,7 @@ fn tool_schemas_preserve_contract_acceptance_and_stay_bounded()
 #[test]
 fn tool_input_projection_preserves_target_and_parameter_refusals()
 -> Result<(), Box<dyn std::error::Error>> {
-    let source: Value = serde_json::from_str(include_str!("../schemas/request-v3.schema.json"))?;
+    let source: Value = serde_json::from_str(include_str!("../schemas/request-v4.schema.json"))?;
     let full = jsonschema::validator_for(&source)?;
     for (op, params) in [
         ("version", json!({})),
@@ -108,7 +108,7 @@ fn tool_input_projection_preserves_target_and_parameter_refusals()
         cases.push(unknown);
         for args in cases {
             let mut document = args.clone();
-            document["schema_version"] = 3.into();
+            document["schema_version"] = 4.into();
             document["operation"] = op.into();
             assert_eq!(
                 validator.is_valid(&args),

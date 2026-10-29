@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const SCHEMA: &str = include_str!("../../schemas/result-v3.schema.json");
+const SCHEMA: &str = include_str!("../../schemas/result-v4.schema.json");
 const CALL_DEADLINE: Duration = Duration::from_secs(180);
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -33,7 +33,7 @@ impl Live {
         }
         let live = Self { binary, host, root };
         let version = live.json(&["version", "--json"])?;
-        assert_eq!(version.value["schema_version"], 3);
+        assert_eq!(version.value["schema_version"], 4);
         Ok(live)
     }
 

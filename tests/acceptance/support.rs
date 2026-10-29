@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-pub(crate) const SCHEMA: &str = include_str!("../../schemas/result-v3.schema.json");
+pub(crate) const SCHEMA: &str = include_str!("../../schemas/result-v4.schema.json");
 /// Where a POSIX shell, `sleep` and `kill` live. The stub directory always goes
 /// in front of this, so no case can reach a real `ssh` by accident.
 pub(crate) const SYSTEM_PATH: &str = "/usr/bin:/bin";

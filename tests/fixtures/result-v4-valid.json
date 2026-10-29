@@ -1,0 +1,976 @@
+[
+  {
+    "name": "exec",
+    "result": {
+      "schema_version": 4,
+      "operation": "exec",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "execution": {
+          "status": "completed",
+          "exit_code": 0
+        },
+        "cleanup": {
+          "status": "not_attempted"
+        },
+        "output": {
+          "kind": "streams",
+          "stdout": {
+            "content": "",
+            "bytes": 0,
+            "truncated": false
+          },
+          "stderr": {
+            "content": "",
+            "bytes": 0,
+            "truncated": false
+          }
+        },
+        "duration_ms": 0
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "version",
+    "result": {
+      "schema_version": 4,
+      "operation": "version",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "version": "example",
+        "commit": "example",
+        "build_date": "example",
+        "schema_version": 4
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "hosts",
+    "result": {
+      "schema_version": 4,
+      "operation": "hosts",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "hosts": [],
+        "config_found": false,
+        "complete": false,
+        "warnings": []
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "doctor",
+    "result": {
+      "schema_version": 4,
+      "operation": "doctor",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "host": "example",
+        "os": "example",
+        "kernel": "example",
+        "arch": "example",
+        "user": "example",
+        "home": "example",
+        "login_shell": "example",
+        "state_dir": "example",
+        "online": false,
+        "state_dir_writable": false,
+        "wsl": false,
+        "capabilities": {},
+        "capability_paths": {},
+        "connection": {
+          "master_status": "alive",
+          "control_path": "example"
+        },
+        "connection_reused": false
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "connection.status",
+    "result": {
+      "schema_version": 4,
+      "operation": "connection.status",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "master_status": "alive",
+        "control_path": "example"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "connection.reset",
+    "result": {
+      "schema_version": 4,
+      "operation": "connection.reset",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "master_status": "alive",
+        "control_path": "example"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.create",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.create",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "session_id": "example",
+        "name": "example",
+        "tmux_session": "example",
+        "created_at": "example",
+        "shell": "example",
+        "status": "alive"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.list",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.list",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "sessions": []
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.exec",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.exec",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "session_id": "session-example",
+        "session_ref": "example",
+        "execution": {
+          "status": "completed",
+          "exit_code": 0
+        },
+        "output": {
+          "kind": "pty",
+          "content": "",
+          "bytes": 0,
+          "truncated": false
+        },
+        "session_preserved": false
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.read",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.read",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "session_id": "example",
+        "content": "example",
+        "encoding": "utf-8",
+        "from": 0,
+        "next": 0,
+        "more": false,
+        "session_ref": "example"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.recover",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.recover",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "session_id": null,
+        "session_preserved": false,
+        "session_ref": "example"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.send",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.send",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "sent": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.close",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.close",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "closed": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "session.attach",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.attach",
+      "ok": false,
+      "host": "gpu",
+      "data": null,
+      "error": {
+        "code": "USAGE_ERROR",
+        "message": "attach requires an interactive terminal without JSON",
+        "retryable": false,
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "tunnel.open",
+    "result": {
+      "schema_version": 4,
+      "operation": "tunnel.open",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "tunnel_id": "example",
+        "host": "example",
+        "kind": "local",
+        "listen": "example",
+        "status": "alive"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "tunnel.list",
+    "result": {
+      "schema_version": 4,
+      "operation": "tunnel.list",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "tunnels": []
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "tunnel.close",
+    "result": {
+      "schema_version": 4,
+      "operation": "tunnel.close",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "tunnel_id": "example",
+        "closed": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.put",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.put",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "source": "example",
+        "destination": "example",
+        "backend": "scp",
+        "size": 0,
+        "multiplexed": false,
+        "duration_ms": 0,
+        "checksum_verified": false,
+        "resume_enabled": false
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.get",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.get",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "source": "example",
+        "destination": "example",
+        "backend": "scp",
+        "size": 0,
+        "multiplexed": false,
+        "duration_ms": 0,
+        "checksum_verified": false,
+        "resume_enabled": false
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.sync",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.sync",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "source": "example",
+        "destination": "example",
+        "backend": "rsync",
+        "dry_run": false,
+        "delete": false,
+        "multiplexed": false,
+        "changes": [],
+        "files": 0,
+        "directories": 0,
+        "deletes": 0,
+        "duration_ms": 0
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.mirror",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.mirror",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "source": "example",
+        "destination": "example",
+        "backend": "rsync",
+        "dry_run": false,
+        "delete": false,
+        "multiplexed": false,
+        "changes": [],
+        "files": 0,
+        "directories": 0,
+        "deletes": 0,
+        "duration_ms": 0
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.batch",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.batch",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "items": [],
+        "succeeded": 0,
+        "failed": 0
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.read",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.read",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "path": "example",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "content": "example",
+        "start": 1,
+        "lines": 0,
+        "total_lines": 0,
+        "truncated": false
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.write",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.write",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "path": "example",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "bytes": 0,
+        "mutation": "applied"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.patch",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.patch",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "path": "example",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "bytes": 0,
+        "mutation": "applied"
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "audit",
+    "result": {
+      "schema_version": 4,
+      "operation": "audit",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "path": "example",
+        "entries": []
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "usage",
+    "result": {
+      "schema_version": 4,
+      "operation": "usage",
+      "ok": false,
+      "data": null,
+      "error": {
+        "code": "USAGE_ERROR",
+        "message": "missing command",
+        "retryable": false,
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "connection.usage",
+    "result": {
+      "schema_version": 4,
+      "operation": "connection.usage",
+      "ok": false,
+      "data": null,
+      "error": {
+        "code": "USAGE_ERROR",
+        "message": "missing command",
+        "retryable": false,
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "session.usage",
+    "result": {
+      "schema_version": 4,
+      "operation": "session.usage",
+      "ok": false,
+      "data": null,
+      "error": {
+        "code": "USAGE_ERROR",
+        "message": "missing command",
+        "retryable": false,
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "tunnel.usage",
+    "result": {
+      "schema_version": 4,
+      "operation": "tunnel.usage",
+      "ok": false,
+      "data": null,
+      "error": {
+        "code": "USAGE_ERROR",
+        "message": "missing command",
+        "retryable": false,
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "fs.usage",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.usage",
+      "ok": false,
+      "data": null,
+      "error": {
+        "code": "USAGE_ERROR",
+        "message": "missing command",
+        "retryable": false,
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "metadata",
+    "result": {
+      "schema_version": 4,
+      "operation": "metadata",
+      "host": "gpu",
+      "ok": true,
+      "data": {
+        "schema_generations": [
+          4
+        ],
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "remote_time_unix": 1,
+        "context": {
+          "boot_id": null
+        },
+        "helper": {
+          "protocol": 1,
+          "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "os": "linux",
+          "arch": "aarch64",
+          "capabilities": 7,
+          "limits": {
+            "run_frame_bytes": 8388608,
+            "file_request_bytes": 12582912,
+            "file_edit_bytes": 8388608,
+            "run_stream_bytes": 67108864,
+            "run_page_bytes": 1048576
+          },
+          "binary_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "helper.prepare",
+    "result": {
+      "schema_version": 4,
+      "operation": "helper.prepare",
+      "host": "gpu",
+      "ok": true,
+      "data": {
+        "schema_generations": [
+          4
+        ],
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "remote_time_unix": 1,
+        "context": {
+          "boot_id": null
+        },
+        "helper": {
+          "protocol": 1,
+          "source_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "os": "linux",
+          "arch": "aarch64",
+          "capabilities": 7,
+          "limits": {
+            "run_frame_bytes": 8388608,
+            "file_request_bytes": 12582912,
+            "file_edit_bytes": 8388608,
+            "run_stream_bytes": 67108864,
+            "run_page_bytes": 1048576
+          },
+          "binary_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "run.start",
+    "result": {
+      "schema_version": 4,
+      "operation": "run.start",
+      "host": "gpu",
+      "ok": true,
+      "data": {
+        "run": {
+          "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "run_id": "2000000000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "status": "running"
+        },
+        "stdout": {
+          "from": 0,
+          "next": 0,
+          "observed_bytes": 0,
+          "content_base64": "",
+          "open": true,
+          "incomplete": false
+        },
+        "stderr": {
+          "from": 0,
+          "next": 0,
+          "observed_bytes": 0,
+          "content_base64": "",
+          "open": true,
+          "incomplete": false
+        },
+        "stale": false
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "run.poll",
+    "result": {
+      "schema_version": 4,
+      "operation": "run.poll",
+      "host": "gpu",
+      "ok": true,
+      "data": {
+        "run": {
+          "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "run_id": "2000000000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "status": "running"
+        },
+        "stdout": {
+          "from": 0,
+          "next": 0,
+          "observed_bytes": 0,
+          "content_base64": "",
+          "open": true,
+          "incomplete": false
+        },
+        "stderr": {
+          "from": 0,
+          "next": 0,
+          "observed_bytes": 0,
+          "content_base64": "",
+          "open": true,
+          "incomplete": false
+        },
+        "stale": false
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "run.list",
+    "result": {
+      "schema_version": 4,
+      "operation": "run.list",
+      "host": "gpu",
+      "ok": true,
+      "data": [
+        {
+          "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "run_id": "2000000000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "status": "running"
+        }
+      ],
+      "error": null
+    }
+  },
+  {
+    "name": "run.signal",
+    "result": {
+      "schema_version": 4,
+      "operation": "run.signal",
+      "host": "gpu",
+      "ok": true,
+      "data": {
+        "run_id": "2000000000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "delivered": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "run.prune",
+    "result": {
+      "schema_version": 4,
+      "operation": "run.prune",
+      "host": "gpu",
+      "ok": true,
+      "data": {
+        "removed": []
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "request",
+    "result": {
+      "schema_version": 4,
+      "operation": "request",
+      "ok": false,
+      "host": null,
+      "data": null,
+      "error": {
+        "code": "USAGE_ERROR",
+        "message": "invalid request",
+        "retryable": false,
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "fs.changeset.apply",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.changeset.apply",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "applied",
+        "mutation": "applied",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installed",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": true
+          }
+        ],
+        "failure": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.query",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.changeset.query",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "applied",
+        "mutation": "applied",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installed",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": true
+          }
+        ],
+        "failure": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.recover",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.changeset.recover",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "applied",
+        "mutation": "applied",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installed",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": true
+          }
+        ],
+        "failure": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.prune",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.changeset.prune",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "pruned": true
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.apply",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.changeset.apply",
+      "ok": false,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "id": "1893456000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "expires_unix": 1893456000,
+        "status": "unknown",
+        "mutation": "unknown",
+        "owner_active": false,
+        "cleanup_pending": false,
+        "files": [
+          {
+            "path": "/srv/project/file",
+            "state": "installing",
+            "before_hash": null,
+            "after_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "ever_applied": false
+          }
+        ],
+        "failure": null
+      },
+      "error": {
+        "code": "STATE_UNAVAILABLE",
+        "message": "result marker unavailable",
+        "retryable": false,
+        "mutation": "unknown",
+        "recovery": {
+          "stage": "unknown",
+          "submission": "may_have_submitted",
+          "action": "inspect_state"
+        }
+      }
+    }
+  },
+  {
+    "name": "fs.search",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.search",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "root": "/srv/project",
+        "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "items": [
+          {
+            "path": "/srv/project/file",
+            "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "bytes": 4,
+            "matches": [
+              {
+                "line": 1,
+                "text": "text"
+              }
+            ],
+            "matches_truncated": false
+          }
+        ],
+        "skipped": [],
+        "scanned_files": 1,
+        "scanned_bytes": 4,
+        "incomplete": false,
+        "reasons": [],
+        "next_cursor": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.read_many",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.read_many",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "items": [
+          {
+            "path": "/srv/project/file",
+            "ok": true,
+            "data": {
+              "path": "/srv/project/file",
+              "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "content": "text",
+              "start": 1,
+              "lines": 1,
+              "total_lines": 1,
+              "truncated": false
+            },
+            "error": null
+          }
+        ],
+        "unread": []
+      },
+      "error": null
+    }
+  }
+]

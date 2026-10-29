@@ -2,14 +2,14 @@
 use serde_json::{Value, json};
 
 fn validator() -> jsonschema::Validator {
-    let schema: Value = serde_json::from_str(include_str!("../schemas/request-v3.schema.json"))
+    let schema: Value = serde_json::from_str(include_str!("../schemas/request-v4.schema.json"))
         .unwrap_or_else(|error| panic!("schema JSON: {error}"));
     jsonschema::validator_for(&schema).unwrap_or_else(|error| panic!("schema: {error}"))
 }
 
 fn start() -> Value {
     json!({
-        "schema_version": 3, "operation": "run.start", "host": "gpu",
+        "schema_version": 4, "operation": "run.start", "host": "gpu",
         "params": {
             "generation": "a".repeat(32),
             "key": format!("2000000000-{}", "b".repeat(64)),
@@ -105,7 +105,7 @@ fn control_and_observation_requests_do_not_accept_launch_payloads() {
             params["signal"] = json!("TERM");
         }
         let mut request =
-            json!({"schema_version": 3, "operation": operation, "host": "gpu", "params": params});
+            json!({"schema_version": 4, "operation": operation, "host": "gpu", "params": params});
         assert!(schema.is_valid(&request), "{request}");
         request["params"]["program"] = json!({"argv": ["echo"]});
         assert!(!schema.is_valid(&request));

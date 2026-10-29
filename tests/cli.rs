@@ -8,7 +8,7 @@ fn binary_reports_its_own_version_and_schema() -> Result<(), Box<dyn std::error:
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     assert_eq!(value["operation"], "version");
     assert!(String::from_utf8(output.stdout)?.contains(env!("CARGO_PKG_VERSION")));
     Ok(())

@@ -67,7 +67,7 @@ impl Fixture {
         assert!(output.stderr.is_empty(), "{output:?}");
         let value: Value = serde_json::from_slice(&output.stdout)
             .unwrap_or_else(|e| panic!("response: {e}: {output:?}"));
-        let schema: Value = serde_json::from_str(include_str!("../schemas/result-v3.schema.json"))
+        let schema: Value = serde_json::from_str(include_str!("../schemas/result-v4.schema.json"))
             .unwrap_or_else(|e| panic!("schema: {e}"));
         let validator =
             jsonschema::validator_for(&schema).unwrap_or_else(|e| panic!("validator: {e}"));
@@ -80,7 +80,7 @@ impl Fixture {
 #[test]
 fn cancelling_an_observer_preserves_the_remote_run() {
     let f = Fixture::new();
-    let envelope = |operation: &str, params: Value| json!({"schema_version":3,"operation":operation,"host":"gpu","params":params});
+    let envelope = |operation: &str, params: Value| json!({"schema_version":4,"operation":operation,"host":"gpu","params":params});
     let prepared = f.request(&envelope("helper.prepare", json!({})));
     let generation = prepared["data"]["generation"].clone();
     let expiry = prepared["data"]["remote_time_unix"]
@@ -138,7 +138,7 @@ impl Drop for Fixture {
 #[test]
 fn public_requests_recover_completed_runs_and_refuse_a_changed_retry() {
     let f = Fixture::new();
-    let envelope = |operation: &str, params: Value| json!({"schema_version":3,"operation":operation,"host":"gpu","params":params});
+    let envelope = |operation: &str, params: Value| json!({"schema_version":4,"operation":operation,"host":"gpu","params":params});
     let prepared = f.request(&envelope("helper.prepare", json!({})));
     assert_eq!(prepared["ok"], true, "{prepared}");
     let generation = prepared["data"]["generation"].clone();
@@ -168,7 +168,7 @@ fn public_requests_recover_completed_runs_and_refuse_a_changed_retry() {
 }
 
 fn message(operation: &str, params: Value) -> Value {
-    json!({"schema_version":3,"operation":operation,"host":"gpu","params":params})
+    json!({"schema_version":4,"operation":operation,"host":"gpu","params":params})
 }
 fn namespace(f: &Fixture) -> (Value, u64) {
     let v = f.request(&message("helper.prepare", json!({})));

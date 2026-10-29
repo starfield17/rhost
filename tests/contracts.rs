@@ -7,8 +7,8 @@ fn actual_dtos_match_independent_schema() -> Result<(), Box<dyn std::error::Erro
     assert_eq!(cases.len(), 38);
     for (name, raw) in [
         (
-            "active v3 schema",
-            include_str!("../schemas/result-v3.schema.json"),
+            "active v4 schema",
+            include_str!("../schemas/result-v4.schema.json"),
         ),
         (
             "published v4.1.0 v2 validator",
@@ -29,6 +29,7 @@ fn actual_dtos_match_independent_schema() -> Result<(), Box<dyn std::error::Erro
                 }
                 if let Some(error) = case["error"].as_object_mut() {
                     error.remove("mutation");
+                    error.remove("recovery");
                 }
             }
             assert!(validator.is_valid(&case), "{name} rejected {case}");
@@ -78,6 +79,49 @@ fn published_v410_validator_is_immutable() {
     assert_eq!(digest.as_slice(), &expected);
 }
 
+#[test]
+fn published_v510_schemas_and_fixtures_are_immutable() {
+    use sha2::{Digest, Sha256};
+    for (bytes, expected) in [
+        (
+            include_bytes!("../schemas/result-v3.schema.json").as_slice(),
+            "985aaa7cda107f5c08baa908faa91aaa462a2704ceb9172cdc26331efb2ba75e",
+        ),
+        (
+            include_bytes!("../schemas/request-v3.schema.json").as_slice(),
+            "d78a9e08bb67074ba189d75de46580bd2065433f822c93e085d5217370968342",
+        ),
+        (
+            include_bytes!("fixtures/result-v3-valid.json").as_slice(),
+            "b48f278cd472f99cb655c76f53e4a4f1f933b4e14a7f5757147c08a399e392b7",
+        ),
+    ] {
+        assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected);
+    }
+}
+
+#[test]
+fn schema4_preserves_published_legacy_payload_acceptance() -> Result<(), Box<dyn std::error::Error>>
+{
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schemas/result-v3.schema.json"))?;
+    let validator = jsonschema::validator_for(&schema)?;
+    for mut case in contract_cases::cases()? {
+        case["schema_version"] = 3.into();
+        if case["operation"] == "version" {
+            case["data"]["schema_version"] = 3.into();
+        }
+        if let Some(error) = case["error"].as_object_mut() {
+            error.remove("recovery");
+        }
+        assert!(
+            validator.is_valid(&case),
+            "published projection rejected {case}"
+        );
+    }
+    Ok(())
+}
+
 /// The active fixture set and the active schema must agree, and they must both
 /// line up with the hand-written DTO cases. This is the current-tree half of the
 /// guard the archived Go harness used to hold (against a *frozen* fixture, which
@@ -87,7 +131,7 @@ fn published_v410_validator_is_immutable() {
 fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dyn std::error::Error>>
 {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schemas/result-v3.schema.json"))?;
+        serde_json::from_str(include_str!("../schemas/result-v4.schema.json"))?;
     let validator = jsonschema::validator_for(&schema)?;
 
     let mut covered: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -98,7 +142,7 @@ fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dy
     }
 
     let fixtures: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("fixtures/result-v3-valid.json"))?;
+        serde_json::from_str(include_str!("fixtures/result-v4-valid.json"))?;
     for fixture in &fixtures {
         let name = fixture["name"].as_str().unwrap_or("<unnamed>");
         let result = &fixture["result"];

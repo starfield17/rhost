@@ -1,0 +1,1340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rhost structured request v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "params"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 4
+    },
+    "operation": {
+      "enum": [
+        "metadata",
+        "run.start",
+        "run.poll",
+        "run.list",
+        "run.signal",
+        "run.prune",
+        "helper.prepare",
+        "fs.read",
+        "fs.write",
+        "fs.patch",
+        "fs.changeset.apply",
+        "fs.changeset.query",
+        "fs.changeset.recover",
+        "fs.changeset.prune",
+        "fs.search",
+        "fs.read_many",
+        "version",
+        "hosts",
+        "doctor",
+        "connection.status",
+        "session.create",
+        "session.list",
+        "session.exec",
+        "session.send",
+        "session.read",
+        "session.recover",
+        "session.close"
+      ]
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "params": {
+      "type": "object"
+    },
+    "if_boot_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "metadata",
+              "helper.prepare"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "run.start"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/start"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "run.poll"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/poll"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "run.list",
+              "run.prune"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/namespace"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "run.signal"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/signal"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.read"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_read"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.write"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_write"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.patch"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_patch"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.apply"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_apply"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.query"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_id"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.recover"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_recover"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.prune"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/changeset_id"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.search"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_search"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.read_many"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_read_many"
+          }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "version"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          },
+          "if_boot_id": false,
+          "host": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "hosts"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          },
+          "if_boot_id": false,
+          "host": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "doctor"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              },
+              "fresh": {
+                "type": "boolean"
+              }
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "connection.status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.create"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{0,64}$"
+              },
+              "cwd": {
+                "type": "string",
+                "pattern": "^[^\\u0000]*$"
+              },
+              "shell": {
+                "const": "bash"
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.list"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.exec"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000]+$"
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            },
+            "required": [
+              "session",
+              "command"
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.send"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "data": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000]+$"
+              },
+              "key": {
+                "enum": [
+                  "C-c",
+                  "C-d",
+                  "C-z",
+                  "C-\\",
+                  "C-u",
+                  "C-l",
+                  "C-a",
+                  "C-e",
+                  "C-w",
+                  "Enter",
+                  "Tab",
+                  "BTab",
+                  "Space",
+                  "BSpace",
+                  "Escape",
+                  "Up",
+                  "Down",
+                  "Left",
+                  "Right",
+                  "Home",
+                  "End",
+                  "PageUp",
+                  "PageDown"
+                ]
+              },
+              "enter": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "session"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "data"
+                ],
+                "not": {
+                  "required": [
+                    "key"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "key"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "data"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "enter"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.read"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "since": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tail": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_bytes": {
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 262144
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            },
+            "required": [
+              "session"
+            ],
+            "not": {
+              "required": [
+                "since",
+                "tail"
+              ]
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.recover"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            },
+            "required": [
+              "session"
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.close"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              }
+            },
+            "required": [
+              "session"
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "generation": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{32}$"
+    },
+    "key": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,11}-[a-f0-9]{64}$"
+    },
+    "literal": {
+      "type": "string",
+      "pattern": "^[^\\u0000]*$"
+    },
+    "wait": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 300000
+    },
+    "program": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "argv"
+          ],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4096,
+              "items": {
+                "$ref": "#/$defs/literal"
+              },
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\u0000]+$"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "interpreter",
+            "script",
+            "login"
+          ],
+          "properties": {
+            "interpreter": {
+              "type": "string",
+              "pattern": "^/[^\\u0000]+$"
+            },
+            "script": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "login": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inherit",
+        "values"
+      ],
+      "properties": {
+        "inherit": {
+          "type": "boolean"
+        },
+        "values": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/literal"
+          }
+        }
+      }
+    },
+    "namespace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        }
+      }
+    },
+    "start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "key",
+        "expires_unix",
+        "cwd",
+        "program",
+        "environment"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "expires_unix": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999999999
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "program": {
+          "$ref": "#/$defs/program"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "stdin_base64": {
+          "type": "string",
+          "maxLength": 11184812,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        },
+        "wait_ms": {
+          "$ref": "#/$defs/wait"
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800000
+        }
+      }
+    },
+    "poll": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "run_id"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "run_id": {
+          "$ref": "#/$defs/key"
+        },
+        "wait_ms": {
+          "$ref": "#/$defs/wait"
+        },
+        "stdout_since": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "stderr_since": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "run_id",
+        "signal"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "run_id": {
+          "$ref": "#/$defs/key"
+        },
+        "signal": {
+          "enum": [
+            "INT",
+            "TERM",
+            "KILL"
+          ]
+        }
+      }
+    },
+    "fs_read": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8388608
+        }
+      }
+    },
+    "fs_write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "content"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "content": {
+          "type": "string"
+        },
+        "if_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "parents": {
+          "type": "boolean"
+        },
+        "mode": {
+          "type": "string",
+          "pattern": "^[0-7]{3,4}$"
+        }
+      }
+    },
+    "fs_patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "if_hash",
+        "edits"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "if_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "edits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "start",
+                  "end",
+                  "text"
+                ],
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "old",
+                  "new"
+                ],
+                "properties": {
+                  "old": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "new": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "changeset_apply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "key",
+        "expires_unix",
+        "changes"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
+        "expires_unix": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999999999999
+        },
+        "changes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "content",
+                  "op"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "if_hash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "pattern": "^[0-7]{3,4}$"
+                  },
+                  "op": {
+                    "const": "write"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "if_hash",
+                  "edits",
+                  "op"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "if_hash": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "edits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "start",
+                            "end",
+                            "text"
+                          ],
+                          "properties": {
+                            "start": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "end": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "old",
+                            "new"
+                          ],
+                          "properties": {
+                            "old": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "new": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "op": {
+                    "const": "patch"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "changeset_id": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "id"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "id": {
+          "$ref": "#/$defs/key"
+        }
+      }
+    },
+    "changeset_recover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "id",
+        "action"
+      ],
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "id": {
+          "$ref": "#/$defs/key"
+        },
+        "action": {
+          "enum": [
+            "resume",
+            "rollback"
+          ]
+        }
+      }
+    },
+    "fs_search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^[^\\u0000]*$"
+        },
+        "glob": {
+          "type": "string",
+          "pattern": "^[^\\u0000]*$"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[^\\r\\n]+$"
+        },
+        "cursor": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}:[0-9]{1,4}$"
+        },
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_matches": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      }
+    },
+    "fs_read_many": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paths"
+      ],
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[^\\u0000]*$"
+          }
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8388608
+        }
+      }
+    }
+  }
+}

@@ -4,7 +4,7 @@ use crate::support::{Harness, envelope, envelope_with_stdin, want_code};
 use serde_json::{Value, json};
 
 fn request(h: &Harness, op: &str, host: Option<&str>, params: Value) -> Result<Value, String> {
-    let mut raw = json!({"schema_version":3,"operation":op,"params":params});
+    let mut raw = json!({"schema_version":4,"operation":op,"params":params});
     if let Some(host) = host {
         raw["host"] = host.into();
     }
@@ -75,11 +75,11 @@ fn core_invalid_parameters_and_target_policies_refuse_before_ssh() -> Result<(),
         h.assert_no_remote_tool("invalid core parameters")?;
     }
     for (i, raw) in [
-        json!({"schema_version":3,"operation":"version","host":null,"params":{}}),
-        json!({"schema_version":3,"operation":"hosts","host":"gpu","params":{}}),
-        json!({"schema_version":3,"operation":"hosts","if_boot_id":null,"params":{}}),
-        json!({"schema_version":3,"operation":"session.list","params":{}}),
-        json!({"schema_version":3,"operation":"session.list","host":"gpu","if_boot_id":"00000000-0000-0000-0000-000000000000","params":{}}),
+        json!({"schema_version":4,"operation":"version","host":null,"params":{}}),
+        json!({"schema_version":4,"operation":"hosts","host":"gpu","params":{}}),
+        json!({"schema_version":4,"operation":"hosts","if_boot_id":null,"params":{}}),
+        json!({"schema_version":4,"operation":"session.list","params":{}}),
+        json!({"schema_version":4,"operation":"session.list","host":"gpu","if_boot_id":"00000000-0000-0000-0000-000000000000","params":{}}),
     ].into_iter().enumerate() {
         let h = Harness::open(&format!("core-target-{i}"))?;
         let (_, result) = envelope_with_stdin(&h, &["request","--from","-"], raw.to_string().as_bytes())?;
@@ -180,8 +180,8 @@ fn positional_json_shapes_never_submit_core_operations() -> Result<(), String> {
     let h = Harness::open("core-object-shapes")?;
     for raw in [
         r#"[3,"session.close","gpu",{"session":"debug"}]"#,
-        r#"{"schema_version":3,"operation":"version","params":[]}"#,
-        r#"{"schema_version":3,"operation":"session.close","host":"gpu","params":["debug"]}"#,
+        r#"{"schema_version":4,"operation":"version","params":[]}"#,
+        r#"{"schema_version":4,"operation":"session.close","host":"gpu","params":["debug"]}"#,
     ] {
         let (_, result) = envelope_with_stdin(&h, &["request", "--from", "-"], raw.as_bytes())?;
         want_code(&result, "CONFIG_INVALID")?;
