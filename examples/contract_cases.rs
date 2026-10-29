@@ -187,7 +187,7 @@ fn completion(code: i32) -> Result<VerifiedCompletion, DomainError> {
 #[cfg(not(test))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     for row in cases()? {
-        println!("{}", row);
+        println!("{row}");
     }
     Ok(())
 }
