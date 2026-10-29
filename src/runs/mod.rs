@@ -35,16 +35,19 @@ pub fn execute_params(
     } else {
         None
     };
-    let mut identity = if prepared.kind != 8 {
-        helper
-            .ensure()
-            .map_err(|e| e.with_recovery(crate::domain::Recovery::preparation()))?
-    } else {
-        helper
-            .probe()
-            .map_err(|e| e.with_recovery(crate::domain::Recovery::preparation()))?
-    };
-    let bytes = helper.call(prepared.kind, prepared.body, prepared.wait_ms)?;
+    let (mut identity, bytes) = helper
+        .operation(prepared.kind, prepared.body, prepared.wait_ms)
+        .map_err(|mut error| {
+            use crate::domain::{Phase, Recovery, Submission};
+            if error.recovery.stage() == "unknown" {
+                error.recovery = if prepared.kind == 2 {
+                    Recovery::same_request(Phase::Submission, Submission::MayHaveSubmitted)
+                } else {
+                    Recovery::observe(Phase::Observation, Submission::MayHaveSubmitted)
+                };
+            }
+            error
+        })?;
     let mut data = dto::decode(prepared.kind, &bytes)?;
     if matches!(prepared.kind, 7 | 8) {
         if let Some(map) = identity.as_object_mut() {

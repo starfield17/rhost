@@ -92,6 +92,17 @@ static int probe(uint32_t kind,const char *executable) {
     return emit(kind, body, size);
 }
 int main(int argc,char **argv) {
+    if(argc==5 && (!strcmp(argv[1],"--verified-files") || !strcmp(argv[1],"--verified-run"))) {
+        char target[64],image[65];
+        snprintf(target,sizeof target,"%s-%s",TARGET_OS,TARGET_ARCH);
+        if(strcmp(argv[2],RHOST_SOURCE_DIGEST) || strcmp(argv[4],target))
+            return refuse(1,"HELPER_INCOMPATIBLE","verified source or target does not match");
+        if(!rh_binary_hash(argv[0],image))return refuse(1,"STATE_UNAVAILABLE","cannot verify loaded helper image");
+        if(*argv[3] && strcmp(argv[3],image))return refuse(1,"HELPER_INCOMPATIBLE","verified helper image does not match");
+        if(probe(1,argv[0])!=0)return 255;
+        if(!strcmp(argv[1],"--verified-files"))return rh_files_json();
+        argc=1;
+    }
     if(argc==2 && !strcmp(argv[1],"--files-json"))return rh_files_json();
     if((argc==4 || argc==5) && !strcmp(argv[1],"--install-cache")) {
         if(strcmp(argv[3],RHOST_SOURCE_DIGEST))return refuse(0,"HELPER_INCOMPATIBLE","candidate source identity does not match");

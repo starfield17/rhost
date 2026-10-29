@@ -13,6 +13,7 @@ use std::{
 };
 pub(super) struct Configuration {
     pub identity: String,
+    input_identity: Vec<u8>,
     compiler: PathBuf,
     sysroot: PathBuf,
     builtins: PathBuf,
@@ -120,9 +121,8 @@ impl Configuration {
         let builtins = required("RHOST_HELPER_BUILTINS")?;
         let linker = required("RHOST_HELPER_LD")?;
         let mut hash = Sha256::new();
-        hash.update(b"llvm-musl-c99-os-static-v1\0");
+        hash.update(b"llvm-musl-c99-os-static-v2\0");
         hash.update(super::source_digest());
-        hash.update(target.arch.as_bytes());
         let mut total = 0;
         for (role, path) in [
             ("compiler", &compiler),
@@ -135,15 +135,24 @@ impl Configuration {
             hash.update([0]);
         }
         tree(&sysroot, &sysroot, &mut hash, &mut total, &mut 0, cancelled)?;
-        let identity = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
-        Ok(Self {
-            identity,
+        let input_identity = hash.finalize().to_vec();
+        let mut configuration = Self {
+            identity: String::new(),
+            input_identity,
             compiler,
             sysroot,
             builtins,
             linker,
             target: format!("{}-linux-musl", target.arch),
-        })
+        };
+        configuration.identity = configuration.identity_for(&target.arch);
+        Ok(configuration)
+    }
+    pub fn identity_for(&self, arch: &str) -> String {
+        let mut hash = Sha256::new();
+        hash.update(&self.input_identity);
+        hash.update(arch);
+        hash.finalize().iter().map(|b| format!("{b:02x}")).collect()
     }
     pub fn compile(&self, cancelled: &dyn Fn() -> bool) -> Result<Binary, Error> {
         let temp = std::env::temp_dir().join(format!(

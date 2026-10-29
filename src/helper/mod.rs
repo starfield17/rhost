@@ -5,6 +5,7 @@ pub mod codec;
 mod prepare;
 mod sources;
 mod target;
+mod verified;
 use crate::remote::Error;
 use crate::transport::{Client, Recorder, Run, StdinSource, Streams};
 pub use codec::{Reader, Writer};
@@ -100,6 +101,9 @@ impl<'a> Helper<'a> {
     }
     fn cache_guard(&self) -> String {
         let cache = crate::shell::path_quote(self.cache_path().trim_end_matches('/'));
+        Self::guard(&cache)
+    }
+    fn guard(cache: &str) -> String {
         // A same-account writer is trusted. Other accounts cannot change the
         // checked private leaf; reject symlinks and writable ancestry on reuse.
         format!(
@@ -162,7 +166,10 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
     }
     pub(super) fn probe_current(&self) -> Result<serde_json::Value, Error> {
         let bytes = self.raw(1, Writer::default().frame(1)?, Duration::from_secs(15))?;
-        let mut r = Reader::new(&bytes);
+        self.decode_probe(&bytes)
+    }
+    fn decode_probe(&self, bytes: &[u8]) -> Result<serde_json::Value, Error> {
+        let mut r = Reader::new(bytes);
         let digest = r.text()?;
         let os = r.text()?;
         let arch = r.text()?;
@@ -228,11 +235,7 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
         )
     }
     pub fn call(&self, kind: u32, request: Writer, wait_ms: u32) -> Result<Vec<u8>, Error> {
-        self.raw(
-            kind,
-            request.frame(kind)?,
-            Duration::from_millis(u64::from(wait_ms) + 15000),
-        )
+        self.operation(kind, request, wait_ms).map(|(_, body)| body)
     }
     pub fn file_call(
         &self,
@@ -240,41 +243,7 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
         timeout: Duration,
         cap: usize,
     ) -> Result<Vec<u8>, Error> {
-        self.ensure()
-            .map_err(|e| e.with_recovery(crate::domain::Recovery::preparation()))?;
-        let marker = format!(
-            "RHOST_FILE_{}\n",
-            crate::random::hex(16).map_err(|e| Error::new("INTERNAL", e.to_string()))?
-        );
-        let (run, stdout, _) = self
-            .transport(
-                &self.command_mode(&marker, "--files-json"),
-                request,
-                timeout,
-                cap.saturating_add(65536),
-            )
-            .map_err(|e| e.with_mutation(crate::domain::MutationEvidence::Unknown))?;
-        if let Some(at) = stdout
-            .windows(marker.len())
-            .position(|s| s == marker.as_bytes())
-        {
-            let answer = &stdout[at + marker.len()..];
-            if serde_json::from_slice::<serde_json::Value>(answer).is_ok() {
-                return Ok(answer.to_vec());
-            }
-        }
-        if run.cancelled {
-            return Err(Error::new(
-                "REMOTE_COMMAND_CANCELLED",
-                "file observation cancelled; mutation outcome is unknown",
-            )
-            .with_mutation(crate::domain::MutationEvidence::Unknown));
-        }
-        Err(Error::new(
-            "REMOTE_EXECUTION_UNKNOWN",
-            "no complete native file helper answer; mutation outcome is unknown",
-        )
-        .with_mutation(crate::domain::MutationEvidence::Unknown))
+        self.verified_file(request, timeout, cap)
     }
 }
 fn never() -> bool {

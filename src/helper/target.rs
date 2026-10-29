@@ -29,7 +29,7 @@ impl Helper<'_> {
         *self.selected_cache.borrow_mut() = Some(format!("{}{}-{}/{profile}/", base, t.os, t.arch));
         Ok(())
     }
-    fn cache_base(&self) -> Result<String, Error> {
+    pub(super) fn cache_base(&self) -> Result<String, Error> {
         let Some(root) = std::env::var_os("RHOST_HELPER_CACHE_DIR") else {
             return Ok(self.cache.clone());
         };
