@@ -152,6 +152,67 @@ fn configured_linker_keeps_its_driver_name() -> Result<(), String> {
 }
 
 #[test]
+fn a_warm_native_file_operation_uses_one_ssh_invocation() -> Result<(), String> {
+    let h = Harness::open("warm-helper")?;
+    local_host(&h)?;
+    let state = h.path("remote-state").to_string_lossy().into_owned();
+    let h = h.env("RHOST_REMOTE_STATE", &state);
+    assert_eq!(request(&h, "helper.prepare")?["ok"], true);
+    h.write("content", "observed\n", None)?;
+    let before = h.calls().iter().filter(|c| c.program == "ssh").count();
+    let payload = json!({"schema_version":4,"operation":"fs.read","host":"gpu","params":{"path":h.path("content")}});
+    let (_, result) = envelope_with_stdin(
+        &h,
+        &["request", "--from", "-"],
+        payload.to_string().as_bytes(),
+    )?;
+    assert_eq!(result["data"]["content"], "observed\n", "{result}");
+    let after = h.calls().iter().filter(|c| c.program == "ssh").count();
+    assert_eq!(after - before, 1, "{}", h.calls_text());
+    Ok(())
+}
+
+#[test]
+fn an_unrecognized_cached_executable_does_not_trigger_automatic_resubmission() -> Result<(), String>
+{
+    let h = Harness::open("unrecognized-helper")?;
+    local_host(&h)?;
+    let cache = h.path("helper-cache");
+    let state = h.path("remote-state");
+    let h = h
+        .env("RHOST_HELPER_CACHE_DIR", &cache.to_string_lossy())
+        .env("RHOST_REMOTE_STATE", &state.to_string_lossy());
+    let prepared = request(&h, "helper.prepare")?;
+    assert_eq!(prepared["ok"], true, "{prepared}");
+    let helper = &prepared["data"]["helper"];
+    let image = cache.join(format!(
+        "p1/{}/{}-{}/supplied-{}/rhost-helper",
+        helper["source_digest"].as_str().ok_or("source")?,
+        helper["os"].as_str().ok_or("os")?,
+        helper["arch"].as_str().ok_or("arch")?,
+        helper["binary_sha256"].as_str().ok_or("sha")?
+    ));
+    std::fs::remove_file(&image).map_err(|e| e.to_string())?;
+    h.write("replacement", "#!/bin/sh\nexit 0\n", Some(0o700))?;
+    std::fs::rename(h.path("replacement"), &image).map_err(|e| e.to_string())?;
+    let before = h.calls().iter().filter(|c| c.program == "ssh").count();
+    let target = h.path("must-stay-absent");
+    let payload = json!({"schema_version":4,"operation":"fs.write","host":"gpu","params":{"path":target,"content":"effect"}});
+    let (_, result) = envelope_with_stdin(
+        &h,
+        &["request", "--from", "-"],
+        payload.to_string().as_bytes(),
+    )?;
+    assert_eq!(result["ok"], false, "{result}");
+    assert!(!target.exists());
+    assert_eq!(
+        h.calls().iter().filter(|c| c.program == "ssh").count() - before,
+        1
+    );
+    Ok(())
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn same_source_cached_image_must_match_the_supplied_bytes() -> Result<(), String> {
     use std::fs::OpenOptions;
