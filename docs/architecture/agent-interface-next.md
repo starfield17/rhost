@@ -66,7 +66,12 @@ Offsets must be valid record boundaries; IDs, fingerprint, manifest size and
 regular-file ownership are validated before reading a page. Expired, missing or
 corrupt collections refuse continuation; they never silently start a new search.
 
-Registration under the namespace lock first reserves a private directory and
+Registration under the namespace lock first reserves a private directory named
+`.pending-<expiring-id>` in its kind-specific parent; its kind, identity and
+expiry remain recoverable even before metadata or owner.lock exists. The
+registry lock is retained until the owner lock has been acquired and made
+durable, so missing metadata/lock in a pending directory cannot hide a live
+builder from a later registry owner. Registration then
 fsyncs its `building` metadata plus owner lock. Traversal occurs under that
 record's exclusive owner, after releasing the namespace lock. A complete
 manifest and metadata are fsynced before atomic publication as `ready`.
@@ -133,6 +138,13 @@ explicit retry; it is still charged. Tombstones never become fresh executable
 registrations, and an expired key remains expired. A partial batch returns its
 receipts, not an empty error. Dry runs do not delete, advance the durable clock,
 or alter record state. Pruning deliberately ends the named retention window.
+Tombstone deletion is serialized by the registry lock and its kind/ID/expiry
+remain in its name even after metadata and owner.lock have been removed. Retry
+finishes deletion from that identity rather than recreating executable state.
+Existing run/changeset prune operations use the same tombstone deletion primitive;
+there is no alternate unlink-in-place path. Legacy staging names whose identity
+cannot be established remain explicitly unknown and refuse new admission rather
+than becoming safe-to-delete evidence.
 
 ## Recovery evidence
 
