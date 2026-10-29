@@ -1,6 +1,6 @@
 [package]
 name = "rhost"
-version = "5.0.0"
+version = "5.1.0"
 edition = "2024"
 rust-version = "1.88.0"
 publish = false
@@ -62,7 +62,7 @@ expect_used = "deny"
 
 [dev-dependencies]
 regex = "1"
-jsonschema = { version = "0.58", default-features = false }
+jsonschema = { version = "0.60", default-features = false }
 
 # Keep target/ small: the dev/test profiles do not need DWARF, and skipping
 # incremental caches costs only seconds on this crate while removing their

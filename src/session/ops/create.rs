@@ -10,6 +10,7 @@ use super::errors::{run_helper_once, session_error, unhealthy, valid_name};
 use super::lifecycle::Info;
 use super::shared::{OUTPUT_CAPTURE, now};
 use crate::remote::Error;
+use crate::remote::Observation;
 use crate::remote::{RemoteRun, internal};
 use crate::session::{self, Meta, Status};
 use crate::transport::Client;
@@ -102,6 +103,13 @@ impl Created {
 /// outcome is always `Ok`: the caller learns the candidate identity and whether
 /// the remote created, refused, or left the answer unknown.
 pub fn create(client: &Client, options: &CreateOptions<'_>) -> Result<Created, Error> {
+    create_observed(&Observation::new(client, &|| false), options)
+}
+
+pub(in crate::session) fn create_observed(
+    observation: &Observation<'_>,
+    options: &CreateOptions<'_>,
+) -> Result<Created, Error> {
     let shell_name = if options.shell.is_empty() {
         session::DEFAULT_SHELL
     } else {
@@ -129,7 +137,7 @@ pub fn create(client: &Client, options: &CreateOptions<'_>) -> Result<Created, E
     let meta = Meta::new(&id, &name, options.cwd, shell_name, &now());
     let script = session::create_script(&meta, "bash --noprofile --norc -i");
     let run = run_helper_once(
-        client,
+        observation,
         options.host,
         &script,
         options.timeout,

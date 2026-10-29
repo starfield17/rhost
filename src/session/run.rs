@@ -1,83 +1,40 @@
-//! Running one session operation: the envelope or the human view, plus the
-//! process status the answer implies.
-
-use super::command::{CLOSE_TIMEOUT, SEND_TIMEOUT, Session, budget};
-use super::{dto, ops as app_session, render};
-use crate::audit::Timer;
+//! CLI adaptation: load local input, execute once, then render the outcome.
+use super::application::{self, Outcome, Request};
+use super::command::{Session, budget};
+use super::{dto, render};
 use crate::cli::{Failure, Sink, warn};
-use crate::remote::Error as AppError;
 use crate::transport::Client;
 
-/// Runs one session operation: the envelope or the human view, plus the process
-/// status the answer implies.
 pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8 {
-    match command {
+    let (host, request) = match command {
         Session::Create {
             host,
             name,
             cwd,
             shell,
             timeout_nanos,
-        } => {
-            let timer = Timer::start("session.create", &host);
-            let options = app_session::CreateOptions {
-                host: &host,
-                name: &name,
-                cwd: &cwd,
-                shell: &shell,
-                timeout: budget(timeout_nanos),
-            };
-            match app_session::create(client, &options) {
-                Ok(created) => match &created.info {
-                    Some(info) => {
-                        timer.succeeded(&info.initial_cwd, "", None);
-                        if json {
-                            sink.envelope(&dto::session_created(&host, info));
-                        } else {
-                            render::session_created(sink, info);
-                        }
-                        0
-                    }
-                    // The request reached the host, so the answer names the
-                    // candidate identity and what became of it, on both paths.
-                    None => {
-                        let error = created
-                            .error
-                            .clone()
-                            .unwrap_or_else(|| AppError::new("INTERNAL", "missing create failure"));
-                        timer.failed(error.code);
-                        if json {
-                            sink.envelope(&dto::session_create_failure(&host, &created));
-                        } else {
-                            warn(&format!(
-                                "rhost: {}: {}",
-                                error.code,
-                                created_failure_message(&created)
-                            ));
-                        }
-                        Failure::from_error("session.create", &host, error).status()
-                    }
+        } => (
+            host,
+            Request::Create {
+                name,
+                cwd,
+                shell: if shell.is_empty() {
+                    super::DEFAULT_SHELL.into()
+                } else {
+                    shell
                 },
-                Err(error) => {
-                    timer.failed(error.code);
-                    Failure::from_error("session.create", &host, error).deliver(sink, json)
-                }
-            }
-        }
+                timeout: budget(timeout_nanos),
+            },
+        ),
         Session::List {
             host,
             timeout_nanos,
-        } => match app_session::list(client, &host, budget(timeout_nanos)) {
-            Ok(rows) => {
-                if json {
-                    sink.envelope(&dto::sessions(&host, &rows));
-                } else {
-                    render::session_list(sink, &rows);
-                }
-                0
-            }
-            Err(error) => Failure::from_error("session.list", &host, error).deliver(sink, json),
-        },
+        } => (
+            host,
+            Request::List {
+                timeout: budget(timeout_nanos),
+            },
+        ),
         Session::Exec {
             host,
             session,
@@ -85,61 +42,20 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
             timeout_nanos,
         } => {
             let command = match crate::cli::read_command_file(&program) {
-                Ok(cmd) => cmd,
+                Ok(command) => command,
                 Err(reason) => {
                     return Failure::new("session.exec", &host, "CONFIG_INVALID", reason)
                         .deliver(sink, json);
                 }
             };
-            let timer = Timer::start("session.exec", &host);
-            let options = app_session::ExecOptions {
-                host: &host,
-                session: &session,
-                command: &command,
-                timeout: budget(timeout_nanos),
-            };
-            match app_session::exec(client, &options) {
-                Ok(outcome) => {
-                    let status = dto::session_exec_status(&outcome);
-                    match dto::session_exec_failure(&outcome) {
-                        Some((code, _, _)) => timer.failed(code),
-                        None => {
-                            if let crate::domain::Execution::Completed(code) = outcome.execution() {
-                                timer.succeeded("", &command, Some(code.get()));
-                            }
-                        }
-                    }
-                    if json {
-                        sink.envelope(&dto::session_exec(&host, &outcome));
-                    } else if let Some((code, message, _)) = dto::session_exec_failure(&outcome) {
-                        warn(&format!("rhost: {code}: {message}"));
-                        // Only a timeout leaves the question "is the pane free
-                        // again?"; a refusal like SESSION_BUSY is not a damaged
-                        // session, it is a busy one.
-                        if code == "REMOTE_COMMAND_TIMEOUT" {
-                            warn(&format!(
-                                "  session is {}",
-                                if outcome.preserved() {
-                                    "usable again"
-                                } else {
-                                    "still busy"
-                                }
-                            ));
-                        }
-                    } else {
-                        render::session_output(
-                            sink,
-                            outcome.output().0.content().as_ref(),
-                            outcome.output().0.truncated(),
-                        );
-                    }
-                    status
-                }
-                Err(error) => {
-                    timer.failed(error.code);
-                    Failure::from_error("session.exec", &host, error).deliver(sink, json)
-                }
-            }
+            (
+                host,
+                Request::Exec {
+                    session,
+                    command,
+                    timeout: budget(timeout_nanos),
+                },
+            )
         }
         Session::Send {
             host,
@@ -147,133 +63,120 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
             data,
             key,
             enter,
-        } => {
-            let timer = Timer::start("session.send", &host);
-            let options = app_session::SendOptions {
-                host: &host,
-                session: &session,
-                data: data.as_deref(),
-                key: key.as_deref(),
+        } => (
+            host,
+            Request::Send {
+                session,
+                data,
+                key,
                 enter,
-            };
-            match app_session::send(client, &options, SEND_TIMEOUT) {
-                Ok(()) => {
-                    // The injected text may be sensitive, so the trail records the
-                    // key it pressed and never what it pasted.
-                    let summary = match (&key, &data) {
-                        (Some(key), _) => format!("key {key}"),
-                        _ => "--data (redacted)".to_string(),
-                    };
-                    timer.succeeded("", &summary, None);
-                    if json {
-                        sink.envelope(&dto::session_sent(&host));
-                    } else {
-                        sink.line("sent");
-                    }
-                    0
-                }
-                Err(error) => {
-                    timer.failed(error.code);
-                    Failure::from_error("session.send", &host, error).deliver(sink, json)
-                }
-            }
-        }
+            },
+        ),
         Session::Read {
             host,
             session,
             offset,
             max_bytes,
             timeout_nanos,
-        } => match app_session::read(
-            client,
-            &host,
-            &session,
-            offset,
-            max_bytes,
-            budget(timeout_nanos),
-        ) {
-            Ok(result) => {
-                if json {
-                    sink.envelope(&dto::session_read(&host, &result));
-                } else {
-                    // A read page is bounded by its own cursor; `more` answers
-                    // whether anything follows, so it is never a truncated
-                    // capture.
-                    render::session_output(sink, &result.content, false);
-                }
-                0
-            }
-            Err(error) => Failure::from_error("session.read", &host, error).deliver(sink, json),
-        },
+        } => (
+            host,
+            Request::Read {
+                session,
+                offset,
+                max_bytes,
+                timeout: budget(timeout_nanos),
+            },
+        ),
         Session::Recover {
             host,
             session,
             timeout_nanos,
-        } => {
-            let timer = Timer::start("session.recover", &host);
-            match app_session::recover(client, &host, &session, budget(timeout_nanos)) {
-                Ok(result) => {
-                    let status = match &result.failure {
-                        None => 0,
-                        Some(error) => Failure::new(
-                            "session.recover",
-                            &host,
-                            error.code,
-                            error.message.clone(),
-                        )
-                        .status(),
-                    };
-                    match &result.failure {
-                        None => timer.succeeded("", "key C-c and responsiveness probe", None),
-                        Some(error) => timer.failed(error.code),
-                    }
-                    if json {
-                        sink.envelope(&dto::session_recover(&host, &result));
-                    } else if let Some(error) = &result.failure {
-                        warn(&format!("rhost: {}: {}", error.code, error.message));
-                    } else {
-                        sink.line("session is responsive");
-                    }
-                    status
-                }
-                Err(error) => {
-                    timer.failed(error.code);
-                    Failure::from_error("session.recover", &host, error).deliver(sink, json)
-                }
+        } => (
+            host,
+            Request::Recover {
+                session,
+                timeout: budget(timeout_nanos),
+            },
+        ),
+        Session::Close { host, session } => (host, Request::Close { session }),
+    };
+    let outcome = match application::execute(client, &host, &request, &|| false) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return Failure::from_error(request.operation(), &host, error).deliver(sink, json);
+        }
+    };
+    let status = status(&outcome, &host);
+    if json {
+        match outcome.envelope(&host) {
+            Ok(value) => sink.line(&value.to_string()),
+            Err(error) => {
+                warn(&format!("rhost: INTERNAL: {error}"));
+                return 255;
             }
         }
-        Session::Close { host, session } => {
-            let timer = Timer::start("session.close", &host);
-            match app_session::close(client, &host, &session, CLOSE_TIMEOUT) {
-                Ok(()) => {
-                    timer.succeeded("", &session, None);
-                    if json {
-                        sink.envelope(&dto::session_closed(&host));
-                    } else {
-                        sink.line("closed");
-                    }
-                    0
-                }
-                Err(error) => {
-                    timer.failed(error.code);
-                    Failure::from_error("session.close", &host, error).deliver(sink, json)
-                }
-            }
-        }
+    } else {
+        human(sink, &outcome);
+    }
+    status
+}
+fn status(outcome: &Outcome, host: &str) -> u8 {
+    match outcome {
+        Outcome::Created(value) => match &value.error {
+            Some(error) => Failure::from_error("session.create", host, error.clone()).status(),
+            None => 0,
+        },
+        Outcome::Executed(value) => dto::session_exec_status(value),
+        Outcome::Recovered(value) => match &value.failure {
+            Some(error) => Failure::from_error("session.recover", host, error.clone()).status(),
+            None => 0,
+        },
+        _ => 0,
     }
 }
-
-/// The human text for a create that did not return a full record. It names the
-/// candidate identity and points at the one way to find out what happened: list
-/// the sessions.
-fn created_failure_message(created: &app_session::Created) -> String {
-    let message = created
-        .error
-        .as_ref()
-        .map(|error| error.message.clone())
-        .unwrap_or_else(|| "session creation did not return a record".to_string());
-    format!(
-        "{message} (candidate session {}; run `rhost session list` to check it)",
-        created.candidate_id
-    )
+fn human(sink: &mut Sink, outcome: &Outcome) {
+    match outcome {
+        Outcome::Created(value) => match &value.info {
+            Some(info) => render::session_created(sink, info),
+            None => {
+                let (code, message) = value
+                    .error
+                    .as_ref()
+                    .map(|e| (e.code, e.message.as_str()))
+                    .unwrap_or(("INTERNAL", "missing create failure"));
+                warn(&format!(
+                    "rhost: {code}: {message} (candidate session {}; run `rhost session list` to check it)",
+                    value.candidate_id
+                ));
+            }
+        },
+        Outcome::Listed(rows) => render::session_list(sink, rows),
+        Outcome::Executed(value) => match dto::session_exec_failure(value) {
+            Some((code, message, _)) => {
+                warn(&format!("rhost: {code}: {message}"));
+                if code == "REMOTE_COMMAND_TIMEOUT" {
+                    warn(&format!(
+                        "  session is {}",
+                        if value.preserved() {
+                            "usable again"
+                        } else {
+                            "still busy"
+                        }
+                    ));
+                }
+            }
+            None => render::session_output(
+                sink,
+                value.output().0.content().as_ref(),
+                value.output().0.truncated(),
+            ),
+        },
+        Outcome::Sent => sink.line("sent"),
+        Outcome::Read(value) => render::session_output(sink, &value.content, false),
+        Outcome::Recovered(value) => match &value.failure {
+            Some(error) => warn(&format!("rhost: {}: {}", error.code, error.message)),
+            None => sink.line("session is responsive"),
+        },
+        Outcome::Closed => sink.line("closed"),
+    }
 }

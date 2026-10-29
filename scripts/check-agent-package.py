@@ -7,6 +7,7 @@ import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
+REFERENCES = ("CLI", "RECOVERY", "SAFETY", "NATIVE", "RUNS", "FILES", "SESSIONS", "MCP")
 
 
 def fail(message: str) -> None:
@@ -15,7 +16,7 @@ def fail(message: str) -> None:
 
 def main() -> int:
     required = ["plugin.json", ".codex-plugin/plugin.json", "skills/rhost/SKILL.md"]
-    required += [f"skills/rhost/references/{name}.md" for name in ("CLI", "RECOVERY", "SAFETY", "NATIVE")]
+    required += [f"skills/rhost/references/{name}.md" for name in REFERENCES]
     for name in required:
         if not (ROOT / name).is_file():
             fail(f"missing {name}")
@@ -31,16 +32,39 @@ def main() -> int:
     skill = (ROOT / "skills/rhost/SKILL.md").read_text()
     if "name: rhost" not in skill:
         fail("SKILL.md has no rhost name")
-    for name in ("CLI", "RECOVERY", "SAFETY", "NATIVE"):
+    for name in REFERENCES:
         if f"references/{name}.md" not in skill:
             fail(f"SKILL.md does not route to {name}.md")
+    # References are navigated on demand. Validate their portable link graph,
+    # without requiring mode-specific instructions to be copied into SKILL.md.
+    skill_root=(ROOT/"skills/rhost").resolve()
+    pending=[skill_root/"SKILL.md"]
+    visited=set()
+    while pending:
+        path=pending.pop()
+        if path in visited: continue
+        visited.add(path)
+        for target in re.findall(r"\[[^\]]+\]\(([^)]+)\)",path.read_text()):
+            if "://" in target or target.startswith("#"): continue
+            file,_,anchor=target.partition("#")
+            linked=(path.parent/file).resolve()
+            if not linked.is_relative_to(skill_root) or not linked.is_file():
+                fail(f"broken or non-portable skill reference: {target}")
+            if anchor:
+                headings=re.findall(r"^#{1,6}\s+(.+)$",linked.read_text(),re.M)
+                slugs={re.sub(r"[^a-z0-9_ -]","",h.lower()).replace(" ","-") for h in headings}
+                if anchor not in slugs: fail(f"missing skill reference anchor: {target}")
+            if linked.suffix==".md": pending.append(linked)
+    for name in REFERENCES:
+        if skill_root/f"references/{name}.md" not in visited:
+            fail(f"unreachable skill reference: {name}.md")
     retired = re.compile(r"data\.(exit_code|timed_out|cancelled)|cleanup_confirmed|output_kind|JOB_(NOT_FOUND|STATE_UNKNOWN)|compatibility alias")
     for path in (ROOT / "skills/rhost").rglob("*"):
         if path.is_file():
             text = path.read_text()
             # Native Run streams legitimately use these paths in schema v3.
             # Keep the old exec guidance gate everywhere outside that reference.
-            legacy_stream = path.name != "NATIVE.md" and re.search(r"data\.(stdout|stderr)\b", text)
+            legacy_stream = path.name not in {"NATIVE.md", "RUNS.md"} and re.search(r"data\.(stdout|stderr)\b", text)
             if retired.search(text) or legacy_stream:
                 fail(f"skill contains retired v1 wire guidance: {path.relative_to(ROOT)}")
     for text, message in (
@@ -56,9 +80,9 @@ def main() -> int:
     if not match:
         fail("CONTROL_PERSIST must be a minute duration")
     persist = match.group(1)
-    if f"{persist[:-1]}-minute persistence" not in skill:
-        fail("SKILL.md persistence window differs from CONTROL_PERSIST")
     cli = (ROOT / "skills/rhost/references/CLI.md").read_text()
+    if f"{persist[:-1]}-minute persistence" not in cli:
+        fail("CLI.md persistence window differs from CONTROL_PERSIST")
     if f"ControlPersist={persist}" not in cli:
         fail("CLI.md persistence window differs from CONTROL_PERSIST")
     schema = json.loads((ROOT / "schemas/result-v3.schema.json").read_text())

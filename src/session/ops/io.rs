@@ -3,6 +3,7 @@
 use super::errors::{helper_failure, is_supported_key, run_helper, session_error};
 use super::shared::FIELD_CAPTURE;
 use crate::remote::Error;
+use crate::remote::Observation;
 use crate::session::{self, SendKind};
 use crate::shell;
 use crate::transport::Client;
@@ -21,6 +22,14 @@ pub struct SendOptions<'a> {
 /// Injects raw input or one control key. There is no completion boundary: this is
 /// the path for a program that owns the pane.
 pub fn send(client: &Client, options: &SendOptions<'_>, timeout: Duration) -> Result<(), Error> {
+    send_observed(&Observation::new(client, &|| false), options, timeout)
+}
+
+pub(in crate::session) fn send_observed(
+    observation: &Observation<'_>,
+    options: &SendOptions<'_>,
+    timeout: Duration,
+) -> Result<(), Error> {
     // An empty `--data` is not a payload: the reference refuses it rather than
     // pasting nothing and calling that a send.
     let data = options.data.filter(|value| !value.is_empty());
@@ -57,7 +66,7 @@ pub fn send(client: &Client, options: &SendOptions<'_>, timeout: Duration) -> Re
             ));
         }
     };
-    let stdout = run_helper(client, options.host, &script, timeout, FIELD_CAPTURE)?;
+    let stdout = run_helper(observation, options.host, &script, timeout, FIELD_CAPTURE)?;
     if let Some(failure) = helper_failure(&stdout) {
         return Err(session_error(failure));
     }
@@ -97,8 +106,26 @@ pub fn read(
     max_bytes: usize,
     timeout: Duration,
 ) -> Result<Read, Error> {
+    read_observed(
+        &Observation::new(client, &|| false),
+        host,
+        reference,
+        offset,
+        max_bytes,
+        timeout,
+    )
+}
+
+pub(in crate::session) fn read_observed(
+    observation: &Observation<'_>,
+    host: &str,
+    reference: &str,
+    offset: ReadOffset,
+    max_bytes: usize,
+    timeout: Duration,
+) -> Result<Read, Error> {
     let stdout = run_helper(
-        client,
+        observation,
         host,
         &session::read_script(reference, offset, max_bytes),
         timeout,

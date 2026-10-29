@@ -3,8 +3,7 @@ mod input;
 mod schema;
 use crate::transport::Client;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, model::*, service::RequestContext};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -17,17 +16,6 @@ struct Server {
     tools: Arc<Vec<(String, Tool)>>,
     stopped: Arc<AtomicBool>,
     slots: Arc<tokio::sync::Semaphore>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Arguments {
-    host: String,
-    params: Value,
-    #[serde(default, deserialize_with = "nonnull_boot")]
-    if_boot_id: Option<String>,
-}
-fn nonnull_boot<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
-    String::deserialize(d).map(Some)
 }
 struct Observation {
     cancelled: Arc<AtomicBool>,
@@ -47,7 +35,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rhost",env!("CARGO_PKG_VERSION")))
-            .with_instructions("OpenSSH owns authentication and host keys. Run start requires a caller-owned expiring key. Wait cancellation stops observation; signal is explicit. File mutations report evidence in the schema-v3 envelope. Manage project directories and Git branches yourself.")
+            .with_instructions("Operate SSH-reachable hosts with structured files, recoverable noninteractive Runs and persistent tmux terminals. Use hosts/version without a target; doctor diagnoses shell dependencies, helper_prepare establishes native readiness. Read/search then hash-guard edits. Run start requires a retained generation and expiring key; wait/cancellation only observes. Use session send/read for REPLs; session exec timeout may interrupt, and canceling its observer does not revoke that submitted timeout. Inspect schema-v3 completion/mutation evidence before retry. OpenSSH owns authentication and host keys. Manage project directories and Git branches yourself.")
     }
     async fn list_tools(
         &self,
@@ -66,16 +54,18 @@ impl ServerHandler for Server {
         let Some((operation, _)) = self.tools.iter().find(|(_, t)| t.name == request.name) else {
             return Err(ErrorData::method_not_found::<CallToolRequestMethod>());
         };
-        let arguments: Arguments =
-            match serde_json::from_value(Value::Object(request.arguments.unwrap_or_default())) {
-                Ok(value) => value,
-                Err(error) => {
-                    return Ok(CallToolResult::structured_error(crate::request::invalid(
-                        error.to_string(),
-                    ))
-                    .into());
-                }
-            };
+        let call = match crate::request::from_arguments(
+            operation,
+            Value::Object(request.arguments.unwrap_or_default()),
+        ) {
+            Ok(call) => call,
+            Err(error) => {
+                return Ok(CallToolResult::structured_error(crate::request::failure(
+                    operation, None, error,
+                ))
+                .into());
+            }
+        };
         let cancelled = Arc::new(AtomicBool::new(false));
         let cancellation = context.ct;
         let _observation = Observation {
@@ -88,21 +78,16 @@ impl ServerHandler for Server {
             return Ok(
                 CallToolResult::structured_error(crate::request::observation_cancelled(
                     operation,
-                    &arguments.host,
+                    call.host.as_deref(),
                 ))
                 .into(),
             );
         };
         let client = self.client.clone();
         let stopped = self.stopped.clone();
-        let mut document = json!({"schema_version":3,"operation":operation,"host":arguments.host,"params":arguments.params});
-        if let Some(guard) = arguments.if_boot_id {
-            document["if_boot_id"] = guard.into();
-        }
-        let raw = document.to_string();
         let result = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            crate::request::execute(&client, &raw, &|| {
+            crate::request::execute_call(&client, call, &|| {
                 cancellation.is_cancelled()
                     || cancelled.load(Ordering::SeqCst)
                     || stopped.load(Ordering::SeqCst)
@@ -132,6 +117,63 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
         let input = schema::input(&schema, operation)?;
         let output = schema::output(&result, operation)?;
         let description = match operation {
+            "version" => {
+                "Read local binary version, build provenance and schema generation. No host parameter."
+            }
+            "hosts" => {
+                "Discover concrete aliases in the local OpenSSH client configuration. Best-effort completeness is explicit; no SSH target parameter."
+            }
+            "doctor" => {
+                "Diagnose SSH authentication, shell command presence and state-directory writability. Inspect capabilities; this does not prepare the native helper."
+            }
+            "connection.status" => {
+                "Observe the shared OpenSSH control master without creating or resetting it. Unknown master evidence is not proof of host reachability."
+            }
+            "session.create" => {
+                "Create a persistent bash/tmux terminal. Retain its canonical identity; an unknown creation may still have effects and must be inspected before retry."
+            }
+            "session.list" => {
+                "List persistent terminal records and current tmux liveness, including after another CLI/MCP process exits."
+            }
+            "session.exec" => {
+                "Execute a command in an idle managed shell. Busy REPLs refuse; timeout may interrupt the pane. Observer cancellation does not revoke its submitted timeout."
+            }
+            "session.send" => {
+                "Send text with optional Enter or one control key to an owned interactive terminal. No completion or deduplication guarantee; inspect before repeating uncertain input."
+            }
+            "session.read" => {
+                "Read bounded terminal output by raw-byte since/tail cursor. Continue from next, never rendered text length; PTY stdout/stderr are merged."
+            }
+            "session.recover" => {
+                "Explicitly interrupt the terminal foreground and verify that the managed shell is usable again. This can affect running interactive work."
+            }
+            "session.close" => {
+                "Explicitly close the named persistent terminal. If confirmation is lost, inspect the session list before repeating."
+            }
+            "fs.read" => {
+                "Read bounded UTF-8 lines and observe the entire file hash for a later CAS edit."
+            }
+            "fs.search" => {
+                "Search remote files by POSIX glob and single-line literal text. Return structured line matches and observed file hashes; inspect incomplete and truncation indicators."
+            }
+            "fs.read_many" => {
+                "Read bounded observations of multiple explicit paths, preserving input order and per-file hashes/errors. This is not a workspace snapshot."
+            }
+            "fs.changeset.apply" => {
+                "Preflight named file CAS changes and journal individual replacements. Retain identity; no globally atomic visibility or automatic rollback."
+            }
+            "fs.changeset.query" => {
+                "Inspect a named changeset's per-file states, mutation history and pending cleanup before choosing explicit recovery."
+            }
+            "fs.changeset.recover" => {
+                "Explicitly resume or roll back a named changeset with guarded file versions, preserving later external edits."
+            }
+            "fs.changeset.prune" => {
+                "Explicitly remove eligible expired terminal changeset journals, ending their recovery retention."
+            }
+            "run.list" => {
+                "Discover retained Run registrations and lifecycle status in the expected namespace generation."
+            }
             "run.start" => {
                 "Register or rediscover a detached Run using the same immutable key and payload. wait_ms only observes; deadline_ms is enforced remotely."
             }
@@ -198,7 +240,8 @@ pub fn run(client: &Client, interrupt: &crate::signals::Interrupt) -> u8 {
     match result {
         Ok(()) => 0,
         Err(error) => {
-            crate::cli::warn(&format!("rhost: INTERNAL: {error}"));
+            use std::io::Write;
+            let _ = writeln!(std::io::stderr().lock(), "rhost: INTERNAL: {error}");
             255
         }
     }

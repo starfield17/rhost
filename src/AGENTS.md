@@ -44,7 +44,8 @@ it names.
   trail and timer. The other permitted capability edge is `doctor -> connection`,
   which reuses the shared master DTO. No other sibling edges are permitted.
 - `dispatch` may depend on every capability because wiring is its whole job; it
-  holds no capability behavior. `main` also uses `transport` and `signals` for
+  holds no capability behavior. `request` composes structured operations through the same
+  capability-owned interfaces. `main` also uses `transport` and `signals` for
   process setup and shutdown; the `ALLOWED` map is authoritative.
 - `domain/`: validated identities, completion evidence, execution/session states
   and CAS intents. No serde, crate-level dependencies, I/O, environment, process,
@@ -99,3 +100,16 @@ contract rows, then expand only for an unresolved dependency or failure.
 For an acceptance module, run `cargo test --locked --test acceptance '<module>::'`.
 `make check` remains the complete local gate; remote suites require explicit
 `RHOST_TEST_HOST` and `RHOST_BIN` as documented in the root instructions.
+
+## Shared execution versus adapters
+
+Capability `application`/`ops`/request-parameter/DTO modules own execution and
+complete outcomes. Their CLI command/run/render modules adapt input and delivery;
+MCP SDK types remain in `mcp`. `request/cli.rs` owns file/stdin CLI delivery, while
+request composition calls capability interfaces. `audit/record.rs` owns recording
+without depending on audit command presentation.
+
+`scripts/structure_owners.py` declares adapter ownership and follows aliases and
+facade exports to reject reverse dependencies under `make structure`. Update
+that policy when ownership changes; moving an import through a re-export does
+not change its owner. Existing module direction and pure-domain gates still apply.

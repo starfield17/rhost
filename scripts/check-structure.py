@@ -109,11 +109,11 @@ ALLOWED = {
     # exception is doctor -> connection, which reports the shared master DTO.
     "exec": {"audit", "cli", "domain", "remote", "shell", "signals", "stdio",
              "transport", "wire"},
-    "request": {"cli", "domain", "files", "remote", "runs", "signals", "transport", "wire"},
-    "mcp": {"request", "transport", "cli", "signals"},
+    "request": {"cli", "domain", "files", "remote", "runs", "signals", "transport", "wire", "hosts", "doctor", "connection", "session"},
+    "mcp": {"request", "transport", "signals"},
     "runs": {"domain", "cli", "helper", "remote", "transport", "base64", "shell", "signals"},
     "hosts": {"cli", "host", "wire"},
-    "connection": {"audit", "cli", "transport", "wire"},
+    "connection": {"audit", "cli", "transport", "wire", "remote"},
     "doctor": {"audit", "cli", "connection", "domain", "remote", "transport", "wire"},
     "files": {"helper", "audit", "base64", "cli", "config", "domain", "remote", "shell", "transport",
              "wire"},
@@ -273,6 +273,13 @@ for path in sorted(glob.glob("src/**/*.rs", recursive=True)):
     if h == "lib":
         continue
     graph.setdefault(h, set()).update(refs(src, module_depth(path)) - {h})
+
+# Capability applications cannot reach adapters, including through facade exports.
+from structure_owners import violations as owner_violations, self_test as owner_self_test
+owner_self_test()
+for problem in owner_violations({path: strip_rust(Path(path).read_text()) for path in sorted(glob.glob("src/**/*.rs",recursive=True))}):
+    print(problem)
+    HITS += 1
 
 # An edge the policy does not name is a boundary violation, not a missing entry.
 for h in sorted(graph):

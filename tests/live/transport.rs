@@ -3,6 +3,33 @@ use std::time::Duration;
 use super::support::{Live, boolean, number, poll, text, wait_bounded};
 
 #[test]
+fn mcp_discovery_and_diagnosis_observe_the_same_real_connection() -> Result<(), String> {
+    let live = Live::new("mcp-diagnosis")?;
+    let mut m = crate::mcp_client::Mcp::open(live.command(&["mcp"]))?;
+    let version = m.call("version", None, serde_json::json!({}))?;
+    assert_eq!(version, live.ok(&["version", "--json"])?.value);
+    assert_eq!(m.call("hosts", None, serde_json::json!({}))?["ok"], true);
+    let doctor = m.call(
+        "doctor",
+        Some(live.host()),
+        serde_json::json!({"timeout_ms":60000}),
+    )?;
+    assert_eq!(doctor["data"]["online"], true, "{doctor}");
+    assert_eq!(doctor["data"]["capabilities"]["tmux"], true);
+    let connection = m.call(
+        "connection.status",
+        Some(live.host()),
+        serde_json::json!({}),
+    )?;
+    assert_eq!(
+        connection["data"],
+        live.ok(&["connection", "status", live.host(), "--json"])?
+            .value["data"]
+    );
+    m.close()
+}
+
+#[test]
 fn doctor_and_connection_reuse_are_real_across_processes() -> Result<(), String> {
     let live = Live::new("transport-reuse")?;
     let host = live.host().to_string();

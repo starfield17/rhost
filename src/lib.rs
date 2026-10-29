@@ -1,4 +1,4 @@
-//! Migration foundation: pure domain states, schema-v2 serialization, and the
+//! Migration foundation: pure domain states, schema-v3 serialization, and the
 //! OpenSSH-backed capabilities that produce them.
 //!
 //! The tree is cut by capability: each top-level directory owns one reason to

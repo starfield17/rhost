@@ -5,7 +5,11 @@ use crate::support::{Harness, envelope, fail, want_code};
 use serde_json::Value;
 
 fn documented_json(heading: &str) -> Result<Value, String> {
-    let reference = include_str!("../../skills/rhost/references/CLI.md");
+    let reference = if heading == "### Patch document\n" {
+        include_str!("../../skills/rhost/references/FILES.md")
+    } else {
+        include_str!("../../skills/rhost/references/CLI.md")
+    };
     let section = reference
         .split_once(heading)
         .ok_or_else(|| format!("CLI reference omits {heading}"))?
@@ -102,7 +106,7 @@ fn the_documented_batch_preserves_copy_direction_and_reports_each_item() -> Resu
 
 #[test]
 fn the_documented_exact_text_patch_replaces_target_text() -> Result<(), String> {
-    let reference = include_str!("../../skills/rhost/references/CLI.md");
+    let reference = include_str!("../../skills/rhost/references/FILES.md");
     let section = reference
         .split_once("# Exact-text replacement patch")
         .ok_or("CLI reference omits exact-text replacement patch section")?

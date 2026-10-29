@@ -98,8 +98,8 @@ pub struct Options<'a> {
     pub fresh: bool,
 }
 
-fn connection(client: &Client, host: &str) -> Connection {
-    let status = client.connection_status(host);
+fn connection(client: &Client, host: &str, cancelled: &dyn Fn() -> bool) -> Connection {
+    let status = client.connection_status_observed(host, cancelled);
     Connection {
         master_status: status.master_status,
         control_path: status.control_path,
@@ -120,8 +120,15 @@ pub struct Probe {
 
 /// Probes a host without assuming anything about it.
 pub fn probe(client: &Client, options: &Options<'_>) -> Result<Probe, exec::ExecError> {
-    let before = connection(client, options.host);
-    let reused = reuse_evidence(client, options, &before);
+    probe_observed(client, options, &|| false)
+}
+pub(super) fn probe_observed(
+    client: &Client,
+    options: &Options<'_>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Probe, exec::ExecError> {
+    let before = connection(client, options.host, cancelled);
+    let reused = reuse_evidence(client, options, &before, cancelled);
     let probe = probe_script();
     let request = Request {
         host: options.host,
@@ -149,7 +156,7 @@ pub fn probe(client: &Client, options: &Options<'_>) -> Result<Probe, exec::Exec
         connection: before,
         connection_reused: reused,
     };
-    let outcome = exec::execute_captured(client, &probe, &request, None)?;
+    let outcome = exec::observe_captured(client, &probe, &request, None, cancelled)?;
     if outcome.failure().is_some() || !matches!(outcome.execution(), Execution::Completed(_)) {
         return Ok(Probe {
             report,
@@ -187,7 +194,12 @@ fn flag(values: &BTreeMap<String, String>, key: &str) -> bool {
 /// Did this probe ride an existing master? Only answered when it can be
 /// answered: a fresh connection never reuses shared state, and a master that was
 /// absent before the probe cannot have been reused.
-fn reuse_evidence(client: &Client, options: &Options<'_>, before: &Connection) -> Option<bool> {
+fn reuse_evidence(
+    client: &Client,
+    options: &Options<'_>,
+    before: &Connection,
+    cancelled: &dyn Fn() -> bool,
+) -> Option<bool> {
     if options.fresh {
         return Some(false);
     }
@@ -195,7 +207,7 @@ fn reuse_evidence(client: &Client, options: &Options<'_>, before: &Connection) -
         MasterStatus::Absent => Some(false),
         MasterStatus::Unknown => None,
         MasterStatus::Alive => {
-            let after = connection(client, options.host);
+            let after = connection(client, options.host, cancelled);
             match (before.master_pid, after.master_pid) {
                 (Some(earlier), Some(later))
                     if after.master_status == MasterStatus::Alive && earlier == later =>

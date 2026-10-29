@@ -1,96 +1,35 @@
 # rhost
 
-**Remote execution for coding agents, built on OpenSSH.**
+**Operate SSH-reachable Linux hosts from a coding agent, through OpenSSH.**
 
-*The agent stays local. The work doesn't have to.*
-
-A coding agent already knows how to use a shell. rhost carries that command
-model to SSH-reachable Linux machines using OpenSSH and a small C99 helper in
-a private cache. Each recoverable Run has a temporary remote monitor; no global
-daemon or additional authentication system is introduced.
+Run an ordinary command, submit recoverable work, inspect and edit files, or drive
+a persistent terminal. Use the CLI, one JSON request, or native stdio MCP tools.
+OpenSSH owns authentication, host keys, configuration and connection reuse.
 
 ```bash
 rhost exec gpu --cwd '~/work/project' --command 'cargo test --locked'
 ```
 
-Foreground commands behave like commands: stdin goes in, stdout and stderr come
-back, and rhost exits with the remote command's status. OpenSSH still resolves
-the target, authenticates it, checks its host key, follows ProxyJump, and reuses
-connections.
-
-```text
-local coding agent
-  |-- rhost edge --> remote Linux host
-  `-- rhost gpu  --> GPU workstation
-```
-
-Direct execution needs remote `bash`, `setsid`, `ps`, and a base64 decoder.
-Sessions use `tmux` and `flock`; resumable or checksum-aware transfers use rsync.
-Native file operations and recoverable Runs use the helper, without remote Python.
-Preparation reuses a validated cache, an explicitly supplied binary/compiler,
-an existing remote `cc`, or a pinned static Linux release artifact. Run `rhost doctor <host>
---json` to see which commands resolve; helper readiness is checked on the
-target when a file operation runs.
-
-## Recoverable work and structured tools (v5)
-
-All public JSON uses **schema v3**. Upgrade validators with the binary; the v2
-schema remains frozen compatibility history. Existing foreground `exec` and
-tmux session semantics are preserved.
-
-Use a Run for builds, tests and other work that must be rediscovered after the
-CLI exits. Prepare once, retain `data.generation`, and generate a request key
-`<remote-expiry-unix-seconds>-<64-lowercase-hex-random-characters>` before submission.
-The expiry must be in the future and no more than seven days away.
-
-```bash
-rhost helper prepare gpu --json
-rhost run start gpu --generation '<generation>' --key '<expiring-key>' \
-  --cwd '~/work/project' --argv-json '["/usr/bin/make","test"]' --wait 10s --json
-rhost run poll gpu '<run-id>' --generation '<generation>' --wait 30s --json
-rhost run signal gpu '<run-id>' --generation '<generation>' --sig TERM --json
-```
-
-`--wait` only budgets observation. `--deadline` bounds execution remotely; signals
-are explicit. Retry an uncertain submission using the **same key and payload**.
-Deduplication is limited by the namespace generation and expiry; it cannot make
-arbitrary command side effects exactly once. Separate stdout/stderr pages carry
-byte cursors, base64 and explicit retention gaps.
-
-`rhost request --from -` accepts one closed JSON document, avoiding local shell
-parsing of command data. `rhost mcp` exposes the same typed operations through
-stdio MCP. Native search/read-many return structured observations and hashes;
-named changesets preflight all files and journal recoverable individual updates.
-They provide no global atomic visibility and create no workspace or Git branch.
-Validation is a separate Run; rollback is an explicit guarded operation.
-
-See the [Run/request/MCP guide](skills/rhost/references/NATIVE.md) for complete
-examples and [native architecture](docs/architecture/agent-interface-v5.md) for
-lifecycle, limits and helper trust boundaries.
+Foreground exec forwards stdin, streams stdout/stderr, and returns the remote
+command's status when completion is known. Recoverable Runs use a small C99
+helper and a per-Run monitor. Persistent terminals use remote tmux. Durable
+state lives remotely; no global rhost daemon or workspace manager is introduced.
 
 ## Install
 
-The release installer requires local Python 3.11+ and supports macOS and Linux
-on amd64 and arm64. It verifies
-the downloaded binary against the published SHA-256 file before atomically
-replacing an existing installation.
+The release installer requires local Python 3.11+ and supports macOS/Linux on
+amd64 and arm64. It checks the published SHA-256 before atomic replacement:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/starfield17/rhost/main/scripts/install.sh | bash
 ```
 
-On macOS, the installer first looks for a writable standalone `rhost` already
-selected by `PATH`. Otherwise it uses a writable Homebrew `bin` directory on
-`PATH` when one has no existing `rhost`. On Linux, or when neither macOS location
-is suitable, it uses `~/.local/bin`. Set `RHOST_INSTALL_DIR` to choose a directory
-explicitly, or `RHOST_VERSION` to pin a published release. After installation,
-the script checks which `rhost` your `PATH` selects and prints a correction if
-another copy still takes precedence. An open shell may need `rehash` (zsh) or
-`hash -r` (bash) afterwards.
-The default version lookup uses GitHub's stable-release redirect. If the lookup
-fails, set `RHOST_VERSION` to a known release to skip it.
+Use `RHOST_VERSION` to pin a release and `RHOST_INSTALL_DIR` to choose the binary
+directory. The installer checks PATH precedence. On macOS it prefers an existing
+writable standalone rhost or suitable Homebrew bin on PATH; otherwise it uses
+`~/.local/bin`. An open shell may need `rehash` or `hash -r` after installation.
 
-To build from source with Rust 1.88 or newer:
+Build this checkout with Rust 1.88 or newer:
 
 ```bash
 git clone https://github.com/starfield17/rhost.git
@@ -99,208 +38,130 @@ make build-release
 install -m 755 target/release/rhost ~/.local/bin/rhost
 ```
 
-`make build-release` is the shipping build: locked dependencies, `--release`,
-and the commit and UTC build date stamped in so `rhost version --json` names
-what the binary was built from. `make build` is the faster debug build for
-development; it stamps the same provenance but is not the release candidate.
+`make build-release` uses locked dependencies and stamps commit/build date into
+`rhost version --json`. `make build` provides the debug development binary.
+v5.1.0 adds discovery, diagnostic and persistent-session MCP tools alongside the
+native Run/file tools introduced in v5.0.0. Inspect the connected server's tool
+list when the installed binary and skill differ.
 
-## First use
+## Connect an agent
 
-Use a target that already works with OpenSSH. Probe it once to see which
-operations its installed tools support, then run an ordinary command:
+The CLI and MCP server run in the environment that has your OpenSSH setup.
+Use an existing SSH alias, `user@example-host`, or hostname. Authentication must
+already work noninteractively; rhost retains OpenSSH's host-key policy.
+
+For Codex:
+
+```bash
+codex mcp add rhost -- rhost mcp
+```
+
+For Claude Code:
+
+```bash
+claude mcp add --transport stdio --scope local rhost -- rhost mcp
+```
+
+A generic stdio client launches command `rhost` with args `["mcp"]`. Use an
+absolute binary path when a GUI client's PATH differs. See the
+[MCP setup guide](skills/rhost/references/MCP.md) for configuration examples,
+SSH agent environment, tool arguments and cancellation behavior.
+
+The optional skill teaches operation selection and recovery without loading
+every workflow into context:
+
+```bash
+npx skills add starfield17/rhost --skill rhost
+```
+
+Codex's built-in installer can also install
+[`skills/rhost`](https://github.com/starfield17/rhost/tree/main/skills/rhost).
+The portable `plugin.json` and `.codex-plugin/plugin.json` package that skill;
+they require the CLI separately and do not register MCP automatically.
+
+## Choose the operation
+
+| Need | Interface | Details |
+| --- | --- | --- |
+| Ordinary command, script, stdin or live output | CLI `exec` | [Foreground execution](skills/rhost/references/CLI.md#foreground-execution) |
+| Build/test inspectable after CLI or MCP exit | CLI, JSON or MCP Run | [Recoverable work](skills/rhost/references/RUNS.md) |
+| Read/search files, CAS edits, named recovery | CLI, JSON or MCP files | [File workflow](skills/rhost/references/FILES.md) |
+| Stateful shell, REPL, debugger | CLI, JSON or MCP session | [Terminal workflow](skills/rhost/references/SESSIONS.md) |
+| Build info, alias discovery, shell diagnosis, connection status | CLI, JSON or MCP | [MCP tools](skills/rhost/references/MCP.md#discover-and-call-tools) |
+| Copy/sync bytes, forward ports, reset connections, query audit | CLI | [CLI reference](skills/rhost/references/CLI.md) |
+
+MCP and JSON requests call the same capability implementations as their CLI
+views. Foreground exec's streaming/pipeline behavior remains a CLI interface.
+Run execution supplies the structured noninteractive command model in MCP.
+`session attach` is deliberately refused with `USAGE_ERROR`.
+
+Doctor diagnoses shell tools:
 
 ```bash
 rhost doctor gpu --json
 rhost exec gpu --command 'uname -a'
 ```
 
-For `doctor`, `ok:true` means the probe completed. Inspect
-`data.capabilities` and `data.state_dir_writable` before relying on an
-optional operation. On failure, branch on `error.code` and use the
-[recovery guide](skills/rhost/references/RECOVERY.md) before retrying a
-mutation.
-`doctor` reports command presence. Use `rhost helper prepare gpu --json` to
-prepare native operations and obtain their namespace generation, remote time,
-boot ID and actual helper identity. `rhost helper status gpu --json` is read-only.
+For doctor, `ok:true` means the probe completed; inspect capabilities before
+relying on optional tools. Native file operations automatically prepare their
+helper. Use `rhost helper prepare gpu --json` to obtain native readiness,
+generation, remote time and helper identity before submitting a Run.
+`rhost helper status gpu --json` observes an existing namespace without creating it.
 
-Use any target that already works with `ssh`: an OpenSSH config alias,
-`user@example-host`, or a bare hostname.
+Direct exec needs remote bash, setsid, ps and a base64 decoder. Sessions need
+bash, tmux and flock; resumable/checksum-aware transfers need rsync. Native file
+operations and Runs need the C99 helper, without remote Python. Preparation can
+reuse a validated cache, use explicitly supplied bytes/compiler inputs, compile
+with an existing remote cc, or upload a pinned static Linux release artifact.
+It never installs packages. See [preparation policies](skills/rhost/references/NATIVE.md#preparation-policies).
 
-```bash
-# Inspect an edge host.
-rhost exec edge --command 'uname -a && systemctl --failed'
+## Preserve completion and mutation evidence
 
-# Check a GPU worker.
-rhost exec gpu --command 'nvidia-smi'
+All public JSON uses **schema v3**. CLI JSON writes one result to stdout without
+mixing command output or progress into it. MCP returns the same versioned
+envelope in structuredContent. Branch on error.code and operation-specific data.
 
-# Run the same command an agent would run locally.
-rhost exec gpu --cwd '~/work/project' --command 'pytest -q'
-
-# Forward stdin and preserve normal pipeline behavior.
-printf 'hello\n' | rhost exec edge --command 'cat'
-rhost exec gpu --command 'cat results.txt' | sort
-```
-
-The `--command` value is one complete remote shell program. Pipelines,
-redirects, variables, and compound syntax inside it run in a fresh remote login
-bash. Shell syntax outside it remains local. `-c` is the short form; for a
-larger local script use `--command-file ./script.sh`, which leaves stdin free for
-the remote program.
-
-Human mode streams output and has no default deadline or output cap. Add
-`--timeout 30s` when the command has a meaningful bound. Use `--json` when the
-caller needs one versioned result rather than terminal output. With JSON,
-`--stream` mirrors live command output to stderr while stdout remains exactly
-one final envelope. Add `--fresh` when diagnosis needs an independent SSH
-connection.
-
-## Why not just SSH?
-
-For a human, `ssh gpu ...` is often enough. For an agent, the edges decide
-whether it can classify a result and retry safely:
-
-- stdin, stdout, stderr, and the remote exit status keep ordinary process
-  behavior;
-- a remote command failure is distinct from usage, transport, and local output
-  failures;
-- a timeout says whether cleanup was confirmed instead of pretending an
-  uncertain mutation is safe to repeat;
-- sessions and tunnels survive the rhost invocation that created them;
-- OpenSSH remains authoritative for configuration, authentication, host keys,
-  ProxyJump, and connection reuse;
-- replacing remote text can require the hash returned by the preceding read.
-
-rhost stays below the agent protocol layer. It is not an SSH client or a
-resident control plane. It is a remote process boundary that a coding agent can
-invoke like any other command-line program.
-
-## When foreground execution is not enough
-
-Direct execution is the default. Reach for a specialized operation only when
-the work needs an additional guarantee.
-
-| Requirement | Operation |
-|---|---|
-| A build/test must remain inspectable after CLI exit | `rhost run` |
-| A shell, REPL, or debugger must keep state | `rhost session` |
-| Bytes must cross local and remote filesystems | `rhost fs` |
-| A text edit needs an atomic hash precondition | `rhost fs read/write/patch` |
-| A port forward must survive its creator | `rhost tunnel` |
-| SSH or remote dependency diagnosis | `rhost doctor` |
-
-For work that only needs to outlive one blocking tool call, let the coding agent
-run an ordinary `rhost exec` process in its own background facility. The rhost
-process remains the foreground owner, so output and exit status keep their
-normal meaning.
-
-Use native Runs when work must survive the local CLI and remain inspectable.
-Scheduled or automatically restarted work belongs to a scheduler already
-installed on the remote host. Invoke that scheduler explicitly, for example:
+For one JSON operation without MCP:
 
 ```bash
-rhost exec gpu --cwd '~/work/project' \
-  --command 'systemd-run --user --unit=training --collect python train.py --config configs/train.yaml'
+rhost request --from - <<'EOF'
+{"schema_version":3,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
+EOF
 ```
 
-rhost does not select or install a scheduler. Use the host's own systemd, Slurm,
-Kubernetes, tmux, or other established runtime when its lifecycle guarantees
-are required. A persistent rhost session is for terminal state, not a generic
-scheduler.
+Commands and paths are JSON data, avoiding local shell parsing. This is one
+operation, not a general workflow/batch language. For CLI shell programs, keep
+the complete program inside `--command`, or use `--command-file`; shell syntax
+outside the quoted value runs locally.
 
-File operations and sessions remain explicit:
+A Run's wait budget only limits observation. Retain its generation/key/payload
+before submission; an uncertain submission can be deduplicated only with the
+same valid identity and payload. Session exec timeout has different semantics
+and may interrupt the pane. Cancellation of an MCP call does not itself stop a
+Run or send a terminal key. See the workflow guides before retrying effects.
 
-```bash
-rhost fs read gpu '~/work/project/src/main.rs' --json
-rhost fs write gpu '~/work/project/src/main.rs' --from ./main.rs --if-hash <sha256>
+File replacement and patches require an observed hash. Structured search and
+read-many return hashes and bounded observations. Named changesets preflight all
+files and journal individual changes; they have no global atomic visibility or
+automatic rollback. Validation is a separate Run, and recovery is explicit.
 
-rhost session create gpu --name debug --cwd '~/work/project' --json
-rhost session exec gpu debug --command 'python3 -m pdb app.py' --json
-```
+When evidence is missing, completion stays unknown. Confirmed cleanup does not
+undo side effects. Consult [recovery](skills/rhost/references/RECOVERY.md) and,
+for destructive sync, exposure or privilege changes,
+[safety](skills/rhost/references/SAFETY.md).
 
-Creating a file needs no hash. Replacing or patching one requires the SHA-256
-from the last `fs read`. Sync and mirror delete only with explicit `--delete`.
-Remote search stays an ordinary command:
+## Ownership and verification
 
-```bash
-rhost exec gpu --cwd '~/work/project' --command 'rg TODO src'
-```
-
-`session attach` is deliberately refused with `USAGE_ERROR`: schema v3 has no
-honest way to represent terminal attachment in a single result envelope.
-
-## What rhost does not own
-
-rhost does not manage SSH keys, keep a host database, install system packages,
-run a global daemon, or define a deployment language. The private helper cache
-and per-Run monitors own only their documented operations.
-
-OpenSSH owns connections and authentication. Remote tmux owns persistent
-terminals. Per-Run monitors and remote files own recoverable execution. Existing
-remote schedulers own scheduled work. The filesystem owns files.
-rhost owns the contract between those components and the caller.
-
-## Structured results
-
-Every agent-visible behavior has a `--json` path. JSON mode writes exactly one
-schema-v3 document to stdout, never mixes progress or command output into it,
-and provides stable `error.code` values.
-
-For execution results, inspect:
-
-- `data.execution.status`: `completed`, `unknown`, or `not_started`;
-- `data.execution.exit_code`: present only when remote completion is known;
-- `data.output.stdout.content` and `data.output.stderr.content`, together with
-  their byte counts and truncation flags;
-- `data.cleanup.status`: `not_attempted`, `confirmed_stopped`, or `unconfirmed`.
-
-| Process status | Meaning |
-|---|---|
-| 0-254 | Remote command status when completion is known |
-| 124 | rhost execution deadline |
-| 130 / 143 | rhost handled SIGINT / SIGTERM |
-| 255 | Adapter, transport, usage, or local delivery failure |
-
-A remote program can return the same numeric values. In ambiguous cases inspect
-`ok`, `data.execution`, and `error.code` rather than branching on English text.
-Missing completion evidence is reported conservatively as
-`REMOTE_EXECUTION_UNKNOWN`; confirmed process-group cleanup does not by itself
-make a side effect safe to replay.
-
-## Use as an agent skill
-
-The repository includes a concise skill that teaches an agent when an ordinary
-command is enough and when sessions, file operations, or tunnels provide a
-needed guarantee:
-
-```bash
-npx skills add starfield17/rhost --skill rhost
-```
-
-The canonical skill is also listed on
-[skills.sh](https://skills.sh/starfield17/rhost/rhost). Codex users can ask the
-built-in skill installer to install this GitHub directory; the new skill is
-available on the next turn:
-
-```text
-$skill-installer install the rhost skill from
-https://github.com/starfield17/rhost/tree/main/skills/rhost
-```
-
-The root `plugin.json` is the portable Agent Plugin entry point, while
-`.codex-plugin/plugin.json` exposes the same skill to Codex plugin discovery.
-Both package the skill and require the `rhost` CLI to be installed separately.
-
-## Design and verification
-
-The CLI process owns no durable remote work. Killing and restarting it does not
-erase state it promised to preserve.
+rhost owns the contract between the caller and existing remote components.
+It does not manage SSH credentials, install system packages, create project
+workspaces/Git branches, or schedule/restart jobs. Use the host's established
+scheduler when those lifecycle guarantees are needed.
 
 - [Architecture and ownership](docs/ARCHITECTURE.md)
+- [Contract and executable evidence](docs/CONTRACT.md)
 - [Agent skill](skills/rhost/SKILL.md)
-- [CLI reference and file input examples](skills/rhost/references/CLI.md)
-- [JSON envelope schema](schemas/result-v3.schema.json)
-- [Contributor rules](AGENTS.md)
-- [Maintenance policy](docs/MAINTENANCE.md)
+- [Result schema](schemas/result-v3.schema.json) and [request schema](schemas/request-v3.schema.json)
+- [Contributor rules](AGENTS.md) and [maintenance policy](docs/MAINTENANCE.md)
 
 ```bash
 make test-smoke
@@ -311,14 +172,11 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-sess
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
 ```
 
-`test-smoke` is the complete local Rust black-box suite and cannot contact a
-real host. `test-live-all` is the serial, Rust-native real-SSH suite and the
-documented manual pre-release verification; the release workflow does not run it
-because no CI-reachable host is provisioned. The historical Go implementation
-and its harness live in the read-only `rhost-go-old` repository.
-
-Live suites always take their target and binary from `RHOST_TEST_HOST` and
-`RHOST_BIN`; the repository has no machine-specific default. The v1 schema
-is archived with the Go implementation. Current command availability is defined by `rhost
---help`, and ongoing compatibility and release policy is defined in
-[`docs/MAINTENANCE.md`](docs/MAINTENANCE.md).
+`test-smoke` is the complete local Rust black-box suite without network access.
+Live suites use explicit environment targets and exercise real SSH behavior.
+Real-host verification is a required manual pre-release step.
+Pre-release verification also runs `test-live-helper` with an exact remote
+helper supplied through RHOST_HELPER_BIN. CI tests exact locally built helpers
+through disposable strict-host-key sshd fixtures; it does not compile replacement
+helpers. Production publication binds immutable client/helper artifacts to
+same-commit manual live evidence. See the maintenance policy for the procedure.

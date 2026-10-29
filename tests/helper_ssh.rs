@@ -302,7 +302,7 @@ fn deadlines_and_inherited_pipes_have_bounded_observation() -> Result<(), String
             &g,
             expiry,
             &key,
-            "(while [ ! -f release ]; do sleep 0.05; done) & printf leader",
+            "(i=0; while [ ! -f release ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done) & printf leader",
             0,
             10000,
         ),
@@ -314,10 +314,23 @@ fn deadlines_and_inherited_pipes_have_bounded_observation() -> Result<(), String
     assert_eq!(done["run"]["completion"]["exit_code"], 0);
     assert_eq!(done["stdout"]["content"], "leader");
     // The descendant still holds the pipes: completion cannot depend on EOF.
-    let final_page = h.ok(
-        "run.poll",
-        json!({"generation":g,"run_id":key,"wait_ms":5000}),
-    )?;
+    // Poll returns immediately on leader completion even while stream draining
+    // continues. Fast SSH can observe several pages before the grace ends.
+    let until = Instant::now() + Duration::from_secs(10);
+    let final_page = loop {
+        let page = h.ok(
+            "run.poll",
+            json!({"generation":g,"run_id":key,"wait_ms":5000}),
+        )?;
+        if page["stdout"]["open"] == false {
+            break page;
+        }
+        if Instant::now() >= until {
+            return Err("inherited stream did not close after the drain grace".into());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(final_page["stdout"]["open"], false);
     assert_eq!(final_page["stdout"]["incomplete"], true);
     h.ok(
         "fs.write",

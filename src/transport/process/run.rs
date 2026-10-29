@@ -160,6 +160,9 @@ fn pump_stream(
 /// routing its two output streams into the caller's sinks.
 pub fn run(spec: &Spec<'_>, stdout: &mut dyn Stream, stderr: &mut dyn Stream) -> Run {
     let start = Instant::now();
+    if (spec.cancelled)() {
+        return settle(start, None, false, true, None);
+    }
     let mut command = Command::new(spec.program);
     command
         .args(spec.args)

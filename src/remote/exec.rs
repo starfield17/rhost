@@ -222,6 +222,27 @@ pub fn execute_captured(
     request: &Request<'_>,
     stdin: Option<&[u8]>,
 ) -> Result<ExecOutcome, ExecError> {
+    captured(client, command, request, stdin, None)
+}
+
+/// Request-scoped observation. Cancellation never performs foreground cleanup.
+pub(crate) fn observe_captured(
+    client: &Client,
+    command: &str,
+    request: &Request<'_>,
+    stdin: Option<&[u8]>,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<ExecOutcome, ExecError> {
+    captured(client, command, request, stdin, Some(cancelled))
+}
+
+fn captured(
+    client: &Client,
+    command: &str,
+    request: &Request<'_>,
+    stdin: Option<&[u8]>,
+    cancelled: Option<&dyn Fn() -> bool>,
+) -> Result<ExecOutcome, ExecError> {
     if invalid(request) {
         return Ok(ExecOutcome::not_started(
             PreExecFailure::Config,
@@ -235,16 +256,31 @@ pub fn execute_captured(
         Separator::Newline,
     ));
     let limit = request.capture.unwrap_or(0);
-    let captured = client
-        .run_captured(
-            request.host,
-            &script,
-            request.timeout.unwrap_or(DEFAULT_HELPER_TIMEOUT),
-            limit,
-            stdin,
-            request.fresh,
+    let mut stdout = crate::transport::Recorder::new(limit);
+    let mut stderr = crate::transport::Recorder::new(limit);
+    let run = client
+        .run_streams(
+            &Streams {
+                target: request.host,
+                remote_command: &script,
+                timeout: Some(request.timeout.unwrap_or(DEFAULT_HELPER_TIMEOUT)),
+                stdin: stdin
+                    .map(StdinSource::Payload)
+                    .unwrap_or(StdinSource::Closed),
+                fresh: request.fresh,
+                cancelled: cancelled.unwrap_or(&never_requested),
+            },
+            &mut stdout,
+            &mut stderr,
         )
-        .map_err(|error| ExecError::LocalState(error.to_string()))?;
+        .map_err(|e| ExecError::LocalState(e.to_string()))?;
+    let captured = crate::transport::Captured {
+        stdout: stdout.body(),
+        stderr: stderr.body(),
+        stdout_bytes: stdout.total(),
+        stderr_bytes: stderr.total(),
+        run,
+    };
     let (stdout_body, code) = match parse_marker(&captured.stdout, &nonce) {
         Some((body, code)) => (body.to_vec(), Some(code)),
         None => (captured.stdout.clone(), None),
@@ -261,14 +297,22 @@ pub fn execute_captured(
         truncate(captured.stderr, limit),
         captured.stderr_bytes,
     )?;
-    let ended = decide(
-        client,
-        request,
-        &nonce,
-        &captured.run,
-        code,
-        &output,
-        Cancel::none(),
-    );
+    let ended = if captured.run.cancelled && cancelled.is_some() {
+        outcome::Ended::Interrupted {
+            code,
+            reason: crate::domain::Interruption::Cancelled(CancelSignal::Term),
+            cleanup: crate::domain::CleanupEvidence::NotAttempted,
+        }
+    } else {
+        decide(
+            client,
+            request,
+            &nonce,
+            &captured.run,
+            code,
+            &output,
+            Cancel::none(),
+        )
+    };
     realize(nonce, ended, output, captured.run.duration)
 }

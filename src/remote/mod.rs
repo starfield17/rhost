@@ -7,11 +7,13 @@
 //! classified). Capabilities depend on this module; it depends on none of them.
 
 mod diagnostic;
+mod observation;
+pub(crate) use observation::Observation;
 pub mod exec;
 mod run;
 pub(crate) use diagnostic::pre_execution;
 
-pub(crate) use run::{RemoteRun, internal, run_remote, run_remote_partial};
+pub(crate) use run::{RemoteRun, internal, run_remote};
 
 /// A use-case failure: the stable code an agent branches on, plus whether the
 /// operation is safe to retry.

@@ -60,8 +60,8 @@ Small root modules (`config`, `shell`, `base64`, `clock`, `random`, `stdio`,
 `signals`, `host`) own concrete shared primitives. `audit` also provides the
 operation trail and shared timer to capability runners.
 
-`dispatch` is the composition root: it may depend on every capability, but it
-only wires them together. Here, "the CLI" is an orchestration layer — it parses
+`dispatch` composes argv commands and `request` composes closed structured operations: it may depend on every capability, but it
+only wire capability interfaces together. Here, "the CLI" is an orchestration layer — it parses
 argv and calls each capability's stable surface; it never reaches into a
 capability's internals, and a capability never depends on `dispatch`. See
 [src/AGENTS.md](../src/AGENTS.md) and the `ALLOWED` map in
@@ -137,3 +137,18 @@ Their shared invariant is that completion evidence belongs to the current
 invocation. The transport, session, and filesystem acceptance tests exercise
 that evidence and the corresponding refusal paths. A new helper protocol needs
 its own Frame and evidence binding before it is added.
+
+## Shared capability execution
+
+CLI, one-document JSON request and MCP are delivery adapters. Capabilities own
+validated operations, complete outcomes, auditing and execution/retry decisions.
+Doctor and session CLI views call the same application interfaces as request/MCP;
+file and Run operations retain their existing shared native execution paths.
+
+Within a capability, application/ops/request/DTO code cannot depend on CLI
+parsers/renderers, MCP SDK types or dispatch, including through facade exports.
+The ownership map in `scripts/structure_owners.py`, composed by `make structure`,
+checks these finer boundaries alongside the existing module direction/cycle rules.
+Request's CLI loader is separate from its operation composition; audit recording
+is separate from the audit command. Shared execution carries request-scoped
+cancellation rather than using the MCP server's global process signals.

@@ -115,6 +115,10 @@ the remote pipe-drain grace. The suite now accepts the registered launch state,
 holds work behind an explicit release file, and requires an exited leader plus
 incomplete stream evidence while its descendant still holds the pipe. Network
 latency is not the oracle for remote process/stream independence.
+Fast disposable SSH can return multiple exited observations before the remote
+drain grace ends. The suite observes `open:false` before requiring the final
+incomplete-tail flag; a poll wait budget does not wait for stream closure after
+leader exit. The descendant fixture also has a finite independent lifetime.
 
 ### Two-phase v5 publication
 
@@ -134,3 +138,38 @@ as a retired exec field. Schema-v3 Runs intentionally own those independent
 stream objects. The dedicated native reference may document them; all other
 skill files retain the old exec-field guard, and every other retired wire name
 remains rejected everywhere. The new native reference is now required packaging.
+
+### Linux process read-accounting oracle
+
+Native CI showed that an unreaped helper zombie may deny `/proc/<pid>/io`
+access. The bounded-scan oracle now runs it under a dedicated shell, waits for
+the helper to be reaped, and stops that live parent before reading its cumulative
+I/O counters. Linux adds reaped child accounting to the parent's signal record.
+The same scan-byte limit, read-counter comparison and fixed wrapper allowance
+remain enforced; no privileged access or skipped assertion is introduced.
+Writer shutdown/join and the unreaped shell/helper process group are owned by
+scope guards, including input/spawn errors, timeout and assertion failure.
+
+### Progressive skill references and packaging evidence
+
+The former package gate required connection-persistence detail in SKILL.md and
+allowed native stream field documentation only in NATIVE.md. That conflicted
+with the approved task-specific references. The same persistence value is now
+checked in its CLI owner; native stream names remain confined to the Run/native
+guides. Required references, version/help drift guidance, retired fields and the
+complete error-code map remain checked, with portable link reachability added.
+Broken-link and retired-field probes both failed before restoring the guides.
+
+### Session observer cancellation and writer-lock lifetime
+
+The new MCP live oracle assumed observer EOF immediately released the remote
+writer, and therefore required SESSION_BUSY for the surviving pane. Real SSH
+retained that writer and correctly returned its lock refusal, consistent with
+the existing CLI process-death contract. The measurement now releases a private
+fixture only after observer cancellation/EOF, independently of that observer,
+and requires later pane progress plus unchanged canonical identity and no
+interrupt marker. Product behavior and time budgets are unchanged.
+
+The detach fixture completes naturally only after that independent release and
+waits for a subsequent shell completion boundary before closing. Close/recover
+correctly cannot bypass an active writer lock; cleanup must respect that owner.

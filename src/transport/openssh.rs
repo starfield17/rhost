@@ -190,12 +190,26 @@ impl Client {
     /// master, so a caller cannot claim reuse from an argv that merely carried a
     /// ControlPath option.
     pub fn connection_status(&self, target: &str) -> ConnectionStatus {
+        self.connection_status_observed(target, &never)
+    }
+    pub fn connection_status_observed(
+        &self,
+        target: &str,
+        cancelled: &dyn Fn() -> bool,
+    ) -> ConnectionStatus {
+        if cancelled() {
+            return ConnectionStatus::inspect(
+                self.cfg.control_path.clone(),
+                "observation cancelled",
+                None,
+            );
+        }
         let mut args = self.options(false);
         args.push("-O".to_string());
         args.push("check".to_string());
         args.push("--".to_string());
         args.push(target.to_string());
-        let (diagnostic, exit) = self.control_probe(&args);
+        let (diagnostic, exit) = self.control_probe_observed(&args, cancelled);
         ConnectionStatus::inspect(self.cfg.control_path.clone(), &diagnostic, exit)
     }
 
@@ -254,6 +268,13 @@ impl Client {
     /// One control-protocol exchange: OpenSSH writes its answer on stderr, so
     /// both streams are read together.
     fn control_probe(&self, args: &[String]) -> (String, Option<i32>) {
+        self.control_probe_observed(args, &never)
+    }
+    fn control_probe_observed(
+        &self,
+        args: &[String],
+        cancelled: &dyn Fn() -> bool,
+    ) -> (String, Option<i32>) {
         let mut stdout = Recorder::new(0);
         let mut stderr = Recorder::new(0);
         let run = process::run(
@@ -262,7 +283,7 @@ impl Client {
                 args,
                 stdin: StdinSource::Closed,
                 deadline: Some(Instant::now() + CONTROL_TIMEOUT),
-                cancelled: &never,
+                cancelled,
                 group: false,
             },
             &mut stdout,

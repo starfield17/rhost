@@ -14,7 +14,7 @@ mod openssh;
 mod process;
 mod protocol;
 
-pub use openssh::{Client, Config, ConnectionStatus, MasterStatus, Reset, Streams};
+pub use openssh::{Captured, Client, Config, ConnectionStatus, MasterStatus, Reset, Streams};
 pub use process::{Capture, Keep, Recorder, Run, RunFailure, Spec, StdinSource, Stream, Tap, run};
 pub use protocol::{
     CompletionStream, DEFAULT_REMOTE_STATE_DIR, ExecSpec, Separator, build_script, kill_command,

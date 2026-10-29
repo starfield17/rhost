@@ -7,6 +7,7 @@ use crate::domain::{
     SessionId, SessionRef,
 };
 use crate::remote::Error;
+use crate::remote::Observation;
 use crate::remote::internal;
 use crate::session::{self, ExecResult, HelperFailure};
 use crate::shell;
@@ -28,6 +29,13 @@ pub struct ExecOptions<'a> {
 /// back, and a busy pane says what is holding it. Only a transport failure is an
 /// `Err`, and then there is no session state to report.
 pub fn exec(client: &Client, options: &ExecOptions<'_>) -> Result<SessionExecOutcome, Error> {
+    exec_observed(&Observation::new(client, &|| false), options)
+}
+
+pub(in crate::session) fn exec_observed(
+    observation: &Observation<'_>,
+    options: &ExecOptions<'_>,
+) -> Result<SessionExecOutcome, Error> {
     let reference = SessionRef::new(options.session.to_string())
         .map_err(|error| Error::new("CONFIG_INVALID", error.to_string()))?;
     if options.command.trim().is_empty() {
@@ -37,7 +45,7 @@ pub fn exec(client: &Client, options: &ExecOptions<'_>) -> Result<SessionExecOut
         .map_err(|error| internal(format!("could not generate a submission token: {error}")))?;
     let script = session::exec_script(options.session, options.command, options.timeout, &token);
     let stdout = run_helper(
-        client,
+        observation,
         options.host,
         &script,
         options.timeout,

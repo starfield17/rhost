@@ -4,6 +4,8 @@
 //! the master says about itself and, on `reset`, asks it to stop accepting new
 //! channels. Accepted channels are left alone.
 
+mod application;
+pub(crate) use application::observe;
 mod command;
 mod dto;
 mod run;

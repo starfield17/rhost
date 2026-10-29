@@ -22,6 +22,7 @@
 
 mod audit;
 mod changeset;
+mod core_request;
 mod edit;
 mod examples;
 mod exec;
@@ -30,6 +31,7 @@ mod helper;
 mod hosts;
 mod inspect;
 mod mcp;
+mod mcp_core_cancel;
 mod remote_fs;
 mod remote_fs_native;
 mod remote_fs_support;

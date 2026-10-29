@@ -5,13 +5,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
-struct Mcp {
+pub(super) struct Mcp {
     child: Child,
     input: Option<ChildStdin>,
     output: Receiver<Result<Value, String>>,
 }
 impl Mcp {
-    fn open(harness: &Harness) -> Result<Self, String> {
+    pub(super) fn open(harness: &Harness) -> Result<Self, String> {
         let mut child = harness
             .command(&["mcp"])?
             .stdin(Stdio::piped())
@@ -46,13 +46,13 @@ impl Mcp {
         m.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}))?;
         Ok(m)
     }
-    fn send(&mut self, value: Value) -> Result<(), String> {
+    pub(super) fn send(&mut self, value: Value) -> Result<(), String> {
         let input = self.input.as_mut().ok_or("MCP input closed")?;
         writeln!(input, "{value}")
             .and_then(|_| input.flush())
             .map_err(|e| fail("write MCP", e))
     }
-    fn answer(&self, id: u64) -> Result<Value, String> {
+    pub(super) fn answer(&self, id: u64) -> Result<Value, String> {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             let value = self
@@ -64,10 +64,10 @@ impl Mcp {
             }
         }
     }
-    fn start(&mut self, id: u64, name: &str, args: Value) -> Result<(), String> {
+    pub(super) fn start(&mut self, id: u64, name: &str, args: Value) -> Result<(), String> {
         self.send(json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":args}}))
     }
-    fn call(&mut self, id: u64, name: &str, args: Value) -> Result<Value, String> {
+    pub(super) fn call(&mut self, id: u64, name: &str, args: Value) -> Result<Value, String> {
         self.start(id, name, args)?;
         let response = self.answer(id)?;
         let envelope = response["result"]["structuredContent"].clone();
@@ -78,7 +78,7 @@ impl Mcp {
         assert!(validator.is_valid(&envelope), "{response}");
         Ok(envelope)
     }
-    fn close(&mut self) -> Result<(), String> {
+    pub(super) fn close(&mut self) -> Result<(), String> {
         drop(self.input.take());
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
@@ -186,7 +186,7 @@ fn mcp_cancellation_is_scoped_and_does_not_cancel_the_run() -> Result<(), String
     m.close()
 }
 
-fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
+pub(super) fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String), String> {
     let prepared = m.call(2, "rhost_helper_prepare", json!({"host":"gpu","params":{}}))?;
     let generation = prepared["data"]["generation"].clone();
     let expiry = prepared["data"]["remote_time_unix"]

@@ -163,3 +163,17 @@ executions and both native helper jobs without rebuilding the client candidates.
 Missing/expired/substituted inputs refuse promotion. The published manual record
 is explicitly a trusted operator attestation, not CI-observed real-host evidence.
 See [maintenance](../MAINTENANCE.md#v5-publication-procedure).
+
+## Core structured adapters (v5.1.0)
+
+v5.1.0 adds version/hosts, doctor, connection status and seven session
+operations to request/MCP. Their existing schema-v3 result DTOs remain unchanged.
+Local discovery rejects host/guard; the added remote operations require a host
+and reject boot guards before probing. Both outer input and params must be JSON
+objects, preserving duplicate-field refusal in raw JSON input.
+
+Capability-owned application interfaces serve both CLI and structured delivery.
+Session observers carry scoped cancellation into actual subprocess waits, without
+foreground-exec cleanup on cancellation. Cancellation never itself sends a pane
+key and does not revoke an already submitted session timeout. Partial create
+identity and missing completion remain available evidence, never safe replay.

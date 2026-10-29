@@ -21,6 +21,10 @@
 //! clean; nothing here supports `attach`, which the v2 schema reports as a usage
 //! error.
 
+mod application;
+mod request;
+pub(crate) use application::execute;
+pub(crate) use request::prepare;
 pub mod command;
 mod dto;
 mod ops;

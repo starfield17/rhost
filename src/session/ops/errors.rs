@@ -6,29 +6,22 @@
 
 use super::shared::helper_budget;
 use crate::remote::Error;
-use crate::remote::{RemoteRun, run_remote, run_remote_partial};
+use crate::remote::{Observation, RemoteRun};
 use crate::session::{self, HelperFailure};
-use crate::transport::Client;
 use std::time::Duration;
 
 /// One helper submission: the script runs through the ordinary exec path, and a
 /// helper that could not report its own result at all is a session problem rather
 /// than a caller mistake.
 pub(super) fn run_helper(
-    client: &Client,
+    observation: &Observation<'_>,
     host: &str,
     script: &str,
     user_timeout: Duration,
     capture: usize,
 ) -> Result<String, Error> {
-    let (code, stdout, stderr) = run_remote(
-        client,
-        host,
-        script,
-        None,
-        helper_budget(user_timeout),
-        capture,
-    )?;
+    let (code, stdout, stderr) =
+        observation.run(host, script, helper_budget(user_timeout), capture)?;
     if code != 0 {
         return Err(unhealthy(&format!(
             "session helper exited {code}{}",
@@ -42,20 +35,13 @@ pub(super) fn run_helper(
 /// completed. `create` needs the partial answer: the remote may have made a
 /// session before the response was lost.
 pub(super) fn run_helper_once(
-    client: &Client,
+    observation: &Observation<'_>,
     host: &str,
     script: &str,
     user_timeout: Duration,
     capture: usize,
 ) -> Result<RemoteRun, Error> {
-    run_remote_partial(
-        client,
-        host,
-        script,
-        None,
-        helper_budget(user_timeout),
-        capture,
-    )
+    observation.partial(host, script, helper_budget(user_timeout), capture)
 }
 
 pub(super) fn detail(stderr: &str) -> String {
@@ -151,7 +137,7 @@ pub(super) fn unhealthy(message: &str) -> Error {
     Error::new("SESSION_UNHEALTHY", message).retryable()
 }
 
-pub(super) fn valid_name(name: &str) -> bool {
+pub(in crate::session) fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name
@@ -162,7 +148,7 @@ pub(super) fn valid_name(name: &str) -> bool {
 /// The key names rhost accepts. Anything else is arbitrary text that would be
 /// injected as a key name, so the set is a closed allowlist rather than a
 /// passthrough.
-pub(super) fn is_supported_key(key: &str) -> bool {
+pub(in crate::session) fn is_supported_key(key: &str) -> bool {
     matches!(
         key,
         "C-c"

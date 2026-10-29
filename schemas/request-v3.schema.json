@@ -6,7 +6,6 @@
   "required": [
     "schema_version",
     "operation",
-    "host",
     "params"
   ],
   "properties": {
@@ -30,7 +29,18 @@
         "fs.changeset.recover",
         "fs.changeset.prune",
         "fs.search",
-        "fs.read_many"
+        "fs.read_many",
+        "version",
+        "hosts",
+        "doctor",
+        "connection.status",
+        "session.create",
+        "session.list",
+        "session.exec",
+        "session.send",
+        "session.read",
+        "session.recover",
+        "session.close"
       ]
     },
     "host": {
@@ -64,7 +74,10 @@
             "type": "object",
             "additionalProperties": false
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -80,7 +93,10 @@
           "params": {
             "$ref": "#/$defs/start"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -96,7 +112,10 @@
           "params": {
             "$ref": "#/$defs/poll"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -115,7 +134,10 @@
           "params": {
             "$ref": "#/$defs/namespace"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -131,7 +153,10 @@
           "params": {
             "$ref": "#/$defs/signal"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -147,7 +172,10 @@
           "params": {
             "$ref": "#/$defs/fs_read"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -163,7 +191,10 @@
           "params": {
             "$ref": "#/$defs/fs_write"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -179,7 +210,10 @@
           "params": {
             "$ref": "#/$defs/fs_patch"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -195,7 +229,10 @@
           "params": {
             "$ref": "#/$defs/changeset_apply"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -211,7 +248,10 @@
           "params": {
             "$ref": "#/$defs/changeset_id"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -227,7 +267,10 @@
           "params": {
             "$ref": "#/$defs/changeset_recover"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -243,7 +286,10 @@
           "params": {
             "$ref": "#/$defs/changeset_id"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -259,7 +305,10 @@
           "params": {
             "$ref": "#/$defs/fs_search"
           }
-        }
+        },
+        "required": [
+          "host"
+        ]
       }
     },
     {
@@ -275,7 +324,437 @@
           "params": {
             "$ref": "#/$defs/fs_read_many"
           }
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "version"
+          }
         }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          },
+          "if_boot_id": false,
+          "host": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "hosts"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          },
+          "if_boot_id": false,
+          "host": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "doctor"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              },
+              "fresh": {
+                "type": "boolean"
+              }
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "connection.status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.create"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{0,64}$"
+              },
+              "cwd": {
+                "type": "string",
+                "pattern": "^[^\\u0000]*$"
+              },
+              "shell": {
+                "const": "bash"
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.list"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.exec"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000]+$"
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            },
+            "required": [
+              "session",
+              "command"
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.send"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "data": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000]+$"
+              },
+              "key": {
+                "enum": [
+                  "C-c",
+                  "C-d",
+                  "C-z",
+                  "C-\\",
+                  "C-u",
+                  "C-l",
+                  "C-a",
+                  "C-e",
+                  "C-w",
+                  "Enter",
+                  "Tab",
+                  "BTab",
+                  "Space",
+                  "BSpace",
+                  "Escape",
+                  "Up",
+                  "Down",
+                  "Left",
+                  "Right",
+                  "Home",
+                  "End",
+                  "PageUp",
+                  "PageDown"
+                ]
+              },
+              "enter": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "session"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "data"
+                ],
+                "not": {
+                  "required": [
+                    "key"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "key"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "data"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "enter"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.read"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "since": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "tail": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_bytes": {
+                "type": "integer",
+                "minimum": 4,
+                "maximum": 262144
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            },
+            "required": [
+              "session"
+            ],
+            "not": {
+              "required": [
+                "since",
+                "tail"
+              ]
+            }
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.recover"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9223372036854,
+                "description": "Milliseconds; zero uses the operation default."
+              }
+            },
+            "required": [
+              "session"
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "session.close"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "session": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+              }
+            },
+            "required": [
+              "session"
+            ]
+          },
+          "if_boot_id": false
+        },
+        "required": [
+          "host"
+        ]
       }
     }
   ],
