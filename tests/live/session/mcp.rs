@@ -1,5 +1,5 @@
 use crate::mcp_client::Mcp;
-use crate::support::{Live, poll, text, unique};
+use crate::support::{Live, poll, shell_quote, text, unique};
 use serde_json::json;
 
 #[test]
@@ -111,9 +111,20 @@ fn cancellation_case(cancelled: bool) -> Result<(), String> {
     let name = unique("rlive-mcp-cancel");
     let created = live.ok(&["session", "create", &host, "--name", &name, "--json"])?;
     let id = text(&created.value, "/data/session_id")?.to_string();
+    let dir = live.remote_dir()?;
+    let release = format!("{dir}/release");
     let result: Result<(), String> = (|| {
         let mut m = Mcp::open(live.command(&["mcp"]))?;
-        let request=m.start("session.exec",Some(&host),json!({"session":id,"command":"sh -c 'trap \"printf unintended-interrupt\" INT; printf observer-ready; while :; do sleep 1; done'","timeout_ms":60000}))?;
+        let script = format!(
+            "trap 'printf unintended-interrupt; exit' INT; printf observer-ready; while [ ! -e {} ]; do sleep 0.1; done; printf observer-progress; while :; do sleep 1; done",
+            shell_quote(&release)
+        );
+        let command = format!("sh -c {}", shell_quote(&script));
+        let request = m.start(
+            "session.exec",
+            Some(&host),
+            json!({"session":id,"command":command,"timeout_ms":60000}),
+        )?;
         poll(|| {
             Ok(m.call(
                 "session.read",
@@ -132,26 +143,38 @@ fn cancellation_case(cancelled: bool) -> Result<(), String> {
         }
         m.close()?;
         let mut reconnected = Mcp::open(live.command(&["mcp"]))?;
+        let released = live.exec(&format!(": > {}", shell_quote(&release)))?;
+        assert_eq!(released.value["data"]["execution"]["exit_code"], 0);
+        poll(|| {
+            Ok(reconnected.call(
+                "session.read",
+                Some(&host),
+                json!({"session":id,"max_bytes":4096}),
+            )?["data"]["content"]
+                .as_str()
+                .unwrap_or("")
+                .contains("observer-progress"))
+        })?;
         let read = reconnected.call(
             "session.read",
             Some(&host),
             json!({"session":id,"max_bytes":4096}),
         )?;
         let content = text(&read, "/data/content")?;
+        assert_eq!(read["data"]["session_id"], id);
         assert!(content.contains("observer-ready"));
+        assert!(content.contains("observer-progress"));
         assert!(
             !content.contains("unintended-interrupt"),
             "cancellation must not send C-c"
         );
-        live.error(
-            "SESSION_BUSY",
-            &["session", "exec", &host, &id, "--command", "true", "--json"],
-        )?;
         reconnected.call("session.recover", Some(&host), json!({"session":id}))?;
         reconnected.close()
     })();
     let cleanup = live.ok(&["session", "close", &host, &id, "--json"]);
+    let files = live.cleanup_remote(&dir);
     result?;
     cleanup?;
+    files?;
     Ok(())
 }

@@ -159,3 +159,13 @@ checked in its CLI owner; native stream names remain confined to the Run/native
 guides. Required references, version/help drift guidance, retired fields and the
 complete error-code map remain checked, with portable link reachability added.
 Broken-link and retired-field probes both failed before restoring the guides.
+
+### Session observer cancellation and writer-lock lifetime
+
+The new MCP live oracle assumed observer EOF immediately released the remote
+writer, and therefore required SESSION_BUSY for the surviving pane. Real SSH
+retained that writer and correctly returned its lock refusal, consistent with
+the existing CLI process-death contract. The measurement now releases a private
+fixture only after observer cancellation/EOF, independently of that observer,
+and requires later pane progress plus unchanged canonical identity and no
+interrupt marker. Product behavior and time budgets are unchanged.
