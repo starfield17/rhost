@@ -16,12 +16,12 @@ pub(crate) fn dispatch(
     interrupt: &Interrupt,
 ) -> u8 {
     match command {
-        Command::Mcp { help } => {
+        Command::Mcp { help, tools } => {
             if help {
-                sink.line("Usage: rhost mcp\nServe schema-v3 operations over MCP stdio. Configure the MCP client with command rhost and args [\"mcp\"]. OpenSSH retains authentication and host-key ownership.");
+                sink.line("Usage: rhost mcp [--tools all|runs,files,sessions,diagnostics]\nServe schema-v4 operations over MCP stdio. --help shows this page; --tools restricts listing and calls (default all). Configure the MCP client with command rhost and args [\"mcp\"]. OpenSSH retains authentication and host-key ownership.");
                 0
             } else {
-                crate::mcp::run(client, interrupt)
+                crate::mcp::run(client, interrupt, &tools)
             }
         }
         Command::Request(request) => crate::request::run(sink, client, request, interrupt),

@@ -34,6 +34,7 @@ pub struct Invocation {
 pub enum Command {
     Mcp {
         help: bool,
+        tools: crate::mcp::Selection,
     },
     Request(crate::runs::Invocation),
     Version,

@@ -1,4 +1,4 @@
-//! The schema-v3 view of a control master's state, shared by `connection` and
+//! The schema-v4 view of a control master's state, shared by `connection` and
 //! `doctor` (which reports the same shape as part of a probe).
 
 use crate::transport;
@@ -54,7 +54,7 @@ pub fn connection(
     status: &ConnectionDto,
 ) -> Envelope<ConnectionDto> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation,
         ok: true,
         host: Some(host.to_string()),
@@ -69,7 +69,7 @@ pub fn connection_failure(
     reason: &str,
 ) -> Envelope<ConnectionDto> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "connection.reset",
         ok: false,
         host: Some(host.to_string()),

@@ -36,9 +36,13 @@ pub fn execute_params(
         None
     };
     let mut identity = if prepared.kind != 8 {
-        helper.ensure()?
+        helper
+            .ensure()
+            .map_err(|e| e.with_recovery(crate::domain::Recovery::preparation()))?
     } else {
-        helper.probe()?
+        helper
+            .probe()
+            .map_err(|e| e.with_recovery(crate::domain::Recovery::preparation()))?
     };
     let bytes = helper.call(prepared.kind, prepared.body, prepared.wait_ms)?;
     let mut data = dto::decode(prepared.kind, &bytes)?;

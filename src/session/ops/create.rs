@@ -91,6 +91,7 @@ impl Created {
                 message: message.to_string(),
                 retryable,
                 mutation: None,
+                recovery: crate::domain::Recovery::default(),
             }),
         }
     }

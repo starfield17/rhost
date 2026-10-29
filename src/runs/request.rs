@@ -110,7 +110,7 @@ pub struct Prepared {
     pub wait_ms: u32,
 }
 fn invalid(message: &str) -> Error {
-    Error::new("CONFIG_INVALID", message)
+    Error::new("CONFIG_INVALID", message).with_recovery(crate::domain::Recovery::invalid())
 }
 fn parse<T: for<'a> Deserialize<'a>>(raw: &str) -> Result<T, Error> {
     serde_json::from_str(raw).map_err(|e| invalid(&e.to_string()))

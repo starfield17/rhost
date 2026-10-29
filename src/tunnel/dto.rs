@@ -43,7 +43,7 @@ pub fn tunnel<'a>(
     value: &'a TunnelData,
 ) -> Envelope<TunnelDto<'a>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation,
         ok: true,
         host: (!host.is_empty()).then(|| host.to_string()),
@@ -59,7 +59,7 @@ pub struct TunnelsDto<'a> {
 
 pub fn tunnels(rows: &[TunnelData]) -> Envelope<TunnelsDto<'_>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "tunnel.list",
         ok: true,
         host: None,
@@ -80,7 +80,7 @@ pub struct TunnelClosedDto<'a> {
 
 pub fn tunnel_closed(id: &str) -> Envelope<TunnelClosedDto<'_>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "tunnel.close",
         ok: true,
         host: None,

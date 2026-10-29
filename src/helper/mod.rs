@@ -240,7 +240,8 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
         timeout: Duration,
         cap: usize,
     ) -> Result<Vec<u8>, Error> {
-        self.ensure()?;
+        self.ensure()
+            .map_err(|e| e.with_recovery(crate::domain::Recovery::preparation()))?;
         let marker = format!(
             "RHOST_FILE_{}\n",
             crate::random::hex(16).map_err(|e| Error::new("INTERNAL", e.to_string()))?

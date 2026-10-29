@@ -204,13 +204,13 @@ impl RequestOutcome {
             {
                 e.mutation = Some(crate::domain::MutationEvidence::NotApplied);
             }
-            let mut value = json!({"code":e.code,"message":e.message,"retryable":e.retryable});
+            let mut value = json!({"code":e.code,"message":e.message,"retryable":e.retryable,"recovery":crate::wire::recovery(e.recovery)});
             if let Some(m) = e.mutation {
                 value["mutation"] = m.as_str().into();
             }
             value
         });
-        json!({"schema_version":3,"operation":operation,"host":host,"ok":error.is_none(),"data":self.data,"error":error})
+        json!({"schema_version":4,"operation":operation,"host":host,"ok":error.is_none(),"data":self.data,"error":error})
     }
     pub fn done(data: Value) -> Self {
         Self { data, error: None }

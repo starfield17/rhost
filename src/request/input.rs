@@ -42,7 +42,7 @@ pub(crate) fn arguments(operation: &str, arguments: Value) -> Result<Call, Error
     }
     let args: Arguments = serde_json::from_value(arguments).map_err(|e| invalid(e.to_string()))?;
     validate(Call {
-        schema_version: 3,
+        schema_version: 4,
         operation: operation.into(),
         host: args.host,
         params: serde_json::value::to_raw_value(&args.params)
@@ -54,8 +54,8 @@ fn validate(call: Call) -> Result<Call, Error> {
     if !call.params.get().trim_start().starts_with('{') {
         return Err(invalid("params must be a JSON object"));
     }
-    if call.schema_version != 3 {
-        return Err(invalid("request requires schema v3"));
+    if call.schema_version != 4 {
+        return Err(invalid("request requires schema v4"));
     }
     if matches!(call.operation.as_str(), "version" | "hosts") {
         if call.host.is_some() || call.if_boot_id.is_some() {
@@ -76,5 +76,5 @@ fn validate(call: Call) -> Result<Call, Error> {
     Ok(call)
 }
 fn invalid(message: impl Into<String>) -> Error {
-    Error::new("CONFIG_INVALID", message)
+    Error::new("CONFIG_INVALID", message).with_recovery(crate::domain::Recovery::invalid())
 }

@@ -73,19 +73,19 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
     };
     match result {
         Ok(data) => {
-            json!({"schema_version":3,"operation":q.operation,"ok":true,"host":host,"data":data,"error":null})
+            json!({"schema_version":4,"operation":q.operation,"ok":true,"host":host,"data":data,"error":null})
         }
         Err(e) => failure(&q.operation, Some(host), e),
     }
 }
 pub fn failure(operation: &str, host: Option<&str>, error: Error) -> Value {
-    let mut detail = json!({"code":error.code,"message":error.message,"retryable":error.retryable});
+    let mut detail = json!({"code":error.code,"message":error.message,"retryable":error.retryable,"recovery":crate::wire::recovery(error.recovery)});
     if let Some(mutation) = error.mutation {
         detail["mutation"] = mutation.as_str().into();
     } else if matches!(operation, "fs.write" | "fs.patch") {
         detail["mutation"] = "not_applied".into();
     }
-    let mut envelope = json!({"schema_version":3,"operation":operation,"ok":false,"host":host,"data":null,"error":detail});
+    let mut envelope = json!({"schema_version":4,"operation":operation,"ok":false,"host":host,"data":null,"error":detail});
     if host.is_none() && core::recognizes(operation) {
         if let Some(object) = envelope.as_object_mut() {
             object.remove("host");
@@ -94,7 +94,11 @@ pub fn failure(operation: &str, host: Option<&str>, error: Error) -> Value {
     envelope
 }
 pub fn invalid(message: impl Into<String>) -> Value {
-    failure("request", None, Error::new("CONFIG_INVALID", message))
+    failure(
+        "request",
+        None,
+        Error::new("CONFIG_INVALID", message).with_recovery(crate::domain::Recovery::invalid()),
+    )
 }
 pub fn observation_cancelled(operation: &str, host: Option<&str>) -> Value {
     failure(
@@ -103,7 +107,17 @@ pub fn observation_cancelled(operation: &str, host: Option<&str>) -> Value {
         Error::new(
             "REMOTE_COMMAND_CANCELLED",
             "local observation cancelled before submission",
-        ),
+        )
+        .with_recovery(crate::domain::Recovery::not_dispatched()),
+    )
+}
+pub fn busy(operation: &str, host: Option<&str>) -> Value {
+    failure(
+        operation,
+        host,
+        Error::new("MCP_BUSY", "bounded MCP admission queue is full")
+            .retryable()
+            .with_recovery(crate::domain::Recovery::not_dispatched()),
     )
 }
 

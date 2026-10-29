@@ -23,6 +23,7 @@ pub struct Error {
     pub message: String,
     pub retryable: bool,
     pub mutation: Option<crate::domain::MutationEvidence>,
+    pub recovery: crate::domain::Recovery,
 }
 
 impl Error {
@@ -32,6 +33,7 @@ impl Error {
             message: message.into(),
             retryable: false,
             mutation: None,
+            recovery: crate::domain::Recovery::default(),
         }
     }
 
@@ -43,6 +45,10 @@ impl Error {
     pub fn with_mutation(mut self, evidence: crate::domain::MutationEvidence) -> Self {
         self.mutation = Some(evidence);
         self.retryable = false;
+        self
+    }
+    pub fn with_recovery(mut self, recovery: crate::domain::Recovery) -> Self {
+        self.recovery = recovery;
         self
     }
 }

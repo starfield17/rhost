@@ -5,6 +5,8 @@ pub use context::BootId;
 mod files;
 mod identity;
 mod mutation;
+mod recovery;
+pub use recovery::{Phase, Recovery, Submission};
 mod session;
 
 pub use execution::{

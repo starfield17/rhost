@@ -14,7 +14,7 @@ pub fn audit<'a>(
     entries: &'a [super::trail::Entry],
 ) -> Envelope<AuditDto<'a>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "audit",
         ok: true,
         host: None,

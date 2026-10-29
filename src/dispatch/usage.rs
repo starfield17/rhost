@@ -180,6 +180,7 @@ fn flags(scope: Scope, leaf: &str) -> &'static [FlagSpec] {
 pub(super) fn routing_flags() -> Vec<FlagSpec> {
     let mut registered = Vec::new();
     registered.extend_from_slice(ROOT_FLAGS_ALL);
+    registered.extend_from_slice(super::route::MCP_FLAGS);
     registered.extend_from_slice(crate::runs::FLAGS);
     registered.extend_from_slice(exec_flags());
     registered.extend_from_slice(doctor_flags());

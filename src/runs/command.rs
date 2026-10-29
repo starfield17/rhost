@@ -210,7 +210,7 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
             format!("run.{leaf}")
         };
         let mut document =
-            json!({"schema_version":3,"operation":operation,"host":host,"params":params});
+            json!({"schema_version":4,"operation":operation,"host":host,"params":params});
         if let Some(guard) = p.value("if-boot-id") {
             crate::domain::BootId::new(guard.to_string()).map_err(|e| e.to_string())?;
             document["if_boot_id"] = guard.into();

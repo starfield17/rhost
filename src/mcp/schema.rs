@@ -13,9 +13,93 @@ fn selects(condition: &Value, op: &str) -> Option<bool> {
 fn specialize(mut value: Value, op: &str) -> Value {
     value["properties"]["operation"] = json!({"const":op});
     if let Some(branches) = value.get_mut("allOf").and_then(Value::as_array_mut) {
-        branches.retain(|v| v.get("else").is_some() || selects(&v["if"], op) != Some(false));
+        let mut selected = Vec::new();
+        for mut branch in std::mem::take(branches) {
+            match selects(&branch["if"], op) {
+                Some(false) => {
+                    if let Some(otherwise) = branch.get("else") {
+                        selected.push(otherwise.clone());
+                    }
+                }
+                Some(true) => {
+                    if let Some(properties) = branch["if"]["properties"].as_object_mut() {
+                        properties.remove("operation");
+                    }
+                    if branch["if"] == json!({"properties":{}}) {
+                        if let Some(then) = branch.get("then") {
+                            selected.push(then.clone());
+                        }
+                    } else {
+                        selected.push(branch);
+                    }
+                }
+                None => selected.push(branch),
+            }
+        }
+        *branches = selected;
     }
     value
+}
+
+/// Intersect two closed envelope objects only when their allowed keys agree.
+fn envelope(mut outer: Value, selected: Value) -> Value {
+    let same_keys = outer["properties"]
+        .as_object()
+        .zip(selected["properties"].as_object())
+        .is_some_and(|(a, b)| a.keys().eq(b.keys()));
+    let known_shape = selected.as_object().is_some_and(|m| {
+        m.keys().all(|k| {
+            matches!(
+                k.as_str(),
+                "type"
+                    | "required"
+                    | "properties"
+                    | "additionalProperties"
+                    | "allOf"
+                    | "$defs"
+                    | "definitions"
+            )
+        })
+    });
+    if !same_keys
+        || !known_shape
+        || outer["type"] != selected["type"]
+        || outer["additionalProperties"] != false
+        || selected["additionalProperties"] != false
+    {
+        match outer.get_mut("allOf").and_then(Value::as_array_mut) {
+            Some(branches) => branches.push(selected),
+            None => outer["allOf"] = json!([selected]),
+        }
+        return outer;
+    }
+    for (name, rule) in selected["properties"].as_object().into_iter().flatten() {
+        let current = &outer["properties"][name];
+        outer["properties"][name] = if current == rule || rule == &json!({}) {
+            current.clone()
+        } else if current == &json!({}) {
+            rule.clone()
+        } else {
+            json!({"allOf":[current,rule]})
+        };
+    }
+    if let (Some(required), Some(extra)) = (
+        outer["required"].as_array_mut(),
+        selected["required"].as_array(),
+    ) {
+        for field in extra {
+            if !required.contains(field) {
+                required.push(field.clone());
+            }
+        }
+    }
+    if let Some(extra) = selected["allOf"].as_array() {
+        match outer.get_mut("allOf").and_then(Value::as_array_mut) {
+            Some(branches) => branches.extend(extra.iter().cloned()),
+            None => outer["allOf"] = extra.clone().into(),
+        }
+    }
+    outer
 }
 struct Bundle<'a> {
     source: &'a Value,
@@ -109,10 +193,7 @@ pub fn output(source: &Value, op: &str) -> Result<Value, String> {
         .remove("oneOf");
     outer = specialize(outer, op);
     let selected = specialize(branches[0].clone(), op);
-    match outer.get_mut("allOf").and_then(Value::as_array_mut) {
-        Some(branches) => branches.push(selected),
-        None => outer["allOf"] = json!([selected]),
-    };
+    outer = envelope(outer, selected);
     bundle(source, outer)
 }
 pub fn input(source: &Value, op: &str) -> Result<Value, String> {

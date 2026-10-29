@@ -1,4 +1,4 @@
-//! The schema-v3 wire envelope and the delivery it is written through.
+//! The schema-v4 wire envelope and the delivery it is written through.
 //!
 //! This is the shared half of the wire format: the envelope every operation
 //! returns, the error payload every failure carries, the single-write delivery
@@ -44,6 +44,27 @@ pub struct ErrorPayload {
     retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     mutation: Option<&'static str>,
+    recovery: RecoveryDto,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecoveryDto {
+    stage: &'static str,
+    submission: &'static str,
+    action: &'static str,
+}
+pub fn recovery(value: crate::domain::Recovery) -> RecoveryDto {
+    RecoveryDto {
+        stage: value.stage(),
+        submission: value.submission(),
+        action: value.action(),
+    }
+}
+impl ErrorPayload {
+    pub fn with_recovery(mut self, value: crate::domain::Recovery) -> Self {
+        self.recovery = recovery(value);
+        self
+    }
 }
 
 pub(crate) fn error(code: &'static str, message: &str, retryable: bool) -> ErrorPayload {
@@ -52,6 +73,11 @@ pub(crate) fn error(code: &'static str, message: &str, retryable: bool) -> Error
         message: message.into(),
         retryable,
         mutation: None,
+        recovery: recovery(if matches!(code, "USAGE_ERROR" | "CONFIG_INVALID") {
+            crate::domain::Recovery::invalid()
+        } else {
+            crate::domain::Recovery::default()
+        }),
     }
 }
 
@@ -85,7 +111,7 @@ pub fn failure_with_mutation(
         .map(crate::domain::MutationEvidence::as_str)
         .or_else(|| matches!(operation, "fs.write" | "fs.patch").then_some("not_applied"));
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation,
         ok: false,
         host: (!host.is_empty()).then(|| host.to_string()),
@@ -104,7 +130,7 @@ pub struct VersionDto {
 
 pub fn version() -> Envelope<VersionDto> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "version",
         ok: true,
         host: None,
@@ -113,14 +139,14 @@ pub fn version() -> Envelope<VersionDto> {
             version: env!("CARGO_PKG_VERSION"),
             commit: option_env!("RHOST_BUILD_COMMIT").unwrap_or("none"),
             build_date: option_env!("RHOST_BUILD_DATE").unwrap_or("unknown"),
-            schema_version: 3,
+            schema_version: 4,
         },
     }
 }
 
 pub fn usage(message: &str) -> Envelope<Option<()>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "usage",
         ok: false,
         host: None,
@@ -140,7 +166,7 @@ pub fn group_usage(group: &str, message: &str) -> Envelope<Option<()>> {
         message.to_string()
     };
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: match group {
             "session" => "session.usage",
             "connection" => "connection.usage",

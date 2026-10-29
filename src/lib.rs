@@ -1,11 +1,11 @@
-//! Migration foundation: pure domain states, schema-v3 serialization, and the
+//! Migration foundation: pure domain states, schema-v4 serialization, and the
 //! OpenSSH-backed capabilities that produce them.
 //!
 //! The tree is cut by capability: each top-level directory owns one reason to
 //! change (`exec`, `files`, `session`, ...), and the shared foundation they all
 //! rest on is `domain` (pure values), `transport` (the OpenSSH child),
 //! `remote` (the one submit-a-program path and the error taxonomy) and `wire`
-//! (the schema-v3 envelope). `cli` holds the flag/argv primitives every
+//! (the schema-v4 envelope). `cli` holds the flag/argv primitives every
 //! capability parses with, and `dispatch` is the thin composition root.
 #![forbid(unsafe_code)]
 

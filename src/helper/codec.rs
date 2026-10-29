@@ -129,6 +129,10 @@ pub fn answer(bytes: &[u8], kind: u32) -> Result<Vec<u8>, Error> {
                 message,
                 retryable,
                 mutation: None,
+                recovery: crate::domain::Recovery::inspect(
+                    crate::domain::Phase::Operation,
+                    crate::domain::Submission::Confirmed,
+                ),
             })
         }
         _ => Err(protocol("invalid helper result tag")),

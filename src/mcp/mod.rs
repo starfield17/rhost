@@ -1,8 +1,13 @@
 //! Official SDK stdio delivery over the same capability requests as the CLI.
+mod admission;
 mod input;
 mod schema;
+mod selection;
 use crate::transport::Client;
+#[cfg(test)]
+use admission::admit;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt, model::*, service::RequestContext};
+pub use selection::Selection;
 use serde_json::Value;
 use std::sync::{
     Arc,
@@ -15,16 +20,10 @@ struct Server {
     client: Arc<Client>,
     tools: Arc<Vec<(String, Tool)>>,
     stopped: Arc<AtomicBool>,
-    slots: Arc<tokio::sync::Semaphore>,
+    admission: Arc<admission::Admission>,
 }
 struct Observation {
     cancelled: Arc<AtomicBool>,
-}
-async fn admit(
-    slots: Arc<tokio::sync::Semaphore>,
-    cancelled: impl std::future::Future<Output = ()>,
-) -> Result<Option<tokio::sync::OwnedSemaphorePermit>, tokio::sync::AcquireError> {
-    tokio::select! {biased;_=cancelled=>Ok(None),result=slots.acquire_owned()=>result.map(Some)}
 }
 impl Drop for Observation {
     fn drop(&mut self) {
@@ -35,7 +34,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rhost",env!("CARGO_PKG_VERSION")))
-            .with_instructions("Operate SSH-reachable hosts with structured files, recoverable noninteractive Runs and persistent tmux terminals. Use hosts/version without a target; doctor diagnoses shell dependencies, helper_prepare establishes native readiness. Read/search then hash-guard edits. Run start requires a retained generation and expiring key; wait/cancellation only observes. Use session send/read for REPLs; session exec timeout may interrupt, and canceling its observer does not revoke that submitted timeout. Inspect schema-v3 completion/mutation evidence before retry. OpenSSH owns authentication and host keys. Manage project directories and Git branches yourself.")
+            .with_instructions("Operate SSH-reachable hosts with structured files, recoverable noninteractive Runs and persistent tmux terminals. Use hosts/version without a target; doctor diagnoses shell dependencies, helper_prepare establishes native readiness. Read/search then hash-guard edits. Run start requires a retained generation and expiring key; wait/cancellation only observes. Use session send/read for REPLs; session exec timeout may interrupt, and canceling its observer does not revoke that submitted timeout. Inspect schema-v4 completion/mutation evidence before retry. OpenSSH owns authentication and host keys. Manage project directories and Git branches yourself.")
     }
     async fn list_tools(
         &self,
@@ -54,10 +53,9 @@ impl ServerHandler for Server {
         let Some((operation, _)) = self.tools.iter().find(|(_, t)| t.name == request.name) else {
             return Err(ErrorData::method_not_found::<CallToolRequestMethod>());
         };
-        let call = match crate::request::from_arguments(
-            operation,
-            Value::Object(request.arguments.unwrap_or_default()),
-        ) {
+        let arguments = Value::Object(request.arguments.unwrap_or_default());
+        let argument_bytes = arguments.to_string().len();
+        let call = match crate::request::from_arguments(operation, arguments) {
             Ok(call) => call,
             Err(error) => {
                 return Ok(CallToolResult::structured_error(crate::request::failure(
@@ -71,17 +69,25 @@ impl ServerHandler for Server {
         let _observation = Observation {
             cancelled: cancelled.clone(),
         };
-        let Some(permit) = admit(self.slots.clone(), cancellation.cancelled())
-            .await
-            .map_err(|_| ErrorData::internal_error("server closed", None))?
-        else {
-            return Ok(
-                CallToolResult::structured_error(crate::request::observation_cancelled(
+        let admission = self
+            .admission
+            .acquire(operation, argument_bytes, cancellation.cancelled())
+            .await;
+        let permit = match admission {
+            Err(()) => {
+                return Ok(CallToolResult::structured_error(crate::request::busy(
                     operation,
                     call.host.as_deref(),
                 ))
-                .into(),
-            );
+                .into());
+            }
+            Ok(Some(permit)) => permit,
+            Ok(None) => {
+                return Ok(CallToolResult::structured_error(
+                    crate::request::observation_cancelled(operation, call.host.as_deref()),
+                )
+                .into());
+            }
         };
         let client = self.client.clone();
         let stopped = self.stopped.clone();
@@ -104,9 +110,9 @@ impl ServerHandler for Server {
     }
 }
 fn tools() -> Result<Vec<(String, Tool)>, String> {
-    let schema: Value = serde_json::from_str(include_str!("../../schemas/request-v3.schema.json"))
+    let schema: Value = serde_json::from_str(include_str!("../../schemas/request-v4.schema.json"))
         .map_err(|e| e.to_string())?;
-    let result: Value = serde_json::from_str(include_str!("../../schemas/result-v3.schema.json"))
+    let result: Value = serde_json::from_str(include_str!("../../schemas/result-v4.schema.json"))
         .map_err(|e| e.to_string())?;
     let operations = schema["properties"]["operation"]["enum"]
         .as_array()
@@ -193,7 +199,7 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
             "fs.write" | "fs.patch" => {
                 "Apply a hash-guarded file edit. Inspect mutation evidence even on failure."
             }
-            _ => "Perform one typed remote operation and return its schema-v3 envelope.",
+            _ => "Perform one typed remote operation and return its schema-v4 envelope.",
         };
         let mut tool = Tool::new(
             format!("rhost_{}", operation.replace('.', "_")),
@@ -203,6 +209,7 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
         tool.output_schema = Some(Arc::new(
             output.as_object().ok_or("result schema missing")?.clone(),
         ));
+        tool.annotations = Some(selection::annotations(operation));
         tools.push((operation.to_string(), tool));
     }
     Ok(tools)
@@ -212,15 +219,20 @@ async fn interruption(interrupt: &crate::signals::Interrupt) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
-pub fn run(client: &Client, interrupt: &crate::signals::Interrupt) -> u8 {
+pub fn run(client: &Client, interrupt: &crate::signals::Interrupt, selection: &Selection) -> u8 {
     let result = (|| -> Result<(), String> {
-        let tools = Arc::new(tools()?);
+        let tools = Arc::new(
+            tools()?
+                .into_iter()
+                .filter(|(op, _)| selection.allows(op))
+                .collect(),
+        );
         let stopped = Arc::new(AtomicBool::new(false));
         let server = Server {
             client: Arc::new(client.clone()),
             tools,
             stopped: stopped.clone(),
-            slots: Arc::new(tokio::sync::Semaphore::new(16)),
+            admission: Arc::new(admission::Admission::default()),
         };
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)

@@ -39,7 +39,7 @@ pub fn transfer<'a>(
     result: &'a ops::Transfer,
 ) -> Envelope<TransferDto<'a>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation,
         ok: true,
         host: Some(host.to_string()),
@@ -79,7 +79,7 @@ pub fn sync<'a>(
     result: &'a ops::Sync,
 ) -> Envelope<SyncDto<'a>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation,
         ok: true,
         host: Some(host.to_string()),
@@ -135,7 +135,7 @@ pub struct BatchDto<'a> {
 /// different claims, and an agent must be able to tell them apart.
 pub fn batch<'a>(host: &str, result: &'a ops::Batch) -> Envelope<BatchDto<'a>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "fs.batch",
         ok: true,
         host: Some(host.to_string()),
@@ -175,7 +175,7 @@ pub struct FileReadDto<'a> {
 
 pub fn file_read<'a>(host: &str, result: &'a ops::Read) -> Envelope<FileReadDto<'a>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation: "fs.read",
         ok: true,
         host: Some(host.to_string()),
@@ -206,7 +206,7 @@ pub fn file_write<'a>(
     result: &'a ops::Write,
 ) -> Envelope<FileWriteDto<'a>> {
     Envelope {
-        schema_version: 3,
+        schema_version: 4,
         operation,
         ok: true,
         host: Some(host.to_string()),

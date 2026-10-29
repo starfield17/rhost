@@ -8,6 +8,14 @@
 use super::Command;
 use super::commands;
 use crate::cli::{Help, ParsedCommand, Rejection, Scope, find_command, parse, wants_json};
+pub(super) const MCP_FLAGS: &[crate::cli::FlagSpec] = &[
+    crate::cli::FlagSpec::long("help", "Show MCP stdio help"),
+    crate::cli::FlagSpec::value(
+        "tools",
+        true,
+        "Expose all tools or selected runs,files,sessions,diagnostics groups",
+    ),
+];
 
 /// Parses a whole argv. `--json` is recognised before anything can fail, because
 /// a parse failure has to be delivered in the form the caller asked for.
@@ -39,13 +47,19 @@ pub fn parse_invocation(argv: &[String]) -> super::Invocation {
         .map(|(_, token)| token.clone())
         .collect();
     let command = match group.as_str() {
-        "mcp" => match parse(&rest, crate::cli::PLAIN_FLAGS) {
-            Ok(p) if p.operands.is_empty() && !json => Command::Mcp {
-                help: p.bool_flag("help"),
-            },
+        "mcp" => match parse(&rest, MCP_FLAGS) {
+            Ok(p) if p.operands.is_empty() && !json => {
+                match crate::mcp::Selection::parse(p.value("tools").unwrap_or("all")) {
+                    Ok(tools) => Command::Mcp {
+                        help: p.bool_flag("help"),
+                        tools,
+                    },
+                    Err(e) => Command::Usage(Rejection::new(Scope::Root, e)),
+                }
+            }
             _ => Command::Usage(Rejection::new(
                 Scope::Root,
-                "rhost mcp accepts only --help; MCP messages use stdin/stdout",
+                "rhost mcp accepts --help and --tools; MCP messages use stdin/stdout",
             )),
         },
         "request" | "run" | "helper" => Command::Request(crate::runs::parse(&group, &rest, json)),
