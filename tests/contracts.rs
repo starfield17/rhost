@@ -96,7 +96,11 @@ fn published_v510_schemas_and_fixtures_are_immutable() {
             "b48f278cd472f99cb655c76f53e4a4f1f933b4e14a7f5757147c08a399e392b7",
         ),
     ] {
-        assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected);
+        let actual: String = Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(actual, expected);
     }
 }
 
