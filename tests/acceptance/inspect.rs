@@ -68,7 +68,6 @@ fn per_file_match_truncation_and_scan_incompleteness_are_distinct() -> Result<()
 #[test]
 fn changing_files_still_charge_the_actual_scan_read_budget() -> Result<(), String> {
     use std::{
-        io::Write,
         process::{Command, Stdio},
         sync::{
             Arc,
@@ -98,25 +97,33 @@ fn changing_files_still_charge_the_actual_scan_read_budget() -> Result<(), Strin
         serde_json::to_vec(&json!({"op":"search","root":h.path("tree"),"pattern":"absent"}))
             .map_err(|e| e.to_string())?;
     let output_path = h.path("answer");
-    let mut child =
-        Command::new(std::env::var_os("RHOST_HELPER_BIN").ok_or("set RHOST_HELPER_BIN")?)
-            .arg("--files-json")
+    let input_path = h.path("request");
+    std::fs::write(&input_path, &payload).map_err(|e| e.to_string())?;
+    // Linux folds a reaped child's I/O counters into its live parent's
+    // signal accounting. A stopped shell retains a readable /proc/io after
+    // the helper exits; the helper's own zombie /proc/io may deny access.
+    let mut child = Command::new("/bin/sh")
+            .args(["-c", "\"$RHOST_ACCOUNT_HELPER\" --files-json < \"$RHOST_ACCOUNT_INPUT\"; status=$?; kill -STOP $$; exit \"$status\""])
+            .env("RHOST_ACCOUNT_HELPER", std::env::var_os("RHOST_HELPER_BIN").ok_or("set RHOST_HELPER_BIN")?)
+            .env("RHOST_ACCOUNT_INPUT", input_path)
             .env_remove("RHOST_EXPECT_BOOT_ID")
-            .stdin(Stdio::piped())
+            .stdin(Stdio::null())
             .stdout(std::fs::File::create(&output_path).map_err(|e| e.to_string())?)
             .stderr(Stdio::null())
             .spawn()
             .map_err(|e| e.to_string())?;
-    child
-        .stdin
-        .take()
-        .ok_or("stdin")?
-        .write_all(&payload)
-        .map_err(|e| e.to_string())?;
     let deadline = Instant::now() + Duration::from_secs(20);
     let mut answer = None;
     while Instant::now() < deadline {
-        if let Ok(bytes) = std::fs::read(&output_path)
+        let stopped =
+            std::fs::read_to_string(format!("/proc/{}/status", child.id())).is_ok_and(|s| {
+                s.lines().any(|line| {
+                    line.strip_prefix("State:")
+                        .is_some_and(|state| state.trim().starts_with('T'))
+                })
+            });
+        if stopped
+            && let Ok(bytes) = std::fs::read(&output_path)
             && let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes)
         {
             answer = Some(value);
@@ -124,13 +131,20 @@ fn changing_files_still_charge_the_actual_scan_read_budget() -> Result<(), Strin
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-    // Keep the child unreaped until IO accounting is read. rchar counts read()
-    // and pread() bytes, including page-cache reads (Linux proc documentation).
+    // rchar includes all read/pread bytes, including page-cache reads and the
+    // reaped helper. The shell/loader overhead remains inside the 1 MiB bound.
     let accounting = std::fs::read_to_string(format!("/proc/{}/io", child.id()));
     stop.store(true, Ordering::SeqCst);
     writer.join().map_err(|_| "writer panicked")?;
     if answer.is_none() {
         let _ = child.kill();
+    } else {
+        let continued = Command::new("kill")
+            .args(["-CONT", &child.id().to_string()])
+            .status();
+        if !continued.is_ok_and(|s| s.success()) {
+            let _ = child.kill();
+        }
     }
     let status = child.wait().map_err(|e| e.to_string())?;
     let answer = answer.ok_or("bounded search did not finish")?;

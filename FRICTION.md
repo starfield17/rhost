@@ -134,3 +134,12 @@ as a retired exec field. Schema-v3 Runs intentionally own those independent
 stream objects. The dedicated native reference may document them; all other
 skill files retain the old exec-field guard, and every other retired wire name
 remains rejected everywhere. The new native reference is now required packaging.
+
+### Linux process read-accounting oracle
+
+Native CI showed that an unreaped helper zombie may deny `/proc/<pid>/io`
+access. The bounded-scan oracle now runs it under a dedicated shell, waits for
+the helper to be reaped, and stops that live parent before reading its cumulative
+I/O counters. Linux adds reaped child accounting to the parent's signal record.
+The same scan-byte limit, read-counter comparison and fixed wrapper allowance
+remain enforced; no privileged access or skipped assertion is introduced.
