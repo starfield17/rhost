@@ -151,3 +151,5 @@ made to parse a Rust implementation's private marker protocol.
   agent-facing v2 operation set and is intentionally not reimplemented.
 
 The historical regression index is [history.json](../tests/fixtures/history.json).
+
+| MCP-002 | Core discovery/diagnosis and session tools use the same capability execution and schema-v3 results as CLI/request. Local discovery has no target; legacy remote tools refuse boot guards before effects. Session cancellation stops observation, never implicitly sends a pane key; a submitted timeout remains in force if its helper continues. Unknown creation/input remains non-retryable with available evidence. | operation-specific tool schemas and existing capability DTOs | [local entries](../tests/acceptance/core_request.rs:local_discovery_has_no_target_and_matches_cli_and_mcp); [refusals](../tests/acceptance/core_request.rs:core_invalid_parameters_and_target_policies_refuse_before_ssh); [diagnostics](../tests/acceptance/core_request.rs:diagnostic_failure_keeps_the_same_report_and_control_evidence); [input projection](../tests/mcp_schema.rs:tool_input_projection_preserves_target_and_parameter_refusals) |

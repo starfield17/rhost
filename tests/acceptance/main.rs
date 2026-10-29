@@ -22,6 +22,7 @@
 
 mod audit;
 mod changeset;
+mod core_request;
 mod edit;
 mod examples;
 mod exec;
