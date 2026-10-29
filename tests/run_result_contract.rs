@@ -88,7 +88,10 @@ fn each_operation_owns_its_success_and_failure_payload() {
                 .map(|f| f["result"]["data"].clone())
                 .unwrap_or_else(|| panic!("metadata fixture")),
         ),
-        ("run.list", json!([record.clone()])),
+        (
+            "run.list",
+            json!({"generation":"a".repeat(32),"items":[],"next_cursor":null}),
+        ),
         ("run.prune", json!({"removed": [record["run_id"]]})),
         (
             "run.signal",

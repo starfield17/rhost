@@ -61,7 +61,12 @@
         "fs.changeset.recover",
         "fs.changeset.prune",
         "fs.search",
-        "fs.read_many"
+        "fs.read_many",
+        "fs.find",
+        "fs.changeset.list",
+        "state.list",
+        "state.usage",
+        "state.prune"
       ]
     },
     "ok": {
@@ -2182,7 +2187,12 @@
             "fs.changeset.recover",
             "fs.changeset.prune",
             "fs.search",
-            "fs.read_many"
+            "fs.read_many",
+            "fs.find",
+            "fs.changeset.list",
+            "state.list",
+            "state.usage",
+            "state.prune"
           ]
         },
         "ok": {
@@ -2220,7 +2230,11 @@
                   "run.list",
                   "run.signal",
                   "run.prune",
-                  "helper.prepare"
+                  "helper.prepare",
+                  "fs.changeset.list",
+                  "state.list",
+                  "state.usage",
+                  "state.prune"
                 ]
               }
             }
@@ -2436,10 +2450,7 @@
           "then": {
             "properties": {
               "data": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/native/$defs/run"
-                }
+                "$ref": "#/$defs/native/$defs/state_page"
               }
             }
           }
@@ -2834,6 +2845,101 @@
             "properties": {
               "data": {
                 "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.changeset.list"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/state_page"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "state.list"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/state_page"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "state.usage"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/state_usage"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "state.prune"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/state_prune"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "fs.find"
+              },
+              "ok": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/native/$defs/find"
               }
             }
           }
@@ -3295,24 +3401,20 @@
           "additionalProperties": false,
           "required": [
             "root",
-            "revision",
             "items",
             "skipped",
             "scanned_files",
             "scanned_bytes",
             "incomplete",
             "reasons",
-            "next_cursor"
+            "next_cursor",
+            "collection"
           ],
           "properties": {
             "root": {
               "type": "string",
               "minLength": 1,
               "pattern": "^[^\\u0000]+$"
-            },
-            "revision": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
             },
             "items": {
               "type": "array",
@@ -3460,15 +3562,36 @@
               }
             },
             "next_cursor": {
-              "oneOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}:[0-9]{1,4}$"
-                },
-                {
-                  "type": "null"
-                }
+              "type": [
+                "string",
+                "null"
               ]
+            },
+            "collection": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "generation",
+                "id",
+                "expires_unix",
+                "query_sha256"
+              ],
+              "properties": {
+                "generation": {
+                  "$ref": "#/$defs/native/$defs/generation"
+                },
+                "id": {
+                  "$ref": "#/$defs/native/$defs/key"
+                },
+                "expires_unix": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "query_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              }
             }
           }
         },
@@ -3585,6 +3708,398 @@
                 "type": "string",
                 "minLength": 1,
                 "pattern": "^[^\\u0000]+$"
+              }
+            }
+          }
+        },
+        "state_entry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/native/$defs/key"
+            },
+            "kind": {
+              "enum": [
+                "runs",
+                "changesets",
+                "queries"
+              ]
+            },
+            "expires_unix": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "status": {
+              "type": "string"
+            },
+            "owner_active": {
+              "type": "boolean"
+            },
+            "logical_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ]
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "expires_unix",
+            "status",
+            "owner_active",
+            "logical_bytes",
+            "error"
+          ]
+        },
+        "state_page": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "generation": {
+              "$ref": "#/$defs/native/$defs/generation"
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "$ref": "#/$defs/native/$defs/state_entry"
+              }
+            },
+            "next_cursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "generation",
+            "items",
+            "next_cursor"
+          ]
+        },
+        "state_usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "generation": {
+              "$ref": "#/$defs/native/$defs/generation"
+            },
+            "logical_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reserved_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "records": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "collections": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "limits": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "records": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "reserved_bytes": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "collections": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "records",
+                "reserved_bytes",
+                "collections"
+              ]
+            }
+          },
+          "required": [
+            "generation",
+            "logical_bytes",
+            "reserved_bytes",
+            "records",
+            "collections",
+            "complete",
+            "limits"
+          ]
+        },
+        "state_prune": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "generation": {
+              "$ref": "#/$defs/native/$defs/generation"
+            },
+            "kind": {
+              "enum": [
+                "runs",
+                "changesets",
+                "queries"
+              ]
+            },
+            "dry_run": {
+              "type": "boolean"
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/native/$defs/key"
+                  },
+                  "eligible": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "pruned": {
+                    "type": "boolean"
+                  },
+                  "error": {
+                    "oneOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "message"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "eligible",
+                  "reason",
+                  "pruned",
+                  "error"
+                ]
+              }
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 64
+            }
+          },
+          "required": [
+            "generation",
+            "kind",
+            "dry_run",
+            "items",
+            "failed"
+          ]
+        },
+        "find": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "root",
+            "items",
+            "skipped",
+            "scanned_files",
+            "scanned_bytes",
+            "incomplete",
+            "reasons",
+            "next_cursor",
+            "collection"
+          ],
+          "properties": {
+            "root": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[^\\u0000]+$"
+            },
+            "items": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "skipped": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "code"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[^\\u0000]+$"
+                  },
+                  "code": {
+                    "enum": [
+                      "CONFIG_INVALID",
+                      "CONTEXT_CHANGED",
+                      "CONTEXT_UNAVAILABLE",
+                      "FILE_CONFLICT",
+                      "FILE_NOT_FOUND",
+                      "FILE_TOO_LARGE",
+                      "HASH_REQUIRED",
+                      "HELPER_INCOMPATIBLE",
+                      "HELPER_PREPARATION_FAILED",
+                      "HOST_KEY_FAILED",
+                      "HOST_UNKNOWN",
+                      "IDEMPOTENCY_CONFLICT",
+                      "INTERNAL",
+                      "INVALID_PATCH",
+                      "INVALID_TARGET",
+                      "INVALID_TEXT",
+                      "NAMESPACE_MISMATCH",
+                      "OUTPUT_RANGE_UNAVAILABLE",
+                      "OUTPUT_WRITE_FAILED",
+                      "PROTOCOL_ERROR",
+                      "REMOTE_COMMAND_CANCELLED",
+                      "REMOTE_COMMAND_TIMEOUT",
+                      "REMOTE_DEPENDENCY_MISSING",
+                      "REMOTE_EXECUTION_UNKNOWN",
+                      "REQUEST_EXPIRED",
+                      "RUN_CONTROL_UNAVAILABLE",
+                      "RUN_NOT_FOUND",
+                      "SESSION_BUSY",
+                      "SESSION_NOT_FOUND",
+                      "SESSION_UNHEALTHY",
+                      "SSH_AUTH_FAILED",
+                      "SSH_CONTROL_FAILED",
+                      "SSH_UNREACHABLE",
+                      "STATE_UNAVAILABLE",
+                      "SYNC_REJECTED",
+                      "TRANSFER_FAILED",
+                      "TUNNEL_FAILED",
+                      "TUNNEL_NOT_FOUND",
+                      "UNSUPPORTED_REMOTE_OS",
+                      "USAGE_ERROR"
+                    ]
+                  }
+                }
+              }
+            },
+            "scanned_files": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4096
+            },
+            "scanned_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 67108864
+            },
+            "incomplete": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "entry_limit",
+                  "depth_limit",
+                  "scan_byte_limit",
+                  "file_limit",
+                  "unreadable",
+                  "invalid_text"
+                ]
+              }
+            },
+            "next_cursor": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "collection": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "generation",
+                "id",
+                "expires_unix",
+                "query_sha256"
+              ],
+              "properties": {
+                "generation": {
+                  "$ref": "#/$defs/native/$defs/generation"
+                },
+                "id": {
+                  "$ref": "#/$defs/native/$defs/key"
+                },
+                "expires_unix": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "query_sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
               }
             }
           }

@@ -708,13 +708,11 @@
       "operation": "run.list",
       "host": "gpu",
       "ok": true,
-      "data": [
-        {
-          "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "run_id": "2000000000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "status": "running"
-        }
-      ],
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "items": [],
+        "next_cursor": null
+      },
       "error": null
     }
   },
@@ -919,7 +917,6 @@
       "host": "gpu",
       "data": {
         "root": "/srv/project",
-        "revision": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "items": [
           {
             "path": "/srv/project/file",
@@ -939,7 +936,13 @@
         "scanned_bytes": 4,
         "incomplete": false,
         "reasons": [],
-        "next_cursor": null
+        "next_cursor": null,
+        "collection": {
+          "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "id": "2000000000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "expires_unix": 2000000000,
+          "query_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
       },
       "error": null
     }
@@ -969,6 +972,102 @@
           }
         ],
         "unread": []
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.changeset.list",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.changeset.list",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "state.list",
+    "result": {
+      "schema_version": 4,
+      "operation": "state.list",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "items": [],
+        "next_cursor": null
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "state.usage",
+    "result": {
+      "schema_version": 4,
+      "operation": "state.usage",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "logical_bytes": 0,
+        "reserved_bytes": 0,
+        "records": 0,
+        "collections": 0,
+        "complete": true,
+        "limits": {
+          "records": 16384,
+          "reserved_bytes": 8589934592,
+          "collections": 32
+        }
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "state.prune",
+    "result": {
+      "schema_version": 4,
+      "operation": "state.prune",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "runs",
+        "dry_run": true,
+        "items": [],
+        "failed": 0
+      },
+      "error": null
+    }
+  },
+  {
+    "name": "fs.find",
+    "result": {
+      "schema_version": 4,
+      "operation": "fs.find",
+      "ok": true,
+      "host": "gpu",
+      "data": {
+        "root": "/srv/project",
+        "items": [],
+        "skipped": [],
+        "scanned_files": 1,
+        "scanned_bytes": 4,
+        "incomplete": false,
+        "reasons": [],
+        "next_cursor": null,
+        "collection": {
+          "generation": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "id": "2000000000-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "expires_unix": 2000000000,
+          "query_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
       },
       "error": null
     }

@@ -23,7 +23,15 @@ fn search_returns_file_hashes_and_refuses_a_changed_continuation() -> Result<(),
     let next = ask(&h, q.clone())?;
     assert_eq!(next["items"][0]["path"], b, "{next}");
     assert!(next["next_cursor"].is_null());
-    std::fs::write(&b, b"changed\n").map_err(|e| e.to_string())?;
+    std::fs::write(&b, b"needle changed\n").map_err(|e| e.to_string())?;
+    let changed = ask(&h, q.clone())?;
+    assert_eq!(
+        changed["items"][0]["sha256"],
+        sha256_hex(b"needle changed\n"),
+        "{changed}"
+    );
+    assert!(changed["next_cursor"].is_null());
+    q["pattern"] = json!("changed");
     assert_eq!(ask(&h, q)?["error"], "FILE_CONFLICT");
     Ok(())
 }
@@ -57,7 +65,14 @@ fn per_file_match_truncation_and_scan_incompleteness_are_distinct() -> Result<()
     assert_eq!(page["incomplete"], false);
     assert!(page["next_cursor"].is_string());
     create(&h, "tree/binary", &[0xff, 0xfe])?;
-    let partial = ask(&h, q)?;
+    let mut later = q;
+    let partial = loop {
+        let page = ask(&h, later.clone())?;
+        if page["next_cursor"].is_null() {
+            break page;
+        }
+        later["cursor"] = page["next_cursor"].clone();
+    };
     assert_eq!(partial["incomplete"], true, "{partial}");
     assert!(partial["next_cursor"].is_null());
     assert_eq!(partial["skipped"][0]["code"], "INVALID_TEXT");

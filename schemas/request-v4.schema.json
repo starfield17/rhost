@@ -40,7 +40,12 @@
         "session.send",
         "session.read",
         "session.recover",
-        "session.close"
+        "session.close",
+        "fs.find",
+        "fs.changeset.list",
+        "state.list",
+        "state.usage",
+        "state.prune"
       ]
     },
     "host": {
@@ -756,6 +761,110 @@
           "host"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.changeset.list"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/state_page"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "state.list"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/state_list"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "state.usage"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "generation": {
+                "$ref": "#/$defs/generation"
+              }
+            },
+            "required": [
+              "generation"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "state.prune"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/state_prune"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "fs.find"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/fs_find"
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -1286,7 +1395,7 @@
         },
         "cursor": {
           "type": "string",
-          "pattern": "^[a-f0-9]{64}:[0-9]{1,4}$"
+          "pattern": "^[a-f0-9]{32}:[1-9][0-9]{0,11}-[a-f0-9]{64}:[0-9]{1,8}$"
         },
         "max_results": {
           "type": "integer",
@@ -1302,6 +1411,22 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 1048576
+        },
+        "exclude_dirs": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000]+$"
+          }
+        },
+        "collection_ttl_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
         }
       }
     },
@@ -1333,6 +1458,137 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 8388608
+        }
+      }
+    },
+    "state_kind": {
+      "enum": [
+        "runs",
+        "changesets",
+        "queries"
+      ]
+    },
+    "state_page": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "generation"
+      ]
+    },
+    "state_list": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "kind": {
+          "$ref": "#/$defs/state_kind"
+        }
+      },
+      "required": [
+        "generation",
+        "kind"
+      ]
+    },
+    "state_prune": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "kind": {
+          "$ref": "#/$defs/state_kind"
+        },
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/key"
+          }
+        },
+        "dry_run": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "generation",
+        "kind",
+        "ids"
+      ]
+    },
+    "fs_find": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "pattern": "^[^\\u0000]*$"
+        },
+        "glob": {
+          "type": "string",
+          "pattern": "^[^\\u0000]*$"
+        },
+        "cursor": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}:[1-9][0-9]{0,11}-[a-f0-9]{64}:[0-9]{1,8}$"
+        },
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "exclude_dirs": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000]+$"
+          }
+        },
+        "collection_ttl_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
         }
       }
     }
