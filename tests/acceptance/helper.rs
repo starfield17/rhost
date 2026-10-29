@@ -104,6 +104,52 @@ fn nonregular_configured_build_inputs_are_refused_without_blocking() -> Result<(
 }
 
 #[test]
+fn configured_linker_keeps_its_driver_name() -> Result<(), String> {
+    let h = Harness::open("linker-driver")?;
+    local_host(&h)?;
+    h.stub(
+        "uname",
+        "case $1 in -s) echo Linux;; -m) echo x86_64;; esac",
+    )?;
+    h.write(
+        "compiler",
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$RHOST_LINKER_ARGS\"\nexit 8\n",
+        Some(0o700),
+    )?;
+    h.write("builtins", "library", None)?;
+    h.write("lld", "linker", None)?;
+    std::os::unix::fs::symlink(h.path("lld"), h.path("ld.lld")).map_err(|e| e.to_string())?;
+    std::fs::create_dir(h.path("sysroot")).map_err(|e| e.to_string())?;
+    let mut command = h.command(&["request", "--from", "-"])?;
+    command
+        .env_remove("RHOST_HELPER_BIN")
+        .env("RHOST_HELPER_CC", h.path("compiler"))
+        .env("RHOST_HELPER_SYSROOT", h.path("sysroot"))
+        .env("RHOST_HELPER_BUILTINS", h.path("builtins"))
+        .env("RHOST_HELPER_LD", h.path("ld.lld"))
+        .env("RHOST_LINKER_ARGS", h.path("arguments"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped());
+    let mut child = command.spawn().map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .take()
+        .ok_or("stdin")?
+        .write_all(br#"{"schema_version":3,"operation":"helper.prepare","host":"gpu","params":{}}"#)
+        .map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    let value: Value = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+    want_code(&value, "HELPER_PREPARATION_FAILED")?;
+    let argv = std::fs::read_to_string(h.path("arguments")).map_err(|e| e.to_string())?;
+    assert!(
+        argv.lines()
+            .any(|s| s == format!("--ld-path={}", h.path("ld.lld").display())),
+        "{argv}"
+    );
+    Ok(())
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn same_source_cached_image_must_match_the_supplied_bytes() -> Result<(), String> {
     use std::fs::OpenOptions;
