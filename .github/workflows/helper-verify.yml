@@ -38,7 +38,7 @@ jobs:
       RHOST_HELPER_BIN: ${{ github.workspace }}/target/verified-helper/rhost-helper
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Fetch and verify exact locally built helper
@@ -69,7 +69,7 @@ jobs:
           python3 scripts/helper_artifact.py verify --target "$TARGET" --path "$RHOST_HELPER_BIN"
           asset=$(python3 -c 'import json,os; m=json.load(open("helper/artifacts.json")); print(next(a["asset"] for a in m["artifacts"] if a["target"]==os.environ["TARGET"]))')
           mv "$RHOST_HELPER_BIN" "target/verified-helper/$asset"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: helper-${{ matrix.target }}
           path: target/verified-helper/*
