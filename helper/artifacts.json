@@ -1,7 +1,7 @@
 {
   "format": 1,
   "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
-  "release": "v5.0.0",
+  "release": "v5.1.0",
   "toolchain": {
     "llvm_source_commit": "7a941dfb2877a0b8cf30323fefa85ad019e0b0f5",
     "musl_package": "musl-dev-1.2.5-r13",
@@ -55,7 +55,7 @@
   "artifacts": [
     {
       "target": "darwin-aarch64",
-      "asset": "rhost-helper_5.0.0_darwin-aarch64",
+      "asset": "rhost-helper_5.1.0_darwin-aarch64",
       "sha256": "1883bbd1c5e23c16846cab9fbae7b965f4a6189d3c046fc2cfcaae876252d40f",
       "size": 105280,
       "role": "fixture",
@@ -63,7 +63,7 @@
     },
     {
       "target": "linux-aarch64",
-      "asset": "rhost-helper_5.0.0_linux-aarch64",
+      "asset": "rhost-helper_5.1.0_linux-aarch64",
       "sha256": "c1dc059842b7feeebb96ba2454a0dce0df0c62de23066b7aecee6af42f109089",
       "size": 140456,
       "role": "runtime",
@@ -71,7 +71,7 @@
     },
     {
       "target": "linux-x86_64",
-      "asset": "rhost-helper_5.0.0_linux-x86_64",
+      "asset": "rhost-helper_5.1.0_linux-x86_64",
       "sha256": "df043941b1545cda6ec7017890f86ff226fc164fa2cf51dc21f2f41022ae4430",
       "size": 136776,
       "role": "runtime",

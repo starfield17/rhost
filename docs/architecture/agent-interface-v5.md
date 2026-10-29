@@ -164,9 +164,9 @@ Missing/expired/substituted inputs refuse promotion. The published manual record
 is explicitly a trusted operator attestation, not CI-observed real-host evidence.
 See [maintenance](../MAINTENANCE.md#v5-publication-procedure).
 
-## Core structured adapters after v5.0.0
+## Core structured adapters (v5.1.0)
 
-Current source adds version/hosts, doctor, connection status and seven session
+v5.1.0 adds version/hosts, doctor, connection status and seven session
 operations to request/MCP. Their existing schema-v3 result DTOs remain unchanged.
 Local discovery rejects host/guard; the added remote operations require a host
 and reject boot guards before probing. Both outer input and params must be JSON

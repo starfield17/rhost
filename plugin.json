@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "rhost",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "Operate SSH-reachable hosts with the installed rhost CLI or configured stdio MCP tools.",
   "author": {
     "name": "starfield17",

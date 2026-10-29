@@ -40,9 +40,9 @@ install -m 755 target/release/rhost ~/.local/bin/rhost
 
 `make build-release` uses locked dependencies and stamps commit/build date into
 `rhost version --json`. `make build` provides the debug development binary.
-The MCP coverage below describes this checkout. Published v5.0.0 provides native
-Run/file tools; added discovery, diagnostic and session tools require a source
-build until the next minor release. Inspect the connected server's tool list.
+v5.1.0 adds discovery, diagnostic and persistent-session MCP tools alongside the
+native Run/file tools introduced in v5.0.0. Inspect the connected server's tool
+list when the installed binary and skill differ.
 
 ## Connect an agent
 

@@ -49,9 +49,9 @@ unrelated client settings.
 ## Discover and call tools
 
 Use the connected server's tool list; clients may add a server prefix to names.
-The published v5.0.0 binary provides native helper/Run/file tools. Added local
-discovery, diagnostic and session tools require a source build until the next
-minor release.
+v5.1.0 provides local discovery, diagnostic and session tools alongside the
+native helper/Run/file tools available in v5.0.0. Older clients expose a smaller
+set; use advertised tools or the corresponding CLI operation.
 
 | Tools in this checkout | Arguments and purpose |
 | --- | --- |
