@@ -2310,7 +2310,7 @@
                 "properties": {
                   "schema_generations": {
                     "const": [
-                      3
+                      4
                     ]
                   },
                   "generation": {
