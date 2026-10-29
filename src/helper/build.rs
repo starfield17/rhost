@@ -25,7 +25,9 @@ fn config(message: impl Into<String>) -> Error {
 fn required(name: &str) -> Result<PathBuf, Error> {
     std::env::var_os(name)
         .ok_or_else(|| config(format!("set {name} for a configured helper build")))
-        .and_then(|p| std::fs::canonicalize(p).map_err(|e| config(e.to_string())))
+        // Multi-call linkers choose their mode from argv[0] (ld.lld vs lld).
+        // Preserve that spelling while hashing the file it resolves to.
+        .and_then(|p| std::path::absolute(p).map_err(|e| config(e.to_string())))
 }
 fn hash_file(
     path: &Path,

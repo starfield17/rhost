@@ -1,7 +1,81 @@
 {
   "format": 1,
-  "source_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
   "release": "v5.0.0",
-  "toolchain": {},
-  "artifacts": []
+  "toolchain": {
+    "llvm_source_commit": "7a941dfb2877a0b8cf30323fefa85ad019e0b0f5",
+    "musl_package": "musl-dev-1.2.5-r13",
+    "musl_repository": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main",
+    "musl_apk_sha256": {
+      "aarch64": "9d100736f645f15c01da723c9bafd8a843ae847ef4334aa4c0f53405dcfa4dff",
+      "x86_64": "2ca496dd68c0b340b50cf9940bc2f3312eac8b56ec2d3284a621be6f0c09ffb1"
+    },
+    "source_commits": {
+      "darwin-aarch64": "42a14f3a44b24ff5dc72a41a9fa90f714250c69d",
+      "linux-aarch64": "a96f56ea8afbe20b0ecdb7bd59a8120df0ce8707",
+      "linux-x86_64": "a96f56ea8afbe20b0ecdb7bd59a8120df0ce8707"
+    },
+    "configurations": {
+      "darwin-aarch64": {
+        "profile": "c99-os-v1",
+        "target": "darwin-aarch64",
+        "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
+        "compiler_sha256": "ed6f5284033aa2aae6a58427c25ba3ab119947b40365627b24e5d51a4b70a1cd",
+        "strip_sha256": "ed6f5284033aa2aae6a58427c25ba3ab119947b40365627b24e5d51a4b70a1cd",
+        "compiler_version": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+        "abi": "native-darwin",
+        "deployment_target": "13.0"
+      },
+      "linux-aarch64": {
+        "profile": "c99-os-v1",
+        "target": "linux-aarch64",
+        "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
+        "compiler_sha256": "a3f510aa37c9a3082649435e39e3f7c808b6696bb62f077b141c271b5aa783a2",
+        "strip_sha256": "9b4b6714ccf3c4b7cdb7f38c5a868a0bb064165e6ff9ebee1a34b7bf7785f3eb",
+        "compiler_version": "Homebrew clang version 23.1.4",
+        "linker_sha256": "bcc465b526deeb48db164ee2a8d1451f6299e3712f8966b7bc8dd8bc98b43ef3",
+        "builtins_sha256": "b228889aa939bb974cb427c8529a2afb3444d10befe1447a849d231bc7c58cc5",
+        "sysroot_sha256": "2826b0eb95d3f3498cfd304c3adfc3585026160da5082c68c1a6db4a7a15f38c",
+        "abi": "static-musl"
+      },
+      "linux-x86_64": {
+        "profile": "c99-os-v1",
+        "target": "linux-x86_64",
+        "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
+        "compiler_sha256": "a3f510aa37c9a3082649435e39e3f7c808b6696bb62f077b141c271b5aa783a2",
+        "strip_sha256": "9b4b6714ccf3c4b7cdb7f38c5a868a0bb064165e6ff9ebee1a34b7bf7785f3eb",
+        "compiler_version": "Homebrew clang version 23.1.4",
+        "linker_sha256": "bcc465b526deeb48db164ee2a8d1451f6299e3712f8966b7bc8dd8bc98b43ef3",
+        "builtins_sha256": "7665724c587fe5af097f0a99cb1e3940d7f1da103c9e772bbbb4191db271b133",
+        "sysroot_sha256": "3989f607b6cf0fce59c9e0cec4d3f7a394f6c746337f2c7708db6229932ffa8f",
+        "abi": "static-musl"
+      }
+    }
+  },
+  "artifacts": [
+    {
+      "target": "darwin-aarch64",
+      "asset": "rhost-helper_5.0.0_darwin-aarch64",
+      "sha256": "1883bbd1c5e23c16846cab9fbae7b965f4a6189d3c046fc2cfcaae876252d40f",
+      "size": 105280,
+      "role": "fixture",
+      "build_config": "aaf8a5f64c3c0a9c51cf4eb4909d3e964514a36ddba1891288eb523ae785b088"
+    },
+    {
+      "target": "linux-aarch64",
+      "asset": "rhost-helper_5.0.0_linux-aarch64",
+      "sha256": "c1dc059842b7feeebb96ba2454a0dce0df0c62de23066b7aecee6af42f109089",
+      "size": 140456,
+      "role": "runtime",
+      "build_config": "b71d37a9ceef03fb22d5c36f997768d93534a5638b9e18bd207fa1f6afdbb085"
+    },
+    {
+      "target": "linux-x86_64",
+      "asset": "rhost-helper_5.0.0_linux-x86_64",
+      "sha256": "df043941b1545cda6ec7017890f86ff226fc164fa2cf51dc21f2f41022ae4430",
+      "size": 136776,
+      "role": "runtime",
+      "build_config": "38600f621c7edd7e95fcc847aaf0bedf754df64bc91b2a1d2992ee0854515247"
+    }
+  ]
 }
