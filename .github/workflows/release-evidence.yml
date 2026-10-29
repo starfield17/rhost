@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
       - name: Bind the trusted operator assertion to exact candidate identities
@@ -48,7 +48,7 @@ jobs:
           HELPER_SHA256: ${{ inputs.helper_sha256 }}
           LIVE_SUITES_PASSED: ${{ inputs.live_suites_passed }}
         run: python3 scripts/release_state.py emit-evidence --candidate-run "$CANDIDATE_RUN" --output evidence
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: manual-live
           path: evidence/manual-live.json
