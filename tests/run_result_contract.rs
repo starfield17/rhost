@@ -7,6 +7,10 @@ fn validator() -> jsonschema::Validator {
     jsonschema::validator_for(&schema).unwrap_or_else(|error| panic!("schema: {error}"))
 }
 
+fn recovery() -> Value {
+    json!({"stage":"unknown","submission":"may_have_submitted","action":"inspect_state"})
+}
+
 fn running() -> Value {
     let stream = json!({"from": 0, "next": 0, "observed_bytes": 0, "content_base64": "", "open": true, "incomplete": false});
     json!({"schema_version": 4, "operation": "run.poll", "ok": true, "host": "gpu", "error": null,
@@ -46,8 +50,7 @@ fn disconnected_observations_are_stale_failures_not_running_success() {
     let result = running();
     let mut failure = result.clone();
     failure["ok"] = json!(false);
-    failure["error"] =
-        json!({"code": "SSH_UNREACHABLE", "message": "connection unavailable", "retryable": true});
+    failure["error"] = json!({"code": "SSH_UNREACHABLE", "message": "connection unavailable", "retryable": true,"recovery":recovery()});
     failure["data"] = json!({"run": result["data"]["run"], "stale": true});
     assert!(schema.is_valid(&failure));
     failure["data"]["stale"] = json!(false);
@@ -63,7 +66,7 @@ fn usage_and_expiry_failures_have_closed_machine_readable_envelopes() {
     let schema = validator();
     for (operation, code) in [("request", "USAGE_ERROR"), ("run.start", "REQUEST_EXPIRED")] {
         let mut result = json!({"schema_version": 4, "operation": operation, "ok": false, "host": null, "data": null,
-            "error": {"code": code, "message": "refused", "retryable": false}});
+            "error": {"code": code, "message": "refused", "retryable": false,"recovery":recovery()}});
         assert!(schema.is_valid(&result));
         result["error"]["surprise"] = json!(true);
         assert!(!schema.is_valid(&result));
@@ -95,8 +98,7 @@ fn each_operation_owns_its_success_and_failure_payload() {
         let mut result = json!({"schema_version": 4, "operation": operation, "ok": true, "host": "gpu", "data": data, "error": null});
         assert!(schema.is_valid(&result), "{result}");
         result["ok"] = json!(false);
-        result["error"] =
-            json!({"code": "STATE_UNAVAILABLE", "message": "unavailable", "retryable": false});
+        result["error"] = json!({"code": "STATE_UNAVAILABLE", "message": "unavailable", "retryable": false,"recovery":recovery()});
         result["data"] = json!({"run": record, "stale": true});
         assert!(
             !schema.is_valid(&result),
