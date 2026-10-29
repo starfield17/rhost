@@ -26,6 +26,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("files.c", include_str!("../../helper/files.c")),
     ("files.h", include_str!("../../helper/files.h")),
     ("host.c", include_str!("../../helper/host.c")),
+    ("identity.c", include_str!("../../helper/identity.c")),
     ("inspect.h", include_str!("../../helper/inspect.h")),
     (
         "inspect_many.c",
@@ -81,9 +82,9 @@ pub fn script(cache: &str, marker: &str) -> String {
     ));
     script
 }
-pub fn binary_script(cache: &str, marker: &str) -> String {
+pub fn binary_script(cache: &str, marker: &str, hash: &str) -> String {
     format!(
-        "set -eu\numask 077\ntmp=$(mktemp -d)\ntrap 'rm -rf -- \"$tmp\"' EXIT HUP INT TERM\ncat > \"$tmp/rhost-helper\"\nchmod 700 \"$tmp/rhost-helper\"\n\"$tmp/rhost-helper\" --install-cache {} {}\nprintf '%s\\n' {}\n",
+        "set -eu\numask 077\ntmp=$(mktemp -d)\ntrap 'rm -rf -- \"$tmp\"' EXIT HUP INT TERM\ncat > \"$tmp/rhost-helper\"\nchmod 700 \"$tmp/rhost-helper\"\n\"$tmp/rhost-helper\" --install-cache {} {} {hash}\nprintf '%s\\n' {}\n",
         crate::shell::path_quote(cache),
         digest(),
         crate::shell::quote(marker)

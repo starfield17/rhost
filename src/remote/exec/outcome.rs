@@ -173,53 +173,8 @@ enum Verdict {
 /// command that exited non-zero is *completed* evidence, so this only ever sees
 /// runs with no completion at all.
 fn classify(output: &ProcessOutput, exit: Option<i32>) -> Verdict {
-    let lower = output.stderr.content().to_lowercase();
-    if exit == Some(255)
-        && lower.lines().any(|line| {
-            (line.starts_with("ssh: connect to host ")
-                || line.starts_with("ssh: connect to address "))
-                && line.contains(" port ")
-                && line.ends_with(": operation not permitted")
-        })
-    {
-        return Verdict::NotStarted(PreExecFailure::Connection);
+    match crate::remote::pre_execution(&output.stderr.content(), exit) {
+        Some(kind) => Verdict::NotStarted(kind),
+        None => Verdict::Unknown,
     }
-    // The wrapper itself could not start. Quote the offending line's meaning by
-    // name rather than the first stderr line, which is often an unrelated
-    // banner when ssh runs at a higher log level.
-    if lower.contains("command not found")
-        && (lower.contains("setsid") || lower.contains("bash") || lower.contains("base64"))
-    {
-        return Verdict::NotStarted(PreExecFailure::DependencyMissing);
-    }
-    if lower.contains("controlpath too long")
-        || lower.contains("unix_listener: cannot bind to path")
-    {
-        return Verdict::NotStarted(PreExecFailure::Config);
-    }
-    if lower.contains("host key verification failed") {
-        return Verdict::NotStarted(PreExecFailure::HostKey);
-    }
-    if exit == Some(255)
-        && (lower.contains("permission denied (publickey")
-            || lower.contains("permission denied (password")
-            || lower.contains("permission denied (keyboard-interactive")
-            || lower.contains("no supported authentication methods"))
-    {
-        return Verdict::NotStarted(PreExecFailure::Authentication);
-    }
-    if lower.contains("could not resolve hostname") || lower.contains("name or service not known") {
-        return Verdict::NotStarted(PreExecFailure::HostUnknown);
-    }
-    if lower.contains("connection refused")
-        || lower.contains("connection timed out")
-        || lower.contains("operation timed out")
-        || lower.contains("no route to host")
-    {
-        return Verdict::NotStarted(PreExecFailure::Connection);
-    }
-    // A zero status with no marker, and an unexplained non-zero one, are both
-    // execution uncertainty: never a known success, and never an assumed
-    // connectivity failure that a caller may blindly retry (EXEC-005).
-    Verdict::Unknown
 }

@@ -9,7 +9,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
-static int handshake(int directory) {
+static int handshake(int directory,const char *expected_image) {
     int input[2],output[2];
     if(pipe(input)<0)return 0;
     if(pipe(output)<0){close(input[0]);close(input[1]);return 0;}
@@ -33,13 +33,13 @@ static int handshake(int directory) {
     rh_reader r={response,size,16,0};
     if(rh_read_byte(&r)!=0)return 0;
     char *digest=rh_read_text(&r),*os=rh_read_text(&r),*arch=rh_read_text(&r);
-    uint32_t capabilities=rh_read_int(&r);char *boot=rh_read_text(&r);
+    uint32_t capabilities=rh_read_int(&r);char *boot=rh_read_text(&r),*image=rh_read_text(&r);
     const uint32_t limits[]={8388608,12582912,8388608,67108864,1048576};
     for(size_t i=0;i<sizeof limits/sizeof limits[0];i++)if(rh_read_int(&r)!=limits[i])ok=0;
-    ok=ok && rh_done(&r) && digest && !strcmp(digest,RHOST_SOURCE_DIGEST) && os && *os && arch && *arch && (capabilities&7)==7 && boot && (!*boot || strlen(boot)==36);
-    free(digest);free(os);free(arch);free(boot);return ok;
+    ok=ok && rh_done(&r) && digest && !strcmp(digest,RHOST_SOURCE_DIGEST) && os && *os && arch && *arch && (capabilities&7)==7 && boot && (!*boot || strlen(boot)==36) && image && !strcmp(image,expected_image);
+    free(digest);free(os);free(arch);free(boot);free(image);return ok;
 }
-int rh_install(const char *path,const char *executable) {
+int rh_install(const char *path,const char *executable,const char *expected_hash) {
     int directory=rh_directory(path,1);struct stat info;int result=255,lock=-1,fd=-1;
     unsigned phase=1;
     unsigned char *bytes=NULL;
@@ -52,11 +52,13 @@ int rh_install(const char *path,const char *executable) {
     if(!bytes)goto done;
     while(at<size){ssize_t n=read(fd,bytes+at,size-at);if(n<=0)goto done;at+=(size_t)n;}
     close(fd);fd=-1;
+    unsigned char digest[32];char hash[65];rh_sha256(bytes,size,digest);rh_hex(digest,32,hash);
+    if(expected_hash && strcmp(hash,expected_hash))goto done;
     phase=4;if(!rh_atomic(directory,"candidate",bytes,size))goto done;
     fd=openat(directory,"candidate",O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
     if(fd<0 || fchmod(fd,0700)<0 || fsync(fd)<0)goto done;
     close(fd);fd=-1;
-    phase=5;if(!handshake(directory))goto done;
+    phase=5;if(!handshake(directory,hash))goto done;
     phase=6;
     if(renameat(directory,"candidate",directory,"rhost-helper")<0 || fsync(directory)<0)goto done;
     result=0;

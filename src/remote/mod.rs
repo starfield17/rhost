@@ -6,8 +6,10 @@
 //! submits a program to a host and the one place a transport failure is
 //! classified). Capabilities depend on this module; it depends on none of them.
 
+mod diagnostic;
 pub mod exec;
 mod run;
+pub(crate) use diagnostic::pre_execution;
 
 pub(crate) use run::{RemoteRun, internal, run_remote, run_remote_partial};
 

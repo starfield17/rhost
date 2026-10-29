@@ -33,5 +33,5 @@ typedef struct {
 int rh_parse_start(rh_reader *r,rh_start *q);
 void rh_start_free(rh_start *q);
 void rh_monitor(int directory,int lock,rh_start *q);
-int rh_install(const char *directory,const char *executable);
+int rh_install(const char *directory,const char *executable,const char *expected_hash);
 #endif
