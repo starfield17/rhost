@@ -2219,6 +2219,7 @@
                   "request",
                   "run.list",
                   "run.signal",
+                  "run.prune",
                   "helper.prepare"
                 ]
               }
