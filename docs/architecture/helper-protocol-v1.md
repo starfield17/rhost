@@ -1,7 +1,7 @@
-# Proposed helper protocol v1
+# Private helper protocol v1
 
-Status: acceptance design, not implemented. See
-[the architecture proposal](agent-interface-v5.md). Public requests use schema
+Status: implemented and exercised by native protocol/Run acceptance. See
+[the native architecture](agent-interface-v5.md). Public requests use schema
 v3; these frames are a private Rust/C interface, not an alternate public API.
 
 ## Encoding
@@ -62,12 +62,12 @@ platform signal numbers. Receipt of a signal response proves delivery only.
 Response kind is request kind plus 2147483648. First body field is result:u8.
 Zero means success followed by the operation payload below. One means refusal
 followed by code:text, message:text, retryable:boolean. Other tags are invalid.
-The outer Rust layer retains a previously validated observation when transport
-fails; the helper never invents a stale observation from current transport data.
+A transport failure cannot create a fresh Run observation. Callers retain prior
+observations as stale; the helper never invents history from transport data.
 
 | Request | Success payload |
 | --- | --- |
-| probe | source_digest:text, target_os:text, target_arch:text, capabilities:u32, boot_id:text, run_frame:u32, file_request:u32, file_edit:u32, run_stream:u32, run_page:u32 |
+| probe | source_digest:text, target_os:text, target_arch:text, capabilities:u32, boot_id:text, binary_sha256:text, run_frame:u32, file_request:u32, file_edit:u32, run_stream:u32, run_page:u32 |
 | start/poll | observation |
 | list | count:u32 followed by that many run records |
 | signal | run_id:text, delivered:boolean (must be true) |
@@ -96,7 +96,7 @@ digest is 64 lowercase hex characters. Preparation matches both before reuse.
 Probe never initializes a namespace. Namespace preparation is a separate
 authorized operation; an executable handshake cannot manufacture a generation.
 
-The executable accepts a private `--install-cache <absolute-directory>` bootstrap
+The executable accepts a private `--install-cache <absolute-directory> [expected-source [expected-binary-sha]]` bootstrap
 entry point. It copies its own regular executable into an account-owned private
 directory using a lock, no-follow opens and atomic publication. This entry point
 does not initialize namespaces or launch work. The SSH bootstrap compiles only
@@ -110,7 +110,7 @@ The request fingerprint hashes the canonical start body excluding wait_ms.
 
 ## Parser acceptance cases
 
-Before the parser is shipped, Rust black-box fixtures must exercise every
+Rust black-box fixtures exercise the operation and parser boundaries, including
 request/success/refusal kind plus: partial header, wrong magic, excessive length,
 truncated field, overlong count, integer overflow, unknown enum, invalid boolean,
 invalid UTF-8, embedded NUL, duplicate environment name, trailing frame, trailing

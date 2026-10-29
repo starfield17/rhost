@@ -266,6 +266,28 @@ fn run_log_write_failures_keep_observed_counts_and_gaps() {
 }
 
 #[test]
+fn expiry_survives_pruning_and_namespace_guards_refuse_replacement_state() {
+    let f = Fixture::new();
+    let (g, expiry) = namespace(&f);
+    let params = launch(&f, &g, expiry, "printf x >> once");
+    let key = params["key"].clone();
+    assert_eq!(f.request(&message("run.start", params.clone()))["ok"], true);
+    assert_eq!(finished(&f, &g, &key)["run"]["completion"]["exit_code"], 0);
+    let wrong = f.request(&message("run.list", json!({"generation":"0".repeat(32)})));
+    assert_eq!(wrong["error"]["code"], "NAMESPACE_MISMATCH");
+    std::fs::write(f.root.join("state/clock"), (expiry + 1).to_be_bytes())
+        .unwrap_or_else(|e| panic!("clock: {e}"));
+    let pruned = f.request(&message("run.prune", json!({"generation":g})));
+    assert_eq!(pruned["data"]["removed"], json!([key]));
+    let retry = f.request(&message("run.start", params));
+    assert_eq!(retry["error"]["code"], "REQUEST_EXPIRED");
+    assert_eq!(
+        std::fs::read(f.root.join("once")).unwrap_or_else(|e| panic!("effects: {e}")),
+        b"x"
+    );
+}
+
+#[test]
 #[cfg(target_os = "linux")]
 fn monitor_death_never_authorizes_a_duplicate_or_saved_pid_signal() {
     let f = Fixture::new();

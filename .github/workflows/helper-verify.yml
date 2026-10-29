@@ -35,7 +35,7 @@ jobs:
       HELPER_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
       HELPER_ASSET_IDS: ${{ inputs.asset_ids }}
       RHOST_NO_SOURCE_BUILD: '1'
-      RHOST_HELPER_BIN: ${{ github.workspace }}/verified-helper/rhost-helper
+      RHOST_HELPER_BIN: ${{ github.workspace }}/target/verified-helper/rhost-helper
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -68,9 +68,9 @@ jobs:
         run: |
           python3 scripts/helper_artifact.py verify --target "$TARGET" --path "$RHOST_HELPER_BIN"
           asset=$(python3 -c 'import json,os; m=json.load(open("helper/artifacts.json")); print(next(a["asset"] for a in m["artifacts"] if a["target"]==os.environ["TARGET"]))')
-          mv "$RHOST_HELPER_BIN" "verified-helper/$asset"
+          mv "$RHOST_HELPER_BIN" "target/verified-helper/$asset"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: helper-${{ matrix.target }}
-          path: verified-helper/*
+          path: target/verified-helper/*
           retention-days: 30

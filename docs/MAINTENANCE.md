@@ -38,15 +38,15 @@ ships in a binary minor or major release, never a patch.
 - Rust 1.85 is the MSRV for the 4.x line. Raise it only when a security or
   dependency constraint makes that necessary, document the reason, and ship the
   change in a minor release.
-- Real-remote live verification is a required **manual** pre-release step until a
-  CI-reachable test host exists. `make test-live-all` takes its target only from
-  `RHOST_TEST_HOST`, so the release workflow cannot run it and does not claim to.
-  If a reachable host is provisioned, the workflow must record a live result
-  bound to the exact tagged commit and make publication depend on it; only then
-  is the live suite a release gate rather than a documented expectation.
+- Real-remote verification is a required **manual pre-release** step. CI runs
+  disposable strict-host-key SSH helper fixtures; it has no access to the manual
+  target. Publication validates a trusted operator attestation bound to the same
+  commit and exact candidate client/helper hashes. This enforces the evidence
+  binding, not independent observation of the operator's remote host.
 - Releases are event-driven: ship a security or user-visible correctness fix
   promptly; otherwise batch low-risk maintenance. A tag must re-run `make check`
-  on Linux and macOS before any native artifact is built.
+  on Linux and macOS. Candidate dispatch builds native clients once; a production
+  tag reruns those gates and native execution before promoting the stored bytes.
 - Keep `Cargo.lock`, `--locked`, weekly grouped Dependabot updates and the small
   runtime dependency set. Adding a runtime dependency requires architecture
   review. Do not add another dependency manager or supply-chain tool without a
@@ -118,3 +118,50 @@ Local `make check` and `make test-smoke` build a native C test candidate when
 candidate; it never compiles the helper. No remote source build is permitted in
 these gates. Cargo remains the client build system. The helper build inputs and
 release promotion have a separate manifest and exact-binary verification.
+
+## v5 publication procedure
+
+1. Freeze the source commit and create a stable non-production candidate tag at
+   it. All candidate and evidence dispatches use that ref; a commit input alone
+   cannot keep a moving branch's workflow head pinned.
+2. Build helpers locally with `scripts/build-helper-release.py`, never in CI.
+   Linux static musl targets are x86_64/aarch64; the macOS arm64 helper is a source
+   gate fixture. Pin actual normalized compiler/linker/builtins/sysroot inputs,
+   source digest and executable SHA/size in `helper/artifacts.json`. Local build
+   scripts refuse CI. C source changes require a new lock and helper candidates.
+3. Publish the helper inputs under `helper-candidates-<source-digest>`, outside
+   the production `v*` trigger. The helper verification workflow consumes exact
+   repository asset IDs, validates source/manifest/SHA/size, tests natively on
+   both Linux architectures and through a disposable sshd, and uploads unchanged
+   tested bytes. It never compiles a replacement helper.
+4. Dispatch `release.yml` at the frozen ref. Both source platforms run complete
+   `make check`; all four native client platforms build and execute optimized,
+   provenance-stamped locked candidates. Retain the successful first-attempt
+   run and its immutable artifacts. A rerun is not the same candidate.
+5. Download the exact native macOS client artifact and matching Linux helper.
+   Set explicit `RHOST_TEST_HOST`, `RHOST_BIN` and `RHOST_HELPER_BIN`; run
+   `make test-live-all` and `make test-live-helper` against a real Linux host.
+   Run local `make test-smoke`, `make check` at the declared MSRV, and local
+   ASan/UBSan/allocation-failure complements. Never track targets or transcripts.
+6. Dispatch `release-evidence.yml` at the same frozen ref with full commit,
+   candidate run ID, exact macOS client/helper hashes and the explicit passed
+   suite names. Its versioned record says `operator_attestation` and
+   `observed_by_ci:false`, names the operator, and binds all candidate identities.
+7. Generate annotation JSON with `python3 scripts/release_state.py tag-message
+   --candidate-run <id> --evidence-run <id>`. Create the annotated Cargo-version
+   tag with that exact JSON and push it. Lightweight tags, changed attempts,
+   wrong workflows/repositories/commits, incomplete platforms, substituted bytes
+   and expired artifacts fail closed. No retagging a published release.
+8. Tag jobs rerun Linux/macOS source checks, all four stored client executions
+   and both helper verification jobs. They do not rebuild client/helper bytes.
+   Publication checks archive digests separately from contained binary digests,
+   validates the complete inventory, and publishes exact clients, Linux helpers,
+   the helper lock and manual evidence. Missing artifacts require a new candidate
+   and new manual verification rather than bypassing the gate.
+
+LLVM/Clang and LLD, pinned LLVM compiler-rt source, and pinned musl development
+archives are build inputs, not remote installations. Supply compiler/sysroot/
+builtins/linker paths at runtime; actual builder paths never enter tracked
+provenance. `RHOST_HELPER_STRIP` selects the local release-strip tool. A configured
+client-side compiler is a strict choice and never silently falls back to remote
+compilation; automatic preparation uses existing remote cc then pinned release.

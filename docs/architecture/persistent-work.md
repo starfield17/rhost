@@ -11,7 +11,7 @@ owns the pane it returns `SESSION_BUSY`; the agent drives that program with
 `session send/read` or interrupts it with `session recover`. The session surface
 is intentionally frozen at create/list/exec/send/read/attach/recover/close: it
 owns terminal state, not windows, layouts, process management, or scheduling.
-Schema v2 recognizes `attach` but refuses it with `USAGE_ERROR`; agents use
+Schema v3 recognizes `attach` but refuses it with `USAGE_ERROR`; agents use
 send/read rather than an unrepresentable attached terminal.
 
 `session send --data` is verbatim. It does not interpret backslash escapes.
@@ -29,24 +29,20 @@ and `RHOST_SIZE` followed by base64 content. Missing, duplicate, malformed, or
 inconsistent fields are protocol failures and become `SESSION_UNHEALTHY`; they
 are never treated as an empty successful result.
 
-## Long-running work
+## Recoverable noninteractive work
 
-An ordinary `rhost exec` remains foreground from rhost's perspective. An agent
-runtime may put that local invocation in the background when it only needs to
-continue other work concurrently; rhost still owns streaming and the eventual
-process result.
+Use native Runs for builds/tests and work requiring separate streams and durable
+completion. A caller-owned expiring key and namespace generation allow later CLI
+processes to rediscover the launch. Wait/cancellation stop observation; remote
+deadlines and signals control work explicitly. Monitor death and missing results
+preserve uncertainty rather than authorizing a second launch or saved-PID kill.
+See [native Run semantics](agent-interface-v5.md).
 
-Work that must survive the agent runtime belongs to an existing remote
-scheduler. The caller invokes that scheduler explicitly through `rhost exec`
-and uses its native status, log, cancellation, and retention interfaces. rhost
-does not install, select, or emulate a scheduler, and sessions are not a generic
-job-management substitute.
-
-If a caller deliberately starts unmanaged background work, the entire background
-group must redirect stdin, stdout and stderr away from SSH and record its own
-log, process identity and completion status. A vanished process without a
-completion record is unknown; matching a process name is not proof of success.
-Silence or a harness interruption does not prove that remote work is stuck.
+Foreground `exec` retains its existing streaming, timeout and cleanup semantics.
+Interactive REPL/debugger state remains in tmux sessions. Scheduled/restarted
+services belong to an existing remote scheduler selected by the caller.
+Unmanaged background processes remain the caller's responsibility; their
+submission or disappearance is not completion evidence.
 
 ## Tunnels
 

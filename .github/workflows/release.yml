@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       GH_TOKEN: ${{ github.token }}
-      RHOST_HELPER_BIN: ${{ github.workspace }}/verified-helper/rhost-helper
+      RHOST_HELPER_BIN: ${{ github.workspace }}/target/verified-helper/rhost-helper
       RHOST_NO_SOURCE_BUILD: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

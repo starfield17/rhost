@@ -5,7 +5,8 @@ cd "$(dirname "$0")/.."
 : "${RHOST_BIN:?set RHOST_BIN to an explicit binary}"
 : "${RHOST_HELPER_BIN:?set RHOST_HELPER_BIN to an exact native candidate}"
 test "$(uname -s)" = Linux || { echo 'temporary sshd fixture requires Linux' >&2; exit 2; }
-scratch=$(mktemp -d /tmp/rhost-sshd-XXXXXXXX)
+# OpenSSH StrictModes checks every authorized_keys ancestor, including /tmp.
+scratch=$(mktemp -d "$HOME/.rhost-sshd-XXXXXXXX")
 server_pid=
 cleanup() {
     if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || :; wait "$server_pid" 2>/dev/null || :; fi

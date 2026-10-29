@@ -1,6 +1,7 @@
-# Targeted file changes — review packet
+# Targeted file changes
 
-Status: planned acceptance, not an implemented workspace service.
+Status: implemented. Native acceptance and real Linux SSH verification cover
+preflight, retries, guarded recovery and structured inspection.
 
 ## Boundary
 

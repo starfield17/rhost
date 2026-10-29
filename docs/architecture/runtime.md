@@ -42,7 +42,7 @@ one explicitly.
 
 A deadline or signal stops local SSH and then attempts to kill the recorded
 remote process group. Execution timeout always uses
-`REMOTE_COMMAND_TIMEOUT`. The v2 envelope reports cleanup separately:
+`REMOTE_COMMAND_TIMEOUT`. The v3 envelope reports cleanup separately:
 
 - `data.cleanup.status == "confirmed_stopped"`: the recorded process identity
   was matched and its managed process group was confirmed empty; side effects

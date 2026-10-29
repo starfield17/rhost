@@ -5,8 +5,9 @@
 *The agent stays local. The work doesn't have to.*
 
 A coding agent already knows how to use a shell. rhost carries that command
-model to any SSH-reachable Linux machine without installing an agent, running a
-daemon, or introducing another authentication system.
+model to SSH-reachable Linux machines using OpenSSH and a small C99 helper in
+a private cache. Each recoverable Run has a temporary remote monitor; no global
+daemon or additional authentication system is introduced.
 
 ```bash
 rhost exec gpu --cwd '~/work/project' --command 'cargo test --locked'
@@ -24,11 +25,48 @@ local coding agent
 ```
 
 Direct execution needs remote `bash`, `setsid`, `ps`, and a base64 decoder.
-Optional operations need more: sessions use `tmux` and `flock`, remote filesystem
-helpers require Python 3.5 or newer with the needed filesystem features, and
-resumable or checksum-aware transfers use rsync. Run `rhost doctor <host>
+Sessions use `tmux` and `flock`; resumable or checksum-aware transfers use rsync.
+Native file operations and recoverable Runs use the helper, without remote Python.
+Preparation reuses a validated cache, an explicitly supplied binary/compiler,
+an existing remote `cc`, or a pinned static Linux release artifact. Run `rhost doctor <host>
 --json` to see which commands resolve; helper readiness is checked on the
 target when a file operation runs.
+
+## Recoverable work and structured tools (v5)
+
+All public JSON uses **schema v3**. Upgrade validators with the binary; the v2
+schema remains frozen compatibility history. Existing foreground `exec` and
+tmux session semantics are preserved.
+
+Use a Run for builds, tests and other work that must be rediscovered after the
+CLI exits. Prepare once, retain `data.generation`, and generate a request key
+`<remote-expiry-unix-seconds>-<64-lowercase-hex-random-characters>` before submission.
+The expiry must be in the future and no more than seven days away.
+
+```bash
+rhost helper prepare gpu --json
+rhost run start gpu --generation '<generation>' --key '<expiring-key>' \
+  --cwd '~/work/project' --argv-json '["/usr/bin/make","test"]' --wait 10s --json
+rhost run poll gpu '<run-id>' --generation '<generation>' --wait 30s --json
+rhost run signal gpu '<run-id>' --generation '<generation>' --sig TERM --json
+```
+
+`--wait` only budgets observation. `--deadline` bounds execution remotely; signals
+are explicit. Retry an uncertain submission using the **same key and payload**.
+Deduplication is limited by the namespace generation and expiry; it cannot make
+arbitrary command side effects exactly once. Separate stdout/stderr pages carry
+byte cursors, base64 and explicit retention gaps.
+
+`rhost request --from -` accepts one closed JSON document, avoiding local shell
+parsing of command data. `rhost mcp` exposes the same typed operations through
+stdio MCP. Native search/read-many return structured observations and hashes;
+named changesets preflight all files and journal recoverable individual updates.
+They provide no global atomic visibility and create no workspace or Git branch.
+Validation is a separate Run; rollback is an explicit guarded operation.
+
+See the [Run/request/MCP guide](skills/rhost/references/NATIVE.md) for complete
+examples and [native architecture](docs/architecture/agent-interface-v5.md) for
+lifecycle, limits and helper trust boundaries.
 
 ## Install
 
@@ -52,7 +90,7 @@ another copy still takes precedence. An open shell may need `rehash` (zsh) or
 The default version lookup uses GitHub's stable-release redirect. If the lookup
 fails, set `RHOST_VERSION` to a known release to skip it.
 
-To build from source with Rust 1.85 or newer:
+To build from source with Rust 1.88 or newer:
 
 ```bash
 git clone https://github.com/starfield17/rhost.git
@@ -81,9 +119,9 @@ For `doctor`, `ok:true` means the probe completed. Inspect
 optional operation. On failure, branch on `error.code` and use the
 [recovery guide](skills/rhost/references/RECOVERY.md) before retrying a
 mutation.
-`data.capabilities.python3` means the command was found, not that the remote
-filesystem helper can run; an unusable interpreter produces
-`REMOTE_DEPENDENCY_MISSING` before a file edit.
+`doctor` reports command presence. Use `rhost helper prepare gpu --json` to
+prepare native operations and obtain their namespace generation, remote time,
+boot ID and actual helper identity. `rhost helper status gpu --json` is read-only.
 
 Use any target that already works with `ssh`: an OpenSSH config alias,
 `user@example-host`, or a bare hostname.
@@ -143,6 +181,7 @@ the work needs an additional guarantee.
 
 | Requirement | Operation |
 |---|---|
+| A build/test must remain inspectable after CLI exit | `rhost run` |
 | A shell, REPL, or debugger must keep state | `rhost session` |
 | Bytes must cross local and remote filesystems | `rhost fs` |
 | A text edit needs an atomic hash precondition | `rhost fs read/write/patch` |
@@ -154,7 +193,8 @@ run an ordinary `rhost exec` process in its own background facility. The rhost
 process remains the foreground owner, so output and exit status keep their
 normal meaning.
 
-Work that must survive the coding agent itself belongs to a scheduler already
+Use native Runs when work must survive the local CLI and remain inspectable.
+Scheduled or automatically restarted work belongs to a scheduler already
 installed on the remote host. Invoke that scheduler explicitly, for example:
 
 ```bash
@@ -185,22 +225,24 @@ Remote search stays an ordinary command:
 rhost exec gpu --cwd '~/work/project' --command 'rg TODO src'
 ```
 
-`session attach` is deliberately refused with `USAGE_ERROR`: schema v2 has no
+`session attach` is deliberately refused with `USAGE_ERROR`: schema v3 has no
 honest way to represent terminal attachment in a single result envelope.
 
 ## What rhost does not own
 
-rhost does not manage SSH keys, keep a host database, install a remote agent,
-run a daemon, or define a deployment language.
+rhost does not manage SSH keys, keep a host database, install system packages,
+run a global daemon, or define a deployment language. The private helper cache
+and per-Run monitors own only their documented operations.
 
 OpenSSH owns connections and authentication. Remote tmux owns persistent
-terminals. Remote schedulers own scheduled work. The filesystem owns files.
+terminals. Per-Run monitors and remote files own recoverable execution. Existing
+remote schedulers own scheduled work. The filesystem owns files.
 rhost owns the contract between those components and the caller.
 
 ## Structured results
 
 Every agent-visible behavior has a `--json` path. JSON mode writes exactly one
-schema-v2 document to stdout, never mixes progress or command output into it,
+schema-v3 document to stdout, never mixes progress or command output into it,
 and provides stable `error.code` values.
 
 For execution results, inspect:
@@ -256,7 +298,7 @@ erase state it promised to preserve.
 - [Architecture and ownership](docs/ARCHITECTURE.md)
 - [Agent skill](skills/rhost/SKILL.md)
 - [CLI reference and file input examples](skills/rhost/references/CLI.md)
-- [JSON envelope schema](schemas/result-v2.schema.json)
+- [JSON envelope schema](schemas/result-v3.schema.json)
 - [Contributor rules](AGENTS.md)
 - [Maintenance policy](docs/MAINTENANCE.md)
 

@@ -1,292 +1,165 @@
-# Agent interface evolution — architecture review proposal
+# Native agent interface (v5)
 
-Status: proposed, not implemented. The active product remains v4 with schema v2.
-This document is the review packet required by MAINTENANCE.md for Risk A work;
-it does not change an existing acceptance criterion or claim new capabilities.
+Status: implemented, with process-level acceptance and real Linux SSH
+verification. The active public envelope is schema v3 for every operation.
+Frozen v2 payload compatibility remains covered independently.
 
-## Final v5 decisions (supersede staged migration below)
+## Boundaries and owners
 
-All v5 public JSON operations will emit schema v3; v2 remains frozen history.
-There is no workspace, worktree, branch, project snapshot or backup management.
-Agents own those workflows. File recovery records cover only explicit edits.
-Use LLVM/Clang and LLD with pinned musl build inputs for local helper builds;
-CI verifies uploaded helper binaries and never compiles replacements. Preserve
-four native client artifacts. Publish only after the complete implementation,
-same-commit verification and exact-artifact live acceptance pass.
-Read-only probes do not create namespaces or return invented generations.
+OpenSSH owns authentication, host keys, SSH configuration and connection reuse.
+The client invokes a standalone C99 helper; there is no Rust FFI, global remote
+daemon, network listener, scheduler or automatic restart. A monitor exists only
+for its Run and exits after recording completion and bounded output draining.
+Remote files own registration, output and results across client exits.
 
-## Consumers and compatibility
+`src/helper/` owns preparation and private transport; `helper/` owns native
+process/filesystem primitives; `src/runs/` owns Run requests and observations.
+`src/files/` owns edits, inspection and named changeset recovery. `src/request/`
+composes closed requests; `src/mcp/` adapts them through the official stdio SDK.
+The pure domain and versioned wire envelope remain separate owners.
 
-Affected consumers are shell callers, JSON validators, coding agents, existing
-tmux session users, installers, release automation and operators of remote hosts.
-Existing `exec`, `session`, transfer and connection semantics remain unchanged in
-the first delivery. New request/Run operations require schema v3; never label a
-new closed-object operation as v2. Existing v2 compatibility fixtures are frozen.
-No automatic adoption or deletion of v4 remote state is permitted.
+Agents manage project directories, Git branches and worktrees themselves. rhost
+creates no project workspace, snapshot or backup service. Changeset archives
+cover only explicitly named files. General batch/DAG/workflow execution is out
+of scope; the existing serial transfer batch retains its published semantics.
 
-The first delivery is a vertical slice: a C helper, recoverable noninteractive
-Runs, structured requests, bounded incremental output, and verification of the
-exact helper binary before publication. File change sets and MCP follow only
-after this slice passes its acceptance scenarios.
+## Submission, identity and time
 
-## Ownership and implementation boundaries
+`request --from -` accepts one bounded closed JSON document. Exactly one program
+variant supplies literal argv or an explicit interpreter/script/login policy.
+Environment inheritance and values are explicit; stdin is bounded base64 data.
+Invalid/duplicate fields fail before SSH. Public JSON is separate from private
+RH01 binary Run frames and the native bounded file JSON protocol.
 
-- OpenSSH retains authentication, target resolution, host keys and multiplexing.
-- A remote monitor exists per Run and exits after recording its result. There
-  is no global daemon, listening network service, scheduler or automatic restart.
-- Durable requests, logs and results belong to remote files, never CLI memory.
-- An independent C99 executable owns process and filesystem primitives. Rust
-  owns public JSON, CLI parsing, orchestration and error presentation. No FFI.
-- POSIX APIs form the baseline. Linux-specific process identities and syscalls
-  are optional implementations of a guarantee, not the public interface.
-- The C implementation is a narrow exception to AGENTS.md's Rust-only rule;
-  new acceptance tests remain Rust. C sources require bounds checks, a source
-  size gate and local address/undefined-behavior sanitizer verification.
+Preparation creates a private remote namespace with a random generation. Read-only
+metadata refuses an absent namespace and never invents one. Mutations bind the
+observed generation. Replacing/restoring that namespace invalidates its old
+deduplication history; this is an explicit recovery boundary.
 
-Implementation owners: `src/runs/` owns CLI, DTOs and Run use cases;
-`src/helper/` owns helper selection, preparation and the private protocol;
-`helper/` owns the standalone C program. `domain/` owns pure Run transitions;
-`wire/` retains envelope ownership. `dispatch/` composes capabilities. Existing
-capabilities do not call the Run CLI or depend on its rendering.
+Request keys are `<expiry-unix-seconds>-<64-lowercase-hex-random-characters>`.
+Expiry is immutable and no more than seven days ahead of effective remote time.
+The caller retains its key before submission. Under the registry lock, the
+helper persists the maximum of wall time and its clock high-water mark before
+registration/pruning. Metadata reads that maximum without rewriting it. A
+forward clock jump can expire work early; a pruned expired key stays expired.
 
-## Request and execution semantics
+The fingerprint covers submitted program, cwd literal, input, environment,
+generation, key/expiry and remote deadline. Observation wait is excluded.
+The first launch resolves cwd; retry observes that Run rather than launching
+against a newly resolved path. Identical concurrent requests register at most
+one launch attempt. A changed payload conflicts. Registration fsyncs immutable
+intent and accepted evidence before spawning; ambiguous launch never respawns.
+This is bounded request deduplication, not exactly-once business effects.
 
-`rhost request --from -` reads one bounded JSON request. It is a single-operation
-entry point, not a workflow engine. `run start`, `poll`, `list`, `signal` and
-`prune` are CLI views of the same typed requests. Reject invalid requests before
-contacting SSH. Program input is an explicit request field, not unread bytes
-following the JSON document. The first slice accepts closed stdin or bounded
-base64 input; interactive input stays with sessions.
+## Run state and control
 
-Run start requires a caller-generated request key, an expiry, cwd, explicit
-environment policy and exactly one program variant: an argv array or an exact
-shell program with an explicit interpreter. No shell syntax is reconstructed
-from argv. Shell profile loading is explicit. The request fingerprint covers
-program, input, resolved cwd, environment policy and deadline.
+| State | Evidence |
+| --- | --- |
+| accepted | durable registration; launch has not published readiness |
+| starting | a live owner is preparing the child |
+| running | monitor owns the child and can observe/control it |
+| exited | durable wait result, either exit code or terminating signal |
+| lost | authentic completion/ownership cannot currently be established |
 
-Default waiting budget is zero; a positive `wait` only waits for an observation.
-A separate optional deadline is enforced remotely. Local cancellation of a wait
-does not cancel a Run. Signal is an explicit operation. Current foreground exec
-timeout/cancellation behavior remains unchanged.
+Default wait is zero. Wait expiry, client cancellation and MCP cancellation end
+observation; a separate remote deadline or explicit signal controls execution.
+A transport error is not a fresh running/lost observation. Preserve stale data
+when available and reconnect with the same generation/key. Missing completion
+never becomes exit code zero.
 
-Remote state is private to the effective remote account under a new namespace.
-Registration uses an exclusive request lock and a durable atomic record before
-spawning. Concurrent identical submissions resolve to one Run; a different
-fingerprint under the same key returns `IDEMPOTENCY_CONFLICT`. A registered
-request is never automatically respawned after ambiguous launch failure.
+The monitor owns a private local control socket and its lifetime lock. Signals
+are delivered only by that live owner. It observes leader exit without reaping,
+disables control permanently, then reaps and publishes completion. No saved PID
+or PGID is signaled after the leader is gone. Children escaping the group are
+not contained. Reboot, account-session cleanup or monitor death may yield lost
+work; no capability probe guarantees survival under every host policy.
 
-Expiry is part of the key contract: an expired request is refused even after its
-record has been pruned. Completed results may be pruned after expiry; active Runs
-are never pruned. Source clocks and expiry bounds are checked on the remote host.
-This is bounded submission deduplication, not exactly-once business effects.
+Stdout/stderr have separate append-only retained prefixes. Cursors are absolute
+source-byte offsets; base64 preserves exact bytes and displayed UTF-8 does not
+change cursor arithmetic. Default pages are 4 KiB, maximum 1 MiB per stream.
+Retention is 64 MiB per stream. After quota or write failure the monitor keeps
+draining/counting and reports incomplete output; it never invents retained bytes.
+Leader completion is independent of EOF. Descendant-held pipes drain for at
+most two seconds after leader exit, then close with an incomplete-tail indicator.
+Neither leader exit nor EOF proves whole-tree completion.
 
-| State | Evidence | Allowed next state |
-| --- | --- | --- |
-| accepted | durable request, no child evidence | starting, lost |
-| starting | monitor owns launch attempt | running, exited, lost |
-| running | monitor and child identity validated | exited, lost |
-| exited | durable wait result bound to this Run | terminal |
-| lost | launch/completion cannot be established | exited only if authentic completion is recovered |
+Pruning is explicit, expiry- and generation-guarded, and retains active/lost
+Runs. There is no hidden GC or global storage quota. Remote storage exhaustion
+can refuse registration or result persistence; missing evidence remains unknown.
 
-Transport availability is separate from Run state. A failed poll preserves the
-last observation as stale and returns a transport error; it cannot assert that
-the Run is currently running or lost. A missing result is never exit code zero.
-Exit code and signal termination are distinct results.
+## Helper preparation and trust
 
-The monitor owns child process identity and receives control over a private
-local socket. It validates its Run identity before accepting signals. A missing
-monitor is not permission to signal a saved numeric PID. Process-group cleanup
-does not cover children that escape that group; full containment is not promised.
-Host reboot or account-session cleanup may kill the monitor and yields lost
-evidence, not automatic re-execution. A successful capability probe cannot
-guarantee survival under every future host policy.
+The cache identity includes protocol/source, observed OS/architecture and build
+profile. An explicit `RHOST_HELPER_BIN` selects its full binary SHA. Explicit
+LLVM configuration selects the hash of actual compiler/linker/builtins/sysroot
+inputs and fixed flags; a configured failure refuses rather than silently
+choosing another build. In automatic mode, reuse a compatible cache, try an
+existing remote C99 `cc`, then download the matching pinned release artifact.
+No compiler, SDK or package is automatically installed.
 
-## Output and storage
+`RHOST_NO_UPLOAD` allows matching cache reuse only. `RHOST_NO_SOURCE_BUILD`
+disables remote source compilation; an explicitly configured local compiler
+remains an explicit choice. `RHOST_NO_DOWNLOAD` disables release downloads.
+`RHOST_HELPER_CACHE_DIR` overrides only the private helper cache. Native state
+uses `${RHOST_REMOTE_STATE:-$HOME/.local/state/rhost/v5}`; preserved exec/session
+operations keep their v4 state locations. Explicit overrides are complete roots.
 
-Each Run has separate stdout/stderr append-only segments and an atomically
-written completion record. Cursors are absolute source-byte offsets bound to
-Run and stream; repeated reads of retained ranges return identical bytes.
-JSON text decoding never changes cursor accounting. Binary pages use base64.
+Bootstrap still needs a working SSH shell and ordinary POSIX tools including
+`sh`, `uname`, `id`, `stat`, `cat`, `chmod`, `mktemp` and `rm`. The helper itself
+uses OS APIs, not remote Python/base64/setsid/flock command-line programs. Source
+compilation additionally needs an existing compatible `cc`. Published fallback
+artifacts target static musl Linux x86_64/aarch64; no universal Unix support is
+claimed. A native macOS helper is only a local verification fixture.
 
-The first implementation uses a 64 MiB quota per stream and a 4 KiB default
-inline page (maximum 1 MiB). Once a stream's quota is reached, the monitor keeps
-draining and counting bytes but discards subsequent bytes, recording the missing
-range explicitly. It never blocks a child indefinitely to retain its output.
-Completion includes final byte counts and output completeness. Disk write
-failure is recorded when possible and never fabricated as complete output.
+Private no-follow directories, ownership/mode checks, locks and atomic
+fsync/rename protect preparation. A candidate's copied bytes are hashed and its
+handshake binds source, target, capabilities, limits and image SHA before
+promotion. Cached supplied/release helpers must report their selected full SHA.
+Linux reads its loaded image through `/proc/self/exe`; other platforms observe
+the checked executable path. This trusts the builder and remote account, not
+cryptographic source attestation or protection from the same account replacing
+its own files. Never overwrite a running executable in place.
 
-Default request validity and completed-result retention are 24 hours; callers
-may request up to seven days. An expired key is never interpreted as new work.
-Pruning is explicit in the first delivery; no hidden background GC. Host-wide
-storage exhaustion refuses new Runs before launching whenever detectable.
+## Context and files
 
-## Helper preparation
+Optional Linux boot ID is an observation, not a hermetic environment handle.
+An optional `if_boot_id` guard is validated by the helper after full parsing and
+before operation effects; changed/unavailable identity refuses. It does not
+enter the immutable payload fingerprint. Preparation may still populate its
+private cache before that capability guard runs.
 
-Selection order: validated cache; configured local cross compiler; existing
-remote `cc`; a matching verified Release artifact. Never install a compiler,
-package or SDK automatically. A configured no-upload policy refuses preparation
-when a compatible cached helper is absent.
+See [targeted changes](file-changes-v5.md) for per-file durable intents, sorted
+parent locks and explicit guarded resume/rollback. Global atomic visibility,
+nonparticipating-writer exclusion, command rollback and ACL/xattr restoration
+are not promised. Search hashes the bytes it matches, with explicit scan/result
+budgets and collection-bound cursors; read-many is a set of individual file
+observations, not a snapshot.
 
-Cache identity includes source digest, target OS/architecture/ABI, protocol
-version and build configuration. A content hash alone does not establish source
-provenance. Source compilation uses fixed argv and isolated output paths, no
-user-provided build script. Temporary preparation is atomic under a lock; an
-interrupted build cannot replace a working helper. Keep helpers used by active
-monitors. Missing compiler, noexec filesystem, incompatible ABI and protocol
-mismatch have distinct machine-readable refusals.
+## MCP and delivery
 
-Bootstrap runs through minimal SSH command execution; it cannot depend on the
-existing bash/setsid wrapper or on Python. A readiness handshake reports actual
-operation guarantees and protocol limits. No universal Unix support claim is
-made solely because source compilation succeeds.
+`rhost mcp` is a stdio server process using the official SDK, without HTTP or an
+authentication stack. Tools call the same typed requests as the CLI and expose
+operation-specific input/output schemas. At most 16 observations are admitted.
+Canceled queued calls cannot later submit work; EOF cancels observers and leaves
+Runs alone. The SDK may suppress a canceled call's response; cancellation does
+not promise an additional final envelope. Returned tool results use the normal
+schema-v3 structured envelope.
 
-## Artifact verification and release
+## Verification and publication
 
-Local builds produce Linux x86_64/aarch64 static musl candidates first. The
-candidate manifest includes source commit and source digest, target triple,
-protocol version, compiler/configuration and binary SHA-256. Build metadata is
-a claim; the test result identifies which exact bytes were exercised.
+Helper binaries are compiled locally using `scripts/build-helper-release.py`.
+The tracked source-bound lock contains target, ABI, normalized configuration,
+compiler/linker/library/sysroot identities and exact binary SHA/size. CI only
+fetches and executes those bytes; Rust clients and test harnesses compile in CI.
+Native Linux x86_64/aarch64 jobs run direct and temporary-sshd acceptance using
+fresh keys and strict known_hosts. Local sanitizers/allocation faults complement
+those shipping-byte tests and never replace their artifacts.
 
-Use a candidate release name outside the production `v*` trigger. A dedicated
-helper verify workflow supports manual dispatch and reusable workflow calls.
-It downloads candidates from this repository, validates manifest/digest and
-checks compatibility against the checked-out source. It never compiles the
-helper. Building Rust test harnesses and clients remains permitted.
-
-Verification runs on native Linux x86_64 and aarch64 runners, both directly and
-through a temporary sshd with runtime-generated credentials and known_hosts.
-Do not disable host-key checks. A test target is supplied through the environment
-and absent targets fail with `set RHOST_TEST_HOST`. No target, credentials or
-real-host transcript belongs in tracked content.
-
-The workflow stores the tested binary unchanged plus evidence naming the test
-commit, binary digest, platform and workflow run. Publication consumes that
-verified artifact, not a new build or a second download from a mutable URL.
-The production release workflow calls verification at the tagged source commit
-before publication. Existing native main-program verification remains required.
-Linux CI evidence is not macOS/BSD remote evidence or old-kernel evidence.
-
-## Review resolutions required before implementation
-
-The independent architecture review found the initial proposal incomplete.
-The following decisions supersede less specific descriptions above:
-
-### Identity, expiry and launch
-
-Request keys have the form `<expiry-unix-seconds>-<32-lowercase-hex-random-bytes>`.
-Expiry is immutable within a key, matches the request field and participates in
-the fingerprint. Changing expiry is a new submission, never a retry. Effective
-remote time is the maximum of wall time and a namespace-wide durable high-water
-mark. Update that mark under an exclusive lock and fsync before registration or
-pruning; refuse new submissions if persistence fails. Clock jumps forward can
-expire requests early and return an explicit expiry refusal.
-
-A namespace has a durable random generation required by mutating requests.
-Replacing or restoring state invalidates deduplication promises; old requests
-must not be replayed into a replacement namespace. This boundary is explicit,
-not an unconditional exactly-once claim.
-
-Registration uses a version-1 closed record: namespace generation, key, expiry,
-fingerprint, Run id and accepted state. Write request and metadata in a private
-staging directory; fsync files and directory; rename under the registry lock;
-fsync the registry parent before launching. The monitor reads the committed
-request independently of SSH stdin. The submitter holds a per-request launch
-lock, inherited by the monitor, until readiness is durably published. A missing
-readiness record is starting, not permission to respawn. Reconciliation marks
-lost only after acquiring the same lock and proving that no matching monitor
-owns the request. Unknown record versions are refused, never treated as absent.
-
-### Signals and stream lifetime
-
-Keep the owned process-group leader unreaped while group signaling is enabled.
-Observe exit without reaping, permanently disable control, then reap and publish
-the wait result. Platforms without non-reaping child observation cannot advertise
-this signaling guarantee. After leader exit, surviving group members are outside
-Run control; no saved PGID is signaled afterward.
-
-Publish process completion independently of pipe EOF. Descendants may retain
-stdout/stderr pipes: drain for at most two seconds after leader exit, then close
-remaining readers, record an unobserved-tail indicator and exit the monitor.
-Poll reports stream openness separately from process exit. Counts cover bytes
-actually observed; neither EOF nor leader exit proves whole-tree completion.
-
-### Protocol and preparation
-
-Private protocol v1 has a 16-byte header: ASCII `RH01`, big-endian uint32 message
-kind, big-endian uint64 body length. Limit requests to 8 MiB. Bodies use typed,
-fixed-order length-prefixed UTF-8/raw fields; public JSON stays in Rust. Accept
-one frame followed by EOF; reject unknown kinds, overflow, missing fields, NUL
-in argv/path/env and trailing bytes before mutation. Responses use the same
-framing. Child streams never carry control messages. A read-only handshake
-returns protocol/source/target identity and supported operation guarantees.
-
-Create mode-0700 staging beneath an account-owned non-symlink state root.
-Traverse using no-follow directory-relative opens; verify ownership and mode
-before reuse. Write and fsync a candidate, run its handshake in staging, then
-rename atomically and fsync the cache directory under the preparation lock.
-Never overwrite an executable in place. Refuse unsupported filesystem locking
-or durability semantics rather than assuming a network filesystem is equivalent.
-
-### Schema and artifact promotion
-
-Preserved operations continue emitting v2; only request/Run operations, including
-their help/error refusals, emit v3. A v3 metadata request advertises supported
-generations without modifying the closed v2 version result. Closed v3 request
-and result schemas and valid/invalid fixtures precede command wiring. A uniform
-v3 migration is a later explicit compatibility decision.
-
-Helper verification dispatch inputs are a full source commit, candidate asset
-IDs and expected manifest SHA-256. The manifest includes both architecture
-digests. Release consumes artifact IDs from a successful verification run bound
-to the tagged test commit and manifest digest, and rechecks both binary hashes.
-Absent, expired or replaced artifacts refuse publication. The builder is trusted
-to supply the claimed source; this is behavioral verification, not independent
-cryptographic source provenance or reproducible-build proof.
-
-Existing check requirements remain enforced. Additive C/schema/release checks
-need separate measurement-only changes; "unchanged" below does not prohibit
-those reviewed additions.
-
-## Subsequent slices
-
-File errors must distinguish not-applied, applied, partial and unknown mutation
-evidence. A post-write verification conflict cannot imply no write occurred.
-Multi-file changes preflight all hashes and journal individual applications;
-they do not promise atomic visibility to arbitrary external readers. Rollback
-checks the installed version before restoring and never overwrites a later edit.
-Validation with side effects is not undone by restoring file bytes. Worktree or
-copy isolation is a separate operation; dirty/untracked user work is preserved.
-
-Structured search/read returns version-bound content and continuation cursors.
-An advisory lock coordinates participating writers only. Environment identity
-reports observations and guards; it does not claim hermetic execution.
-
-MCP maps the same typed requests and outcomes without shelling out to CLI argv.
-Transport cancellation ends observation; Run cancellation remains explicit.
-General-purpose batch, dependency graphs and scheduling are deferred.
-
-## Acceptance and review checklist
-
-No implementation milestone is complete until these scenarios pass:
-
-1. Independent CLI processes rediscover a Run after client exit and SSH loss.
-2. Same-key concurrent submissions start at most one child; changed requests
-   conflict; expired/pruned keys cannot silently start another child.
-3. Fault injection at registration, spawn and result publication preserves
-   uncertainty. Monitor death never authorizes a duplicate launch or PID kill.
-4. Known exit and signal termination remain distinct; wait expiry is not stop.
-5. Stream separation, byte cursors, repeated pages, invalid UTF-8, quotas and
-   disk failures preserve counts and explicit output gaps.
-6. Preparation without Python/tmux/cc uses the exact prebuilt candidate;
-   interrupted preparation, noexec and mismatched protocols refuse honestly.
-7. Native Linux and real SSH paths exercise the shipping helper bytes; changed
-   candidate hashes invalidate evidence and prevent publication.
-8. Existing `make test-smoke` and `make check` pass unchanged. Native live suites
-   remain explicit manual verification until separately bound to release.
-
-Architecture review must resolve request expiry/clock behavior, monitor signal
-identity, disk-failure durability, bootstrap trust, schema migration and artifact
-promotion before implementation. Review is not satisfied by this author's own
-description. Acceptance/gate changes land separately from implementation under
-the existing GateChange policy. The active contract is not relaxed to fit a new
-implementation.
+The independently reviewed publication design uses a stable non-production
+candidate tag, first-attempt Actions artifacts, manual same-commit exact-client
+and helper verification, and an annotated production tag binding immutable
+artifact IDs. Tag jobs rerun Linux/macOS source gates, all four native client
+executions and both native helper jobs without rebuilding the client candidates.
+Missing/expired/substituted inputs refuse promotion. The published manual record
+is explicitly a trusted operator attestation, not CI-observed real-host evidence.
+See [maintenance](../MAINTENANCE.md#v5-publication-procedure).

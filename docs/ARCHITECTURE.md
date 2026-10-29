@@ -12,21 +12,22 @@ rhost exec gpu --cwd '~/work' --command 'ls -a'
 Text inside the command string is interpreted remotely. Flags outside it select
 local rhost behavior. Stdout and stderr retain normal Unix pipeline behavior.
 
-rhost is an adapter around existing Unix tools. It does not introduce a daemon,
+rhost combines existing Unix tools with a narrow native agent interface. It does not introduce a daemon,
 replace OpenSSH authentication, or keep durable work inside the CLI process.
 
 ## System boundaries
 
 ```text
 agent
-  -> rhost CLI
+  -> rhost CLI / stdio MCP
      -> system OpenSSH / scp / rsync
-        -> remote shell, tmux, schedulers and files
+        -> native C99 helper / per-Run monitor, shell, tmux and files
 ```
 
 OpenSSH owns target resolution, authentication, host keys and reusable
-connections. Remote tmux owns persistent sessions, and remote schedulers own
-scheduled work. The filesystem owns file state. The CLI may exit without
+connections. Remote tmux owns persistent sessions, per-Run monitors own
+recoverable execution, and existing schedulers own scheduled/restarted work.
+The filesystem owns file and request state. The CLI may exit without
 invalidating any persistence promise.
 
 ## Product rules
@@ -74,23 +75,23 @@ check them, or `./scripts/check-structure.sh -v` to inspect policy and actual ed
 - [Files and JSON contracts](architecture/files-and-json.md)
 - [Engineering constraints](architecture/engineering.md)
 
-### Proposed evolution
+### Native agent interface
 
-[Agent interface evolution](architecture/agent-interface-v5.md) is the Risk A
-architecture review proposal for a C helper, recoverable Runs, structured
-requests and verification of locally built helper artifacts. It is not an
-implemented capability or a change to the active v2 contract.
+[Native agent interface](architecture/agent-interface-v5.md) describes the C99
+helper, recoverable Runs, structured request/MCP delivery and exact-artifact
+verification. [Targeted file changes](architecture/file-changes-v5.md) describes
+recoverable named edits without workspace or Git ownership.
 
 For getting started, use the [README](../README.md). The
 [contract ledger](CONTRACT.md) owns required behavior and executable evidence;
-the [schema](../schemas/result-v2.schema.json) owns JSON shape.
+the [schema](../schemas/result-v3.schema.json) owns JSON shape.
 [Maintenance policy](MAINTENANCE.md) owns compatibility, change risk and release
 requirements; the migration record is frozen history.
 
 ## Observable acceptance
 
 - Foreground execution reports a known remote exit status and separate bounded
-  stdout/stderr in one v2 envelope. Missing completion remains unknown. Local
+  stdout/stderr in one v3 envelope. Missing completion remains unknown. Local
   acceptance covers classification; the native exec/transport suites exercise SSH.
 - A tmux session remains discoverable by a later CLI invocation. The native
   session suite exercises this persistence; no local session map is authoritative.
@@ -99,7 +100,8 @@ requirements; the migration record is frozen history.
   refusal; the native file suite exercises remote filesystem operations.
 
 Native suites provide manual pre-release evidence. CI checks the local contract
-and release artifacts; it has no SSH target and does not run the live suites.
+and release artifacts, including disposable real-sshd helper tests. Real-host
+manual verification is separately bound through an operator attestation.
 
 ## Frames for contested paths
 
@@ -116,18 +118,16 @@ and release artifacts; it has no SSH target and does not run the live suites.
 - Oracle: the user's OpenSSH configuration and a real target, not a local
   substitute for authentication or host-key behavior.
 
-### Remote filesystem helper
+### Native helper
 
-- Default: one embedded Python helper executed by the target's interpreter.
-  Rival: a shipped native helper or generated shell program.
-- Breakpoint: evidence of a supported target lacking a usable interpreter that
-  cannot meet the file contract through existing tools. Record the case before
-  changing the helper language; `fs batch` has its own compatibility decision.
-- Invariant and check: the target must pass the helper's runtime preflight
-  before any edit; the unusable-interpreter acceptance test requires
-  `REMOTE_DEPENDENCY_MISSING`. `doctor` reports command presence only.
-- Oracle: the target interpreter and filesystem features, not the developer's
-  local `python3`.
+- Selected path: an independent C99 executable in a private content-addressed
+  cache. Remote Python is no longer a file-editing prerequisite.
+- Boundary: no global daemon, package installation, workspace creation or Git
+  management. Fixed source/configuration and selected artifact hashes identify
+  the helper; the remote account and artifact builder remain trusted.
+- Checks: no-follow/ownership constraints, exact candidate handshake, unchanged
+  file conformance, shipping-byte native Linux/SSH acceptance and local sanitizers.
+- Oracle: actual remote process/filesystem behavior, not compiler success alone.
 
 ### One-shot helper protocols
 

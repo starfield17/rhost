@@ -14,7 +14,7 @@ on:
         description: Exact native client platform used for both manual suites
         required: true
         type: choice
-        options: [darwin_arm64, darwin_amd64, linux_arm64, linux_amd64]
+        options: [darwin_arm64, darwin_amd64]
       client_sha256:
         description: SHA-256 of the downloaded candidate client used manually
         required: true

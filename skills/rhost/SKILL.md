@@ -8,7 +8,9 @@ description: Run commands and perform explicit file, session, tunnel, or diagnos
 Use an SSH target: alias, `user@example-host`, or hostname (`rhost hosts --json` lists known aliases).
 On first use of a host, run `rhost doctor <host> --json`. `ok:true` means the probe completed;
 inspect `data.capabilities` and `data.state_dir_writable` before optional operations.
-`python3:true` reports command presence; file operations check helper readiness themselves.
+Doctor reports command presence. Native file/Run operations prepare a C99 helper;
+remote Python is not required. `rhost helper prepare <host> --json` returns the
+namespace generation and effective remote time.
 
 ## Fast decision tree
 
@@ -20,7 +22,7 @@ inspect `data.capabilities` and `data.state_dir_writable` before optional operat
 | Write / overwrite file | `rhost fs write <host> '<path>' [--if-hash <sha>] --json << 'EOF'` |
 | Directory sync | `rhost fs sync <host> ./local '<remote-dir>' --dry-run --json` |
 | Persistent shell / session | `rhost session create <host> --name debug` → `exec` / `read` / `send` |
-| Background job (zero-daemon)| `rhost exec <host> --command 'nohup <cmd> > job.log 2>&1 </dev/null & echo $! > job.pid'` |
+| Recoverable build/test/long task | `rhost run start <host> --generation <generation> --key <expiring-key> --argv-json '["program","arg"]' --wait 10s --json` |
 | Port forwarding (tunnel) | `rhost tunnel open <host> --kind local --listen localhost:8080 --destination localhost:8000 --json` |
 | Probe & connection reuse | `rhost doctor <host> --json` / `rhost connection status <host> --json` |
 
@@ -29,7 +31,7 @@ inspect `data.capabilities` and `data.state_dir_writable` before optional operat
 - For interactive investigation, default `exec` text mode streams stdout/stderr.
   It has no default deadline or output cap; bound verbose probes in the remote command.
 - For mutations, programmatic branching, hashes or pagination, use `--json`.
-  Stdout is one schema-v2 envelope; `--json --stream` mirrors exec output to stderr.
+  Stdout is one schema-v3 envelope; `--json --stream` mirrors exec output to stderr.
   Parse stdout separately and branch on `error.code`, never English text or exit status alone.
 - Exec status is `data.execution.status`; a known remote status is at `data.execution.exit_code`.
   Text is `data.output.stdout.content` / `data.output.stderr.content` (default capture: 1 MiB each).
@@ -71,8 +73,11 @@ Editing uses compare-and-swap (CAS) to prevent lost updates:
   `--command-file` reads a regular local file (up to 64 KiB); exec leaves stdin free for the program.
   Syntax inside `--command` runs remotely; syntax outside runs locally. Sudo credentials may not
   survive separate calls; use a compound program for multi-step tasks.
-- **Background work**: Detach standard Unix processes (`nohup <cmd> > log 2>&1 </dev/null & echo $! > pid`). Check liveness via `kill -0 $(cat pid) 2>/dev/null && echo RUNNING || echo STOPPED`.
-  Submission success is not job completion. Work needing scheduler guarantees belongs to an existing remote scheduler.
+- **Runs**: Use caller-owned expiring keys for recoverable work; retain generation and key before submitting.
+  Wait expiry/cancellation stops observation. Use `run poll` to reconnect and `run signal` to stop work.
+  An uncertain submission can be retried only with the same key/payload, within its validity window.
+  See [NATIVE.md](references/NATIVE.md) for output cursors, changesets, structured JSON and MCP.
+  Scheduled/restarted work still belongs to an existing remote scheduler.
 - **Sessions**: Use for stateful shells, REPLs, or interactive long-running commands.
   Run `rhost session exec <host> <name> --command '<cmd>'` (or `--command-file`).
   Read with `rhost session read <host> <name> [--tail <bytes> | --since <offset>] --max-bytes 4096 --json`.

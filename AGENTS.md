@@ -49,8 +49,8 @@ copy its product shape (see [Repository boundaries](docs/architecture/engineerin
 ## 4. The persistence invariant
 
 Anything promised to survive a CLI invocation must be owned outside the CLI
-process: connections by OpenSSH ControlMaster and sessions by remote tmux and
-remote state. The CLI owns nothing durable; no local map may
+process: connections by OpenSSH ControlMaster, sessions by remote tmux, and Runs by
+per-Run remote monitors and files. The CLI owns nothing durable; no local map may
 be the only copy of persistent state, and no hidden `rhost` server.
 
 ## 5. OpenSSH owns auth and host keys
@@ -96,8 +96,8 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   tests. [Architecture](docs/ARCHITECTURE.md) explains boundaries and reasons.
   `scripts/check-structure.py` owns dependency policy; `make structure` checks it.
 - [Contract ledger](docs/CONTRACT.md) owns required semantics and executable
-  evidence; `schemas/result-v2.schema.json` owns the active wire shape. Each
-  capability's DTO maps its values into v2; `src/wire/` owns the shared envelope
+  evidence; `schemas/result-v3.schema.json` owns the active wire shape. Each
+  capability's DTO maps its values into v3; `src/wire/` owns the shared envelope
   and `src/domain/` stays pure. `session attach` is refused with `USAGE_ERROR`.
 - [Maintenance policy](docs/MAINTENANCE.md) owns compatibility, MSRV, release,
   change risk and regression-memory policy. `make check` runs the complete local
@@ -121,8 +121,10 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   helper. The removed Go implementation, modules, metadata,
   installers and workflows live only in the read-only `rhost-go-old` repository;
   nothing here builds or reads them. `docs/RUST_MIGRATION.md` is frozen history.
-- Real-host live suites are required manual pre-release verification. Release CI
-  has no reachable host: it runs `make check` on Linux and macOS and executes all
-  four native artifacts before publication. A future live gate must bind a
-  same-commit live result to the tagged commit before claiming enforcement; see
-  the maintenance policy for the release procedure.
+- Real-host live suites are required manual pre-release verification. Release
+  CI runs `make check` on Linux/macOS, executes all four stored native clients,
+  and tests exact locally built helpers on both Linux architectures through a
+  disposable strict-host-key sshd. Publication requires an annotated tag bound
+  to immutable first-attempt candidates and a same-commit exact-byte operator
+  attestation for `test-live-all` and `test-live-helper`. CI validates that
+  binding; it does not claim to observe the manual host. See maintenance policy.

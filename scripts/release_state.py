@@ -39,7 +39,7 @@ def evidence(run_id, commit, version, candidate_run):
     require(value["operator"] == observed["triggering_actor"]["login"], "evidence operator mismatch")
     datetime.datetime.strptime(value["recorded_at"], "%Y-%m-%dT%H:%M:%SZ")
     require(value["suites"] == {"test-live-all": "passed", "test-live-helper": "passed"}, "required manual suites did not pass")
-    require(value["manual_client_platform"] in PLATFORMS, "unknown manual client")
+    require(value["manual_client_platform"] in {"darwin_arm64", "darwin_amd64"}, "manual witness requires a native macOS client")
     lock = helper_lock()
     require(value["helper_manifest_sha256"] == hashlib.sha256((ROOT / "helper/artifacts.json").read_bytes()).hexdigest(), "live helper manifest differs")
     require(value["helper_sha256"] in {a["sha256"] for a in lock["artifacts"] if a["role"] == "runtime"}, "live helper differs")
@@ -53,7 +53,7 @@ def emit(args):
     require(os.environ["GITHUB_RUN_ATTEMPT"] == "1", "reruns need new evidence")
     selected = os.environ["CLIENT_PLATFORM"]
     all_clients = clients(args.candidate_run, commit, version)
-    require(selected in all_clients and all_clients[selected]["sha256"] == os.environ["CLIENT_SHA256"], "manually tested client mismatch")
+    require(selected in {"darwin_arm64", "darwin_amd64"} and all_clients[selected]["sha256"] == os.environ["CLIENT_SHA256"], "manually tested macOS client mismatch")
     helper = os.environ["HELPER_SHA256"]
     require(helper in {a["sha256"] for a in helper_lock()["artifacts"] if a["role"] == "runtime"}, "manually tested helper mismatch")
     require(os.environ["LIVE_SUITES_PASSED"] == "test-live-all,test-live-helper", "explicit manual suite attestation required")

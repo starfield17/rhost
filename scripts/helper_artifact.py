@@ -74,10 +74,10 @@ def main():
         supplied_ids = os.environ.get("HELPER_ASSET_IDS")
         if supplied_ids:
             assert json.loads(supplied_ids)[args.target] == selected["id"]
-        url = f"https://github.com/starfield17/rhost/releases/download/{release}/{artifact['asset']}"
-        subprocess.run(["curl", "--fail", "--location", "--silent", "--show-error", "--proto", "=https",
-                        "--proto-redir", "=https", "--max-time", "120", "--max-filesize", str(artifact["size"]),
-                        "--output", args.path, url], check=True)
+        with args.path.open("wb") as output:
+            subprocess.run(["gh", "api", "-H", "Accept: application/octet-stream",
+                            f"repos/starfield17/rhost/releases/assets/{selected['id']}"],
+                           stdout=output, timeout=120, check=True)
     verify(artifact, args.path)
     if args.operation == "fetch":
         proof = {"format": 1, "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),

@@ -69,9 +69,8 @@ disagree, so a new code cannot ship undocumented.
 
 - `REMOTE_DEPENDENCY_MISSING` names a feature dependency. Exec needs remote bash,
   setsid, ps, and a base64 decoder; sessions need tmux and flock; sync/mirror and
-  verified transfers need rsync; remote filesystem helpers (text editing and
-  destructive-sync target resolution) need Python 3.5 or newer with the
-  required filesystem features. `doctor` checks command presence only; the
+  verified transfers need rsync; native file and Run operations need a compatible C99 helper in their private cache.
+  Remote Python is not required. `doctor` checks command presence only; the
   helper checks readiness on the target before running. rhost never installs
   these dependencies.
 - `SESSION_BUSY` means the requested exec was not submitted because another
@@ -95,8 +94,9 @@ resume with `--since` set to `data.next` while `data.more` is true; use
 with `session_preserved:false` means the managed shell is not proven usable.
 
 When a dependency is missing, keep using rhost operations whose dependencies
-are present. If python3 is missing or unusable, do not repeat a failed `fs read`, `fs write`,
-or `fs patch` through the same helper. If bash is missing, `rhost exec` and
+are present. A missing or unusable Python does not prevent native file operations.
+If helper preparation fails, inspect its error and policy before retrying. If bash
+is missing, `rhost exec` and
 `rhost session` are not a shell fallback. The agent can instead use its local
 command tool to run OpenSSH: prefer a one-shot `ssh` command for work that can
 finish in one invocation, and use a direct SSH login in a local PTY when commands

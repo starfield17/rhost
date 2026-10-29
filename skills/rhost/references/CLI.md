@@ -3,7 +3,7 @@
 The installed binary's `--help` output is the authoritative command and flag
 inventory: every command has its own page, and a flag that reaches a parser
 without reaching its page fails the test suite. All structured responses use
-schema v2 with top-level `schema_version`, `operation`, `ok`, `data`, and
+schema v3 with top-level `schema_version`, `operation`, `ok`, `data`, and
 `error`. Branch on `error.code`, never on English text; the full
 `error.code` → recovery table lives in
 [RECOVERY.md](RECOVERY.md). After installation, upgrade, or a flag mismatch,
@@ -109,27 +109,13 @@ Executing commands with `sudo` across rhost calls has specific constraints:
   put passwords into command text, arguments, or environment variables. For interactive
   password entry, use direct OpenSSH with a PTY: `ssh -t <host> 'sudo ...'`.
 
-### Canonical zero-daemon background idiom
+### Recoverable background work
 
-For tasks that must continue running remotely after the CLI exits without needing a
-stateful terminal or an external daemon, use standard Unix process detachment:
-
-```bash
-# Launch detached process and record PID:
-rhost exec gpu --cwd '~/work' --command 'nohup <command> > job.log 2>&1 </dev/null & echo $! > job.pid' --json
-
-# Check if process is still running:
-rhost exec gpu --cwd '~/work' --command 'kill -0 $(cat job.pid) 2>/dev/null && echo RUNNING || echo STOPPED' --json
-
-# Read trailing output:
-rhost exec gpu --cwd '~/work' --command 'tail -n 50 job.log' --json
-
-# Terminate detached process:
-rhost exec gpu --cwd '~/work' --command 'kill $(cat job.pid) 2>/dev/null' --json
-```
-
-This survives CLI exit and ControlMaster teardown, keeps process logs intact,
-and preserves explicit PID tracking without complex process lifecycles.
+Use native Runs for builds/tests and work that must survive CLI exit. Their
+caller-owned expiring keys, separate output logs and durable completion remove
+the need for manually managed PID files. `--wait` does not stop the process;
+`--deadline` and `run signal` are explicit controls. See [NATIVE.md](NATIVE.md).
+An external scheduler remains appropriate for scheduled/restarted services.
 
 ## Hosts and diagnosis
 
@@ -206,7 +192,7 @@ unavailable. For file bytes, use `scp` only when the host supports SFTP or the
 required scp service, and inspect both source and destination after a failed
 transfer. A PTY is not a reliable byte-transfer channel.
 
-Direct OpenSSH output is terminal text and exit status, not a schema-v2 JSON
+Direct OpenSSH output is terminal text and exit status, not a schema-v3 JSON
 envelope. Do not infer rhost completion or cleanup evidence from a shell prompt.
 See [SAFETY.md](SAFETY.md) before replacing or deleting files this way.
 
@@ -256,7 +242,7 @@ rhost session read <host> debug --tail 8192 --max-bytes 4096 --json
 # Continue using the preceding response's data.next while data.more is true.
 rhost session read <host> debug --since <data.next> --max-bytes 4096 --json
 ```
-`session attach` returns a non-retryable `USAGE_ERROR`; the v2
+`session attach` returns a non-retryable `USAGE_ERROR`; the v3
 envelope has no honest terminal attachment representation.
 
 `session create --cwd` records the *absolute* directory the account actually

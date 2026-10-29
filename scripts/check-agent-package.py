@@ -15,7 +15,7 @@ def fail(message: str) -> None:
 
 def main() -> int:
     required = ["plugin.json", ".codex-plugin/plugin.json", "skills/rhost/SKILL.md"]
-    required += [f"skills/rhost/references/{name}.md" for name in ("CLI", "RECOVERY", "SAFETY")]
+    required += [f"skills/rhost/references/{name}.md" for name in ("CLI", "RECOVERY", "SAFETY", "NATIVE")]
     for name in required:
         if not (ROOT / name).is_file():
             fail(f"missing {name}")
@@ -31,13 +31,18 @@ def main() -> int:
     skill = (ROOT / "skills/rhost/SKILL.md").read_text()
     if "name: rhost" not in skill:
         fail("SKILL.md has no rhost name")
-    for name in ("CLI", "RECOVERY", "SAFETY"):
+    for name in ("CLI", "RECOVERY", "SAFETY", "NATIVE"):
         if f"references/{name}.md" not in skill:
             fail(f"SKILL.md does not route to {name}.md")
-    retired = re.compile(r"data\.(exit_code|stdout|stderr|timed_out|cancelled)|cleanup_confirmed|output_kind|JOB_(NOT_FOUND|STATE_UNKNOWN)|compatibility alias")
+    retired = re.compile(r"data\.(exit_code|timed_out|cancelled)|cleanup_confirmed|output_kind|JOB_(NOT_FOUND|STATE_UNKNOWN)|compatibility alias")
     for path in (ROOT / "skills/rhost").rglob("*"):
-        if path.is_file() and retired.search(path.read_text()):
-            fail(f"skill contains retired v1 wire guidance: {path.relative_to(ROOT)}")
+        if path.is_file():
+            text = path.read_text()
+            # Native Run streams legitimately use these paths in schema v3.
+            # Keep the old exec guidance gate everywhere outside that reference.
+            legacy_stream = path.name != "NATIVE.md" and re.search(r"data\.(stdout|stderr)\b", text)
+            if retired.search(text) or legacy_stream:
+                fail(f"skill contains retired v1 wire guidance: {path.relative_to(ROOT)}")
     for text, message in (
         ("rhost version --json", "SKILL.md must tell readers to check the installed binary version"),
         ("rhost <command> --help", "SKILL.md must tell readers to check the installed binary --help"),

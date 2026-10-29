@@ -126,3 +126,11 @@ checker retains four native platforms and both source platforms, adds helper
 dependencies, and distinguishes artifact target selection from cross compilation.
 The only local reusable workflow is checked out at the caller's source commit;
 external actions remain pinned to immutable commits.
+
+### Run stream documentation and retired exec fields
+
+The historical package check rejected every `data.stdout`/`data.stderr` mention
+as a retired exec field. Schema-v3 Runs intentionally own those independent
+stream objects. The dedicated native reference may document them; all other
+skill files retain the old exec-field guard, and every other retired wire name
+remains rejected everywhere. The new native reference is now required packaging.

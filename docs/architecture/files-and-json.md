@@ -90,7 +90,7 @@ single-transfer success and must not be silently normalized.
 Every `--json` command emits one line:
 
 ```json
-{"schema_version":2,"operation":"exec","ok":true,"host":"gpu","data":{"execution":{"status":"completed","exit_code":0},"cleanup":{"status":"not_attempted"},"output":{"kind":"streams","stdout":{"content":"","bytes":0,"truncated":false},"stderr":{"content":"","bytes":0,"truncated":false}},"duration_ms":1},"error":null}
+{"schema_version":3,"operation":"exec","ok":true,"host":"gpu","data":{"execution":{"status":"completed","exit_code":0},"cleanup":{"status":"not_attempted"},"output":{"kind":"streams","stdout":{"content":"","bytes":0,"truncated":false},"stderr":{"content":"","bytes":0,"truncated":false}},"duration_ms":1},"error":null}
 ```
 
 The top-level envelope is fixed. Operation data uses these canonical paths:
@@ -120,6 +120,6 @@ Use explicit REPL input to exit it; recover never types an exit command.
 
 Incremental reads also carry `from`, `next` and `more`. Agents branch on
 `error.code`, never on `error.message`. The authoritative Rust machine-readable
-contract is `schemas/result-v2.schema.json`. The frozen v1 schema is archived
+contract is `schemas/result-v3.schema.json`. The frozen v1 schema is archived
 with the historical Go implementation; current command availability is defined by `rhost --help`.
-`session attach` is recognized but always returns a v2 `USAGE_ERROR`.
+`session attach` is recognized but always returns a v3 `USAGE_ERROR`.
