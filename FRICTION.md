@@ -169,3 +169,7 @@ the existing CLI process-death contract. The measurement now releases a private
 fixture only after observer cancellation/EOF, independently of that observer,
 and requires later pane progress plus unchanged canonical identity and no
 interrupt marker. Product behavior and time budgets are unchanged.
+
+The detach fixture completes naturally only after that independent release and
+waits for a subsequent shell completion boundary before closing. Close/recover
+correctly cannot bypass an active writer lock; cleanup must respect that owner.

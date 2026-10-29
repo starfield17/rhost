@@ -116,7 +116,7 @@ fn cancellation_case(cancelled: bool) -> Result<(), String> {
     let result: Result<(), String> = (|| {
         let mut m = Mcp::open(live.command(&["mcp"]))?;
         let script = format!(
-            "trap 'printf unintended-interrupt; exit' INT; printf observer-ready; while [ ! -e {} ]; do sleep 0.1; done; printf observer-progress; while :; do sleep 1; done",
+            "trap 'printf unintended-interrupt; exit' INT; printf observer-ready; while [ ! -e {} ]; do sleep 0.1; done; printf observer-progress",
             shell_quote(&release)
         );
         let command = format!("sh -c {}", shell_quote(&script));
@@ -168,7 +168,11 @@ fn cancellation_case(cancelled: bool) -> Result<(), String> {
             !content.contains("unintended-interrupt"),
             "cancellation must not send C-c"
         );
-        reconnected.call("session.recover", Some(&host), json!({"session":id}))?;
+        poll(|| {
+            Ok(live
+                .ok(&["session", "exec", &host, &id, "--command", "true", "--json"])
+                .is_ok())
+        })?;
         reconnected.close()
     })();
     let cleanup = live.ok(&["session", "close", &host, &id, "--json"]);
