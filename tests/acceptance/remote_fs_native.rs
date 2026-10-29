@@ -90,7 +90,7 @@ fn sync_resolution_preserves_missing_trailing_directories() -> Result<(), String
 fn a_lost_file_reply_preserves_unknown_mutation_after_the_bytes_changed() -> Result<(), String> {
     let harness = Harness::open("native-file-lost-reply")?;
     crate::hosts::local_host(&harness)?;
-    harness.stub("ssh", "for argument in \"$@\"; do remote=\"$argument\"; done\ncase \"$remote\" in *--files-json*) /bin/sh -c \"$remote\" >/dev/null; exit 255;; *) exec /bin/sh -c \"$remote\";; esac")?;
+    harness.stub("ssh", "for argument in \"$@\"; do remote=\"$argument\"; done\ncase \"$remote\" in *--files-json*|*--verified-files*) /bin/sh -c \"$remote\" >/dev/null; exit 255;; *) exec /bin/sh -c \"$remote\";; esac")?;
     let target = harness.path("target");
     harness.write("source", "changed\n", None)?;
     let (outcome, answer) = crate::support::envelope(
