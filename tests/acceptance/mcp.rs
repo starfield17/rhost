@@ -12,8 +12,11 @@ pub(super) struct Mcp {
 }
 impl Mcp {
     pub(super) fn open(harness: &Harness) -> Result<Self, String> {
+        Self::open_with_args(harness, &["mcp"])
+    }
+    pub(super) fn open_with_args(harness: &Harness, args: &[&str]) -> Result<Self, String> {
         let mut child = harness
-            .command(&["mcp"])?
+            .command(args)?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

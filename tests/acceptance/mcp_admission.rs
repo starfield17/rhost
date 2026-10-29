@@ -30,3 +30,33 @@ fn invalid_input_has_structured_not_submitted_recovery() -> Result<(), String> {
     );
     h.assert_no_remote_tool("invalid request")
 }
+
+#[test]
+fn tool_groups_filter_listing_and_invocation_and_annotate_effects() -> Result<(), String> {
+    let h = Harness::open("mcp-tool-groups")?;
+    let mut m = Mcp::open_with_args(&h, &["mcp", "--tools", "runs"])?;
+    m.send(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))?;
+    let listed = m.answer(2)?;
+    let tools = listed["result"]["tools"].as_array().ok_or("tools")?;
+    assert!(tools.iter().any(|t| t["name"] == "rhost_run_signal"));
+    assert!(!tools.iter().any(|t| t["name"] == "rhost_fs_write"));
+    let version = tools
+        .iter()
+        .find(|t| t["name"] == "rhost_version")
+        .ok_or("version")?;
+    assert_eq!(version["annotations"]["readOnlyHint"], true);
+    let signal = tools
+        .iter()
+        .find(|t| t["name"] == "rhost_run_signal")
+        .ok_or("signal")?;
+    assert_eq!(signal["annotations"]["destructiveHint"], true);
+    assert_eq!(signal["annotations"]["idempotentHint"], false);
+    m.start(
+        3,
+        "rhost_fs_write",
+        json!({"host":"gpu","params":{"path":"/must-not-be-written","content":"hidden"}}),
+    )?;
+    assert!(m.answer(3)?["error"].is_object());
+    m.close()?;
+    h.assert_no_remote_tool("filtered tool")
+}
