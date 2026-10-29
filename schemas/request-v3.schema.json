@@ -510,7 +510,7 @@
               "session": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\\u0000]+$"
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
               },
               "command": {
                 "type": "string",
@@ -553,7 +553,7 @@
               "session": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\\u0000]+$"
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
               },
               "data": {
                 "type": "string",
@@ -561,9 +561,31 @@
                 "pattern": "^[^\\u0000]+$"
               },
               "key": {
-                "type": "string",
-                "minLength": 1,
-                "pattern": "^[^\\u0000]+$"
+                "enum": [
+                  "C-c",
+                  "C-d",
+                  "C-z",
+                  "C-\\",
+                  "C-u",
+                  "C-l",
+                  "C-a",
+                  "C-e",
+                  "C-w",
+                  "Enter",
+                  "Tab",
+                  "BTab",
+                  "Space",
+                  "BSpace",
+                  "Escape",
+                  "Up",
+                  "Down",
+                  "Left",
+                  "Right",
+                  "Home",
+                  "End",
+                  "PageUp",
+                  "PageDown"
+                ]
               },
               "enter": {
                 "type": "boolean"
@@ -628,7 +650,7 @@
               "session": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\\u0000]+$"
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
               },
               "since": {
                 "type": "integer",
@@ -684,7 +706,7 @@
               "session": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\\u0000]+$"
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
               },
               "timeout_ms": {
                 "type": "integer",
@@ -721,7 +743,7 @@
               "session": {
                 "type": "string",
                 "minLength": 1,
-                "pattern": "^[^\\u0000]+$"
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
               }
             },
             "required": [

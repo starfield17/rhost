@@ -12,6 +12,8 @@ mod audit;
 mod exec;
 #[path = "live/files.rs"]
 mod files;
+#[path = "live/mcp_client.rs"]
+mod mcp_client;
 #[path = "live/session.rs"]
 mod session;
 #[path = "live/smoke.rs"]

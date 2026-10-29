@@ -30,7 +30,7 @@ fn cancelling_a_core_probe_stops_later_submissions_and_preserves_other_calls() -
     m.send(json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":3}}))?;
     m.close()?;
     assert_eq!(
-        h.calls()?.len(),
+        h.calls().len(),
         1,
         "cancellation must prevent later probe and cleanup submissions"
     );
@@ -50,7 +50,7 @@ fn queued_core_mutations_remain_unsubmitted_after_cancel_or_eof() -> Result<(), 
         let h = h.env("RHOST_REMOTE_STATE", &state);
         let mut m = Mcp::open(&h)?;
         let (generation, key) = occupied(&mut m, &h)?;
-        let calls = h.calls()?.len();
+        let calls = h.calls().len();
         m.start(
             30,
             "rhost_session_send",
@@ -70,7 +70,7 @@ fn queued_core_mutations_remain_unsubmitted_after_cancel_or_eof() -> Result<(), 
         }
         m.close()?;
         assert_eq!(
-            h.calls()?.len(),
+            h.calls().len(),
             calls,
             "queued session input must never reach SSH"
         );

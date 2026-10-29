@@ -1,5 +1,8 @@
 use std::time::Duration;
 
+#[path = "session/mcp.rs"]
+mod mcp;
+
 use super::support::{Live, number, poll, text, unique, wait_bounded};
 
 #[test]
