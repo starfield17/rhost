@@ -1,7 +1,7 @@
 {
   "name": "rhost",
   "version": "5.0.0",
-  "description": "Operate SSH-reachable hosts through the installed rhost CLI.",
+  "description": "Operate SSH-reachable hosts with the installed rhost CLI or configured stdio MCP tools.",
   "author": {
     "name": "starfield17",
     "url": "https://github.com/starfield17"
@@ -19,11 +19,12 @@
   "interface": {
     "displayName": "rhost",
     "shortDescription": "Run commands on SSH-reachable hosts",
-    "longDescription": "Use the installed rhost CLI for foreground execution, persistent tmux sessions, file operations, and OpenSSH tunnels.",
+    "longDescription": "Use rhost for remote commands, recoverable Runs, file observations and edits, persistent terminals, and OpenSSH tunnels. Configure stdio MCP separately for supported structured operations.",
     "developerName": "starfield17",
     "category": "Developer Tools",
     "capabilities": [
       "Remote execution",
+      "Recoverable Runs",
       "File operations",
       "Persistent sessions",
       "SSH tunnels"

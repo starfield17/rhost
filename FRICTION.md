@@ -149,3 +149,13 @@ The same scan-byte limit, read-counter comparison and fixed wrapper allowance
 remain enforced; no privileged access or skipped assertion is introduced.
 Writer shutdown/join and the unreaped shell/helper process group are owned by
 scope guards, including input/spawn errors, timeout and assertion failure.
+
+### Progressive skill references and packaging evidence
+
+The former package gate required connection-persistence detail in SKILL.md and
+allowed native stream field documentation only in NATIVE.md. That conflicted
+with the approved task-specific references. The same persistence value is now
+checked in its CLI owner; native stream names remain confined to the Run/native
+guides. Required references, version/help drift guidance, retired fields and the
+complete error-code map remain checked, with portable link reachability added.
+Broken-link and retired-field probes both failed before restoring the guides.

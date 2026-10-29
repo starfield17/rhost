@@ -97,8 +97,7 @@ Exec runs in a non-interactive login shell under `setsid bash -lc`.
 Executing commands with `sudo` across rhost calls has specific constraints:
 
 - Sudo timestamp caching (`timestamp_timeout`) does not survive across separate
-  rhost calls when the remote sudo configuration uses `tty_tickets` (the default
-  on most Linux distributions). Each `rhost exec` is an independent non-tty session.
+  rhost calls when the remote sudo configuration uses `tty_tickets`. Each `rhost exec` is an independent non-tty session.
 - `secure_path` in `/etc/sudoers` resets `PATH` to system directories
   (`/usr/bin:/bin:/usr/sbin:/sbin`), stripping user `PATH` additions like Homebrew
   (`/opt/homebrew/bin`), Conda/Mamba environments, or Cargo. Invoke tools by full path
@@ -114,7 +113,7 @@ Executing commands with `sudo` across rhost calls has specific constraints:
 Use native Runs for builds/tests and work that must survive CLI exit. Their
 caller-owned expiring keys, separate output logs and durable completion remove
 the need for manually managed PID files. `--wait` does not stop the process;
-`--deadline` and `run signal` are explicit controls. See [NATIVE.md](NATIVE.md).
+`--deadline` and `run signal` are explicit controls. See [RUNS.md](RUNS.md).
 An external scheduler remains appropriate for scheduled/restarted services.
 
 ## Hosts and diagnosis
@@ -155,7 +154,7 @@ Then use `rhost exec gpu --command 'uname -a'`. `hosts` enumerates existing SSH
 configuration aliases; an empty list does not prevent using `user@example-host`
 directly. rhost does not maintain a separate alias registry.
 
-Ordinary calls use OpenSSH `ControlMaster=auto` and `ControlPersist=15m`.
+Ordinary calls use OpenSSH `ControlMaster=auto` and `ControlPersist=15m` (15-minute persistence).
 To investigate slow repeated calls, inspect `connection status` and run
 `doctor <host> --json` to obtain reuse evidence. Reserve `doctor --fresh` for
 testing an independent connection. Elapsed time alone cannot distinguish a
@@ -198,168 +197,26 @@ See [SAFETY.md](SAFETY.md) before replacing or deleting files this way.
 
 ## Sessions
 
-```bash
-rhost session create <host> --json --name debug --cwd '<remote-directory>'
-rhost session list <host> --json
-rhost session exec <host> debug --command '<shell-program>' --json
-rhost session send <host> debug --data 'python3 -i' --enter
-rhost session send <host> debug --key C-c
-rhost session read <host> debug --json --since 0
-rhost session recover <host> debug --json
-rhost session close <host> debug --json
-```
-
-`session create` accepts `--name`, `--cwd`, `--shell bash`, and `--timeout`.
-`session exec` accepts `--command` or `--command-file` (mutually exclusive), and
-`--timeout`. A command file is a regular local UTF-8 file, not a remote path;
-the same 64 KiB limit and file checks as foreground exec apply.
-List, read, and recover also accept their documented timeout. Writers are
-serialized remotely. `SESSION_BUSY` means another program owns the pane and the
-requested command was not submitted. `send --data` is verbatim; `--enter` pastes
-the data and presses Enter in the same submission.
-
-Session exec returns `data.session_id`, `data.session_ref`, `data.execution`,
-`data.session_preserved`, and PTY output at `data.output.content` with
-`data.output.kind == "pty"`. Inline exec output is bounded to 2 MiB:
-`data.output.bytes` counts the full segment and `data.output.truncated` reports
-omitted bytes. Use `session read` for the retained log instead of repeating the
-command. Read returns text at `data.content` and up to 256 KiB of source bytes
-per page. `--max-bytes N` lowers that budget (4..262144, default 262144); the
-minimum holds one complete UTF-8 character. An incomplete trailing character
-is held for the next page, so a page can be shorter than its budget.
-Use `--tail N` to select the last N bytes of retained output, or `--since` set
-to `data.next`, and continue while `data.more` is true. These offset flags are
-mutually exclusive. With `--tail N --max-bytes M`, reading starts N bytes back
-from the measured log end and returns at most M source bytes. `--tail 0`
-returns an empty page at that end. Concurrent appends are left for later reads;
-`data.size` describes the measured window, not a promise that no newer output exists.
-Byte cursors must come from the response, not the rendered text length: terminal
-sequences are removed from displayed content.
-
-```bash
-# Start with a bounded page from the recent log window.
-rhost session read <host> debug --tail 8192 --max-bytes 4096 --json
-# Continue using the preceding response's data.next while data.more is true.
-rhost session read <host> debug --since <data.next> --max-bytes 4096 --json
-```
-`session attach` returns a non-retryable `USAGE_ERROR`; the v3
-envelope has no honest terminal attachment representation.
-
-`session create --cwd` records the *absolute* directory the account actually
-entered, so `~` comes back as a real path and `create` and a later `list` agree.
-Without `--cwd`, `initial_cwd` is omitted, and the session starts wherever the
-login shell leaves it.
-
-A create that reaches the host but does not return its full record reports the
-candidate it reserved under `data.session_id`/`data.session_ref` and a
-`data.creation_status` of `not_created` (the remote refused, or was seen to clean
-up), `unknown` (a timeout, cancellation, disconnect or missing evidence), or
-`created` (creation was observed but the rest of the response was not). Use
-`session list` to confirm a candidate instead of retrying blind. A local
-argument mistake or an id that cannot be generated still reports `data: null`.
+For terminal lifecycle, REPL interaction, byte cursors and timeout semantics,
+read [SESSIONS.md](SESSIONS.md). `session attach` remains refused.
 
 ## Files
+
+Read [FILES.md](FILES.md) for native reads, CAS editing, search/read-many and
+named changeset recovery. File copies and directory transfers remain CLI-only:
 
 ```bash
 rhost fs put <host> ./local '<remote-path>' [--parents] [--resume] [--checksum]
 rhost fs get <host> '<remote-path>' ./local [--resume] [--checksum]
 rhost fs sync <host> ./directory '<remote-directory>' --dry-run --json
 rhost fs mirror <host> '<remote-directory>' ./directory --dry-run --json
-rhost fs read <host> '<remote-file>' --lines 200 --start 1 --json
-rhost fs write <host> '<remote-file>' [--from ./file] [--if-hash <sha256>] [--parents] [--mode <octal>] --json
-rhost fs patch <host> '<remote-file>' [--patch ./patch.json] [--if-hash <sha256>] --json
-rhost fs batch <host> --manifest ./copies.json --json
 ```
 
 Quote a leading `~` so the local shell does not expand it. Plain put/get use
 scp; resume or checksum uses rsync. Sync/mirror accept repeated `--exclude`,
 `--checksum`, `--delete`, `--dry-run`, and a deadline. Exclude patterns are
-source-relative. With `--delete`, sync prunes the remote destination; mirror
-prunes the local destination. Preview with `--dry-run --delete`, keeping the
-same operands and options, then remove `--dry-run` to apply that plan.
-
-`fs read` returns bounded UTF-8 text and the complete file's SHA-256. Creating a
-new file needs no hash. Replacing an existing file and every patch require the
-fresh hash returned by the last read. Batch is ordered serial put/get, continues
-after individual failures, and reports `data.items[]`, `data.succeeded`, and
-`data.failed`; it is not a transaction.
-
-`fs read` defaults to `--start 1 --lines 200`. `--max-bytes` defaults to 256 KiB
-and is capped at 8 MiB; an out-of-range CLI value is refused as `USAGE_ERROR`.
-`fs write --mode` is three or four octal digits;
-when it is omitted a newly created file is `0600` and a replacement keeps the
-existing file's permissions. Editing names an exact regular file and refuses a
-symlink in any path component; `fs sync --delete` is separate because it resolves
-the destination before applying its destructive-safety checks.
-
-### Patch document
-
-`fs patch` takes JSON line-range replacements, not a unified diff. After
-`fs read --json`, copy `data.sha256` into the document below in place of
-`<sha256-from-read>`. For an original file containing `alpha\nbeta\n`, this
-changes the second line to `gamma`:
-
-```json
-{
-  "sha256": "<sha256-from-read>",
-  "edits": [{"start": 2, "end": 2, "text": "gamma\n"}]
-}
-```
-
-Save it as `patch.json`, then apply it:
-
-```bash
-rhost fs patch gpu '~/work/example.txt' --patch ./patch.json --json
-```
-
-Ranges are 1-based inclusive lines in the original file, must not overlap, and
-must stay inside that file. Text is inserted literally, including its newlines;
-an empty string deletes the selected lines. An explicit `--if-hash` overrides
-the document's hash. On `FILE_CONFLICT`, read and merge again before applying.
-
-### Writing and patching via stdin (Heredocs and pipes)
-
-Both `fs write` and `fs patch` read from stdin by default (`--from -` and `--patch -`
-are implicit when omitted) with an 8 MiB limit. Agents do not need to create local
-scratch files:
-
-```bash
-# Stdin one-liner to write or create a remote file:
-printf 'line 1\nline 2\n' | rhost fs write gpu '~/work/example.txt' --parents --json
-
-# Multi-line write without local files:
-rhost fs write gpu '~/work/example.txt' --parents --json << 'EOF'
-line 1
-line 2
-EOF
-
-# Stdin one-liner hash-guarded replacement:
-printf 'line 1\nmodified line 2\n' | rhost fs write gpu '~/work/example.txt' --if-hash <sha256-from-read> --json
-
-# Multi-line hash-guarded replacement (safe compare-and-swap):
-rhost fs write gpu '~/work/example.txt' --if-hash <sha256-from-read> --json << 'EOF'
-line 1
-modified line 2
-EOF
-
-# Multi-line hash-guarded patch (line-range):
-rhost fs patch gpu '~/work/example.txt' --json << 'EOF'
-{
-  "sha256": "<sha256-from-read>",
-  "edits": [{"start": 2, "end": 2, "text": "gamma\n"}]
-}
-EOF
-
-# Exact-text replacement patch (recommended for coding agents):
-rhost fs patch gpu '~/work/example.txt' --json << 'EOF'
-{
-  "sha256": "<sha256-from-read>",
-  "edits": [{"old": "modified line 2\n", "new": "gamma\n"}]
-}
-EOF
-```
-
-A patch cannot insert into an empty file; use a hash-guarded `fs write` for that replacement.
+source-relative. With `--delete`, sync prunes remotely and mirror prunes locally.
+Preview with `--dry-run --delete`, then remove only `--dry-run` to apply.
 
 ### Batch manifest
 

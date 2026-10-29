@@ -131,9 +131,9 @@ When a shared connection looks stale, inspect `connection status`, probe with
 inspect the earlier operation's result afterward. Never repeat the original
 mutation merely to test connectivity.
 
-For long work that must survive the agent runtime, submit it to a scheduler
-already installed on the remote host and use that scheduler's own status and
-logs. A tmux session is interactive state, not a generic scheduler.
+For noninteractive work that must survive the agent runtime, use a recoverable
+Run and retain its generation/key. Scheduling or automatic restart belongs to
+an existing remote scheduler. A tmux session retains terminal state.
 
 ## Reserved codes
 
@@ -160,7 +160,34 @@ login resolves to, then `connection reset` to retire the old authentication
 snapshot so the next call re-authenticates cleanly.
 
 
-Native helper and Run refusals: `HELPER_INCOMPATIBLE`, `HELPER_PREPARATION_FAILED`, `IDEMPOTENCY_CONFLICT`, `NAMESPACE_MISMATCH`, `OUTPUT_RANGE_UNAVAILABLE`, `PROTOCOL_ERROR`, `REQUEST_EXPIRED`, `RUN_CONTROL_UNAVAILABLE`, `RUN_NOT_FOUND`, `STATE_UNAVAILABLE`. Preserve the generation and request key. Preparation refusals do not launch a Run; an unknown submission must be inspected or retried only with the same key and payload. Run control refuses when no live owner proves its authority. Output range errors require a retained cursor. File errors also carry `error.mutation`: `not_applied`, `applied`, `partial` or `unknown`; an error is not proof that bytes stayed unchanged.
+## Native readiness and recoverable work
+
+- `HELPER_INCOMPATIBLE` and `HELPER_PREPARATION_FAILED`: inspect identity and
+  [preparation policy](NATIVE.md#preparation-policies). Preparation refusal does
+  not launch a Run; do not silently bypass a deliberate cache/build policy.
+- `IDEMPOTENCY_CONFLICT`: the key already binds another immutable payload.
+  Inspect that Run or changeset; changing the key is a new operation.
+- `NAMESPACE_MISMATCH`, `REQUEST_EXPIRED` and `STATE_UNAVAILABLE`: preserve the
+  observed generation/key and inspect state. Replacement namespaces invalidate
+  previous deduplication assumptions. After expiry, poll an existing Run.
+- `RUN_NOT_FOUND` and `RUN_CONTROL_UNAVAILABLE`: inspect identity/state and the
+  live owner. Never substitute a saved PID or start a replacement side effect.
+- `OUTPUT_RANGE_UNAVAILABLE`: choose a retained byte cursor and account for the
+  gap; it is not evidence the command failed or should run again.
+- `PROTOCOL_ERROR`: keep available evidence and check binary/helper
+  compatibility. Missing completion stays unknown.
+
+Unknown Run submissions may be deduplicated only using the same still-valid
+namespace generation/key/payload; see [RUNS.md](RUNS.md). Changeset retries only
+observe, and recovery is explicit; see [FILES.md](FILES.md). File failures may
+carry `error.mutation`: `not_applied`, `applied`, `partial` or `unknown`; an error
+is not proof that bytes stayed unchanged.
+
+MCP cancellation can suppress a reply. Inspect Runs through poll and sessions
+through list/read. Cancellation does not itself send a pane interrupt, but a
+previously submitted session timeout may still do so. Session send/create/exec
+have no Run-style idempotency key; do not retry them through CLI just because
+MCP lost the response.
 
 
 `CONTEXT_CHANGED` means a supplied boot guard differs from the observed host.

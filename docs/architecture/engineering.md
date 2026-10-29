@@ -11,8 +11,7 @@ never environment maps, file contents or `session send --data` payloads.
 ## Repository boundaries
 
 The tree is cut by capability: `domain`, `transport`, `remote` and `wire` are the
-shared foundation, `cli` holds the flag/argv vocabulary, `dispatch` is the thin
-composition root, and each capability (`exec`, `doctor`, `hosts`, `connection`,
+shared foundation, `cli` holds the flag/argv vocabulary, `dispatch` composes CLI operations and `request` composes structured operations, and each capability (`exec`, `doctor`, `hosts`, `connection`,
 `files`, `session`, `tunnel`, `audit`) owns its own grammar, use-cases and DTO.
 `reference/` is read-only reference material and is not part of the product. The
 archived Go v3.1.0 implementation lives in the read-only `rhost-go-old`
@@ -31,3 +30,8 @@ authoritatively in [`AGENTS.md`](../../AGENTS.md#9-verify-before-reporting) and
 Architectural acceptance criteria and contested-path frames live in
 [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md#observable-acceptance).
 
+
+Shared execution stays within each capability. CLI and MCP use the same validated
+operations/outcomes; the core does not import their argument or rendering types.
+The fine-grained adapter ownership check supplements the top-level module graph
+and resolves facade re-exports, so an alias cannot hide a reverse dependency.

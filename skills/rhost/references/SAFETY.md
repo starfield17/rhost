@@ -53,8 +53,7 @@ manager (`dpkg -S`, `rpm -qf`, `brew --prefix`, ...), run through `exec`.
 
 Do not rely on a `sudo` timestamp surviving across rhost calls. Each invocation is
 its own submission under `setsid bash -lc`, so a cache granted to an earlier call
-does not survive when the remote sudo configuration uses `tty_tickets` (the default
-on most Linux distributions). Remote `secure_path` in `/etc/sudoers` also resets
+does not survive when the remote sudo configuration uses `tty_tickets`. Remote `secure_path` in `/etc/sudoers` also resets
 `PATH` to minimal system directories, stripping user `PATH` additions like Homebrew,
 Conda, or Cargo; invoke privileged commands with full binary paths or configure
 `sudo env PATH="$PATH"`. For multi-step privileged tasks, group commands into a
@@ -86,3 +85,19 @@ The audit trail is bounded and fail-open. It records operation metadata and a
 bounded command summary, never environment maps, file contents, or send payloads.
 That omission is not a secrecy guarantee because process arguments remain
 observable. `RHOST_AUDIT=0` disables new audit writes.
+
+## Native state and recoverable operations
+
+Native helper state defaults to `~/.local/state/rhost/v5`; an explicit
+`RHOST_REMOTE_STATE` selects its root. Legacy foreground/session state continues
+under v4 by default. Do not restore or replace a native namespace and assume
+its previous generation or deduplication history remains valid.
+
+Run cancellation ends observation; stopping execution uses an explicit signal
+or submitted remote deadline. Session cancellation does not itself send a pane
+key, but its submitted timeout is not revoked. Unknown input/effects need
+inspection before retry, including when switching CLI/MCP.
+
+Changeset recovery touches only named files and checks their versions. It does
+not provide workspace snapshots, Git management, globally atomic visibility or
+automatic validation/rollback. Prune explicitly ends eligible retained recovery.
