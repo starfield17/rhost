@@ -115,3 +115,14 @@ the remote pipe-drain grace. The suite now accepts the registered launch state,
 holds work behind an explicit release file, and requires an exited leader plus
 incomplete stream evidence while its descendant still holds the pipe. Network
 latency is not the oracle for remote process/stream independence.
+
+### Two-phase v5 publication
+
+The old release shape assumed building optimized clients on the production tag.
+That cannot bind manual live evidence to the exact published bytes. Candidate
+dispatch now builds once; an annotated production tag promotes immutable
+first-attempt artifacts and reruns all source/native/helper gates. The release
+checker retains four native platforms and both source platforms, adds helper
+dependencies, and distinguishes artifact target selection from cross compilation.
+The only local reusable workflow is checked out at the caller's source commit;
+external actions remain pinned to immutable commits.

@@ -264,7 +264,7 @@ fn release_waits_for_four_native_platforms_before_publication() {
     assert!(workflow.contains("os: [ubuntu-24.04, macos-15]"));
     assert_eq!(workflow.matches("run: make check").count(), 1);
     assert!(workflow.contains("  native:\n    needs: verify"));
-    assert!(workflow.contains("needs: native"));
+    assert!(workflow.contains("needs: [native, helper-verify]"));
     assert!(workflow.contains("if: startsWith(github.ref, 'refs/tags/v')"));
     assert!(workflow.contains("contents: write"));
     assert!(workflow.contains("gh release create \"v${version}\" dist/* --verify-tag"));

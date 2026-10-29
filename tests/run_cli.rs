@@ -166,3 +166,155 @@ fn public_requests_recover_completed_runs_and_refuse_a_changed_retry() {
     let conflict = f.request(&envelope("run.start", params));
     assert_eq!(conflict["error"]["code"], "IDEMPOTENCY_CONFLICT");
 }
+
+fn message(operation: &str, params: Value) -> Value {
+    json!({"schema_version":3,"operation":operation,"host":"gpu","params":params})
+}
+fn namespace(f: &Fixture) -> (Value, u64) {
+    let v = f.request(&message("helper.prepare", json!({})));
+    assert_eq!(v["ok"], true, "{v}");
+    (
+        v["data"]["generation"].clone(),
+        v["data"]["remote_time_unix"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("time"))
+            + 3600,
+    )
+}
+fn launch(f: &Fixture, g: &Value, expiry: u64, script: &str) -> Value {
+    json!({"generation":g,"key":format!("{expiry}-{}","e".repeat(64)),"expires_unix":expiry,"cwd":f.root,
+        "program":{"argv":["/bin/sh","-c",script]},"environment":{"inherit":false,"values":{}},"wait_ms":1000,"deadline_ms":15000})
+}
+fn finished(f: &Fixture, g: &Value, key: &Value) -> Value {
+    for _ in 0..100 {
+        let result = f.request(&message(
+            "run.poll",
+            json!({"generation":g,"run_id":key,"wait_ms":1000}),
+        ));
+        assert_eq!(result["ok"], true, "{result}");
+        if result["data"]["run"]["status"] == "exited" && result["data"]["stdout"]["open"] == false
+        {
+            return result["data"].clone();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("completion and closed streams were not observed");
+}
+
+#[test]
+fn output_quota_preserves_source_counts_and_explicit_gaps() {
+    let f = Fixture::new();
+    let (g, expiry) = namespace(&f);
+    let params = launch(
+        &f,
+        &g,
+        expiry,
+        "dd if=/dev/zero bs=1048576 count=65 2>/dev/null",
+    );
+    let key = params["key"].clone();
+    assert_eq!(f.request(&message("run.start", params))["ok"], true);
+    let done = finished(&f, &g, &key);
+    assert_eq!(done["run"]["completion"]["exit_code"], 0);
+    assert_eq!(done["stdout"]["observed_bytes"], 65 * 1048576);
+    assert_eq!(done["stdout"]["next"], 4096);
+    assert_eq!(done["stdout"]["incomplete"], true);
+    let log = f
+        .root
+        .join("state/runs")
+        .join(key.as_str().unwrap_or_else(|| panic!("key")))
+        .join("stdout");
+    assert_eq!(
+        std::fs::metadata(log)
+            .unwrap_or_else(|e| panic!("log: {e}"))
+            .len(),
+        64 * 1048576
+    );
+}
+
+#[test]
+fn run_log_write_failures_keep_observed_counts_and_gaps() {
+    let f = Fixture::new();
+    let (g, expiry) = namespace(&f);
+    // Existing cached bytes are prepared before imposing a per-file write
+    // limit. Ignored SIGXFSZ makes write return EFBIG, the monitor's normal
+    // storage-error path, while small completion records can still persist.
+    std::fs::write(f.root.join("bin/ssh"), b"#!/bin/sh\ntrap '' XFSZ\nulimit -f 64\nfor arg do last=$arg; done\nexec /bin/sh -c \"$last\"\n").unwrap_or_else(|e| panic!("SSH: {e}"));
+    let params = launch(
+        &f,
+        &g,
+        expiry,
+        "dd if=/dev/zero bs=1048576 count=1 2>/dev/null",
+    );
+    let key = params["key"].clone();
+    assert_eq!(f.request(&message("run.start", params))["ok"], true);
+    let done = finished(&f, &g, &key);
+    assert_eq!(done["run"]["completion"]["exit_code"], 0);
+    assert_eq!(done["stdout"]["observed_bytes"], 1048576);
+    assert_eq!(done["stdout"]["incomplete"], true);
+    let log = f
+        .root
+        .join("state/runs")
+        .join(key.as_str().unwrap_or_else(|| panic!("key")))
+        .join("stdout");
+    let kept = std::fs::metadata(log)
+        .unwrap_or_else(|e| panic!("log: {e}"))
+        .len();
+    assert!(
+        kept > 0 && kept <= 65536,
+        "retained {kept} after write failure"
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn monitor_death_never_authorizes_a_duplicate_or_saved_pid_signal() {
+    let f = Fixture::new();
+    let (g, expiry) = namespace(&f);
+    let params = launch(
+        &f,
+        &g,
+        expiry,
+        "printf '%s' \"$PPID\" > monitor; printf x >> once; i=0; while [ ! -f release ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done; printf done > child-finished",
+    );
+    let key = params["key"].clone();
+    assert_eq!(f.request(&message("run.start", params.clone()))["ok"], true);
+    let monitor =
+        std::fs::read_to_string(f.root.join("monitor")).unwrap_or_else(|e| panic!("monitor: {e}"));
+    let identity = PathBuf::from("/proc").join(&monitor).join("cwd");
+    let expected = f
+        .root
+        .join("state/runs")
+        .join(key.as_str().unwrap_or_else(|| panic!("key")));
+    assert_eq!(
+        std::fs::read_link(identity).unwrap_or_else(|e| panic!("identity: {e}")),
+        expected
+    );
+    assert!(
+        Command::new("kill")
+            .args(["-KILL", &monitor])
+            .status()
+            .unwrap_or_else(|e| panic!("kill: {e}"))
+            .success()
+    );
+    let lost = f.request(&message("run.poll", json!({"generation":g,"run_id":key})));
+    assert_eq!(lost["data"]["run"]["status"], "lost");
+    let retry = f.request(&message("run.start", params));
+    assert_eq!(retry["data"]["run"]["status"], "lost");
+    assert_eq!(
+        std::fs::read(f.root.join("once")).unwrap_or_else(|e| panic!("effects: {e}")),
+        b"x"
+    );
+    let refused = f.request(&message(
+        "run.signal",
+        json!({"generation":g,"run_id":key,"signal":"KILL"}),
+    ));
+    assert_eq!(refused["error"]["code"], "RUN_CONTROL_UNAVAILABLE");
+    std::fs::write(f.root.join("release"), b"release").unwrap_or_else(|e| panic!("release: {e}"));
+    for _ in 0..100 {
+        if f.root.join("child-finished").exists() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("orphaned fixture child did not exit");
+}

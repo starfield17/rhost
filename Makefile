@@ -41,7 +41,7 @@ fmt:
 	cargo fmt
 test: helper-candidate
 	cargo test --locked
-check: helper-candidate native-helper-check rust-check portability structure live-suite release-contract contract-evidence agent-package install-test
+check: helper-candidate native-helper-check rust-check portability structure live-suite release-contract release-v5 contract-evidence agent-package install-test
 rust-check: helper-candidate
 	cargo fmt --check
 	cargo clippy --locked --all-targets -- -D warnings
@@ -63,6 +63,8 @@ live-suite:
 
 release-contract:
 	./scripts/check-release-contract.sh
+release-v5:
+	python3 scripts/check-release-v5.py
 contract-evidence:
 	./scripts/check-contract-evidence.sh
 agent-package:

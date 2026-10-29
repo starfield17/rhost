@@ -1,0 +1,76 @@
+name: helper-verify
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full source commit at the dispatch ref
+        required: true
+        type: string
+      manifest_sha256:
+        description: SHA-256 of helper/artifacts.json
+        required: true
+        type: string
+      asset_ids:
+        description: JSON mapping Linux target names to candidate release asset IDs
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  helper:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux-x86_64
+          - runner: ubuntu-24.04-arm
+            target: linux-aarch64
+    runs-on: ${{ matrix.runner }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HELPER_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
+      HELPER_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
+      HELPER_ASSET_IDS: ${{ inputs.asset_ids }}
+      RHOST_NO_SOURCE_BUILD: '1'
+      RHOST_HELPER_BIN: ${{ github.workspace }}/verified-helper/rhost-helper
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+      - name: Fetch and verify exact locally built helper
+        env:
+          TARGET: ${{ matrix.target }}
+        run: python3 scripts/helper_artifact.py fetch --target "$TARGET" --path "$RHOST_HELPER_BIN"
+      - name: Install declared Rust toolchain and disposable SSH fixture tools
+        run: |
+          rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
+          rustup toolchain install "$rust_version" --profile minimal
+          rustup override set "$rust_version"
+          sudo apt-get update -qq
+          sudo apt-get install -y openssh-server
+          sudo mkdir -p /run/sshd
+      - name: Execute exact native helper acceptance
+        run: |
+          cargo test --locked --test acceptance
+          cargo test --locked --features helper-tests --test helper_protocol --test helper_runs --test run_cli
+          cargo build --locked --bin rhost
+      - name: Execute real SSH acceptance against disposable sshd
+        env:
+          RHOST_BIN: ${{ github.workspace }}/target/debug/rhost
+        run: sh scripts/test-helper-ssh.sh
+      - name: Retain the tested bytes and bound observation
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          python3 scripts/helper_artifact.py verify --target "$TARGET" --path "$RHOST_HELPER_BIN"
+          asset=$(python3 -c 'import json,os; m=json.load(open("helper/artifacts.json")); print(next(a["asset"] for a in m["artifacts"] if a["target"]==os.environ["TARGET"]))')
+          mv "$RHOST_HELPER_BIN" "verified-helper/$asset"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: helper-${{ matrix.target }}
+          path: verified-helper/*
+          retention-days: 30

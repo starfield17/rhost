@@ -84,7 +84,7 @@ def main() -> int:
     require_job_once(workflow, "verify", "      - run: make check")
     require_once(workflow, "complete source gate", "      - run: make check")
     require_job_once(workflow, "native", "    needs: verify")
-    require_job_once(workflow, "publish", "    needs: native")
+    require_job_once(workflow, "publish", "    needs: [native, helper-verify]")
     require_job_once(workflow, "verify", 'rustup component add --toolchain "$rust_version" rustfmt clippy')
     refuse(workflow, "a redundant smoke suite", r"make test-smoke")
     refuse(workflow, "a live suite the release workflow cannot actually reach", r"test-live|RHOST_TEST_HOST")
@@ -152,10 +152,10 @@ def main() -> int:
     for label, fragment in (
         ("version-tag trigger", '      - "v*"'),
         ("publication tag guard", "    if: startsWith(github.ref, 'refs/tags/v')"),
-        ("publication waits for native artifacts", "    needs: native"),
+        ("publication waits for native artifacts", "    needs: [native, helper-verify]"),
         ("release write permission", "      contents: write"),
         ("all artifacts downloaded together", "          merge-multiple: true"),
-        ("tag matches Cargo version", '          if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi'),
+        ("tag matches Cargo version", '          if [ "$GITHUB_EVENT_NAME" = push ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi'),
         ("eight release files present", '          test "$(find dist -maxdepth 1 -type f -name \'rhost_*\' | wc -l | tr -d \' \')" = 8'),
         ("GitHub release publication", '          gh release create "v${version}" dist/* --verify-tag --title "rhost v${version}" --generate-notes'),
     ):
@@ -166,7 +166,7 @@ def main() -> int:
         report("the publish job must check out the tagged repository exactly once")
     refuse(workflow, "a second publisher", r"action-gh-release|actions/create-release|cargo publish|git tag |git push|docker push|npm publish")
     refuse(workflow, "an unrelated write permission", r"id-token: write|packages: write")
-    refuse(workflow, "a cross-compiler", r"\-\-target|qemu|cross build|\bzig\b")
+    refuse(workflow, "a cross-compiler", r"(?:cargo|rustc|clang|gcc|\bcc\b).*\-\-target|qemu|cross build|\bzig\b")
     refuse(workflow, "a read-only reference tree", r"reference/")
     trigger_match = re.search(r"^on:\n((?:[ \t].*\n|[ \t]*\n)*)", workflow, re.M)
     triggers = [line for line in (trigger_match.group(1) if trigger_match else "").splitlines()
@@ -175,7 +175,8 @@ def main() -> int:
         report("the workflow triggers are not manual rehearsal plus version tags:")
         print("\n".join(triggers))
     unpinned = [f"{number}:{line}" for number, line in enumerate(workflow.splitlines(), 1)
-                if re.search(r"^\s*(?:-\s+)?uses:", line) and not re.search(r"@[0-9a-f]{40}", line)]
+                if re.search(r"^\s*(?:-\s+)?uses:", line) and not re.search(r"@[0-9a-f]{40}", line)
+                and line.strip() != "uses: ./.github/workflows/helper-verify.yml"]
     if unpinned:
         report("every action must be pinned to a 40-character commit:")
         print("\n".join(unpinned))

@@ -6,13 +6,20 @@ on:
       - "v*"
 permissions:
   contents: read
+  actions: read
 jobs:
+  helper-verify:
+    uses: ./.github/workflows/helper-verify.yml
   verify:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RHOST_HELPER_BIN: ${{ github.workspace }}/verified-helper/rhost-helper
+      RHOST_NO_SOURCE_BUILD: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -22,6 +29,10 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.11'
+      - name: Fetch source-locked native test helper
+        run: |
+          case "$RUNNER_OS" in Linux) target=linux-x86_64;; macOS) target=darwin-aarch64;; *) exit 2;; esac
+          python3 scripts/helper_artifact.py fetch --target "$target" --path "$RHOST_HELPER_BIN"
       - name: Install declared Rust toolchain
         run: |
           rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
@@ -33,7 +44,7 @@ jobs:
         run: |
           # The tagged range is compared with the previous tag; a first release
           # with no tag falls back to the parent commit.
-          base=$(git describe --tags --abbrev=0 'HEAD^' 2>/dev/null || echo 'HEAD^')
+          base=$(git describe --tags --match 'v[0-9]*' --abbrev=0 'HEAD^' 2>/dev/null || echo 'HEAD^')
           ./scripts/check-integrity.sh "$base"
   native:
     needs: verify
@@ -50,8 +61,12 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux_arm64
     runs-on: ${{ matrix.runner }}
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.11'
@@ -67,14 +82,19 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml)
-          commit=$(git rev-parse --short HEAD)
+          commit=$(git rev-parse HEAD)
           build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          RHOST_BUILD_COMMIT="$commit" RHOST_BUILD_DATE="$build_date" \
-            cargo build --locked --release --bin rhost
-          if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi
+          if [ "$GITHUB_EVENT_NAME" = push ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi
           mkdir -p dist
           artifact="dist/rhost_${version}_${PLATFORM}"
-          cp target/release/rhost "$artifact"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            test "$GITHUB_RUN_ATTEMPT" = 1
+            RHOST_BUILD_COMMIT="$commit" RHOST_BUILD_DATE="$build_date" \
+              cargo build --locked --release --bin rhost
+            cp target/release/rhost "$artifact"
+          else
+            python3 scripts/release_state.py promote --platform "$PLATFORM" --output dist
+          fi
           reported=$("$artifact" version --json)
           printf '%s\n' "$reported"
           printf '%s' "$reported" |
@@ -85,18 +105,31 @@ jobs:
           asset_name=${artifact##*/}
           (cd dist && shasum -a 256 "$asset_name" > "$asset_name.sha256")
           (cd dist && shasum -a 256 -c "$asset_name.sha256")
+          python3 - "$artifact" "$commit" "$version" "$PLATFORM" <<'PY'
+          import hashlib,json,pathlib,sys
+          path=pathlib.Path(sys.argv[1])
+          value=dict(format=1,commit=sys.argv[2],version=sys.argv[3],platform=sys.argv[4],sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+          path.with_name(f"candidate-{sys.argv[4]}.json").write_text(json.dumps(value,indent=2)+"\n")
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: rhost-${{ matrix.platform }}
           path: dist/*
+          retention-days: 30
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: native
+    needs: [native, helper-verify]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           path: dist
@@ -106,5 +139,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
+          python3 scripts/release_state.py promote --output dist
+          cp helper/artifacts.json dist/helper-artifacts.json
+          python3 scripts/release_state.py verify-dist --output dist
           test "$(find dist -maxdepth 1 -type f -name 'rhost_*' | wc -l | tr -d ' ')" = 8
           gh release create "v${version}" dist/* --verify-tag --title "rhost v${version}" --generate-notes

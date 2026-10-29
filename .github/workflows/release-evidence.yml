@@ -1,0 +1,55 @@
+name: release-evidence
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Full source commit at the stable candidate dispatch ref
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful first-attempt release candidate run ID
+        required: true
+        type: string
+      client_platform:
+        description: Exact native client platform used for both manual suites
+        required: true
+        type: choice
+        options: [darwin_arm64, darwin_amd64, linux_arm64, linux_amd64]
+      client_sha256:
+        description: SHA-256 of the downloaded candidate client used manually
+        required: true
+        type: string
+      helper_sha256:
+        description: SHA-256 of the exact Linux helper used manually
+        required: true
+        type: string
+      live_suites_passed:
+        description: Operator attestation; enter test-live-all,test-live-helper only after both pass
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11'
+      - name: Bind the trusted operator assertion to exact candidate identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          CANDIDATE_RUN: ${{ inputs.candidate_run_id }}
+          CLIENT_PLATFORM: ${{ inputs.client_platform }}
+          CLIENT_SHA256: ${{ inputs.client_sha256 }}
+          HELPER_SHA256: ${{ inputs.helper_sha256 }}
+          LIVE_SUITES_PASSED: ${{ inputs.live_suites_passed }}
+        run: python3 scripts/release_state.py emit-evidence --candidate-run "$CANDIDATE_RUN" --output evidence
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: manual-live
+          path: evidence/manual-live.json
+          retention-days: 30
