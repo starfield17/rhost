@@ -94,29 +94,35 @@ pub(crate) fn run_remote_partial(
     };
     let outcome = exec::execute_captured(client, command, &request, stdin)
         .map_err(|error| Error::new(error.code(), error.to_string()))?;
-    let output = outcome.output();
-    let stdout = output.stdout.content().to_string();
-    let stderr = output.stderr.content().to_string();
-    if let Some(failure) = submission(&outcome) {
-        return Ok(RemoteRun {
+    Ok(RemoteRun::from_outcome(&outcome))
+}
+
+impl RemoteRun {
+    pub(super) fn from_outcome(outcome: &ExecOutcome) -> Self {
+        let output = outcome.output();
+        let stdout = output.stdout.content().to_string();
+        let stderr = output.stderr.content().to_string();
+        if let Some(failure) = submission(outcome) {
+            return RemoteRun {
+                stdout,
+                stderr,
+                status: None,
+                failure: Some(failure),
+            };
+        }
+        let status = match outcome.execution() {
+            Execution::Completed(code) => Some(code.get()),
+            // `submission` above covers every state without a completion, so this
+            // cannot be reached with a silent success.
+            Execution::Unknown | Execution::NotStarted => None,
+        };
+        RemoteRun {
             stdout,
             stderr,
-            status: None,
-            failure: Some(failure),
-        });
+            status,
+            failure: None,
+        }
     }
-    let status = match outcome.execution() {
-        Execution::Completed(code) => Some(code.get()),
-        // `submission` above covers every state without a completion, so this
-        // cannot be reached with a silent success.
-        Execution::Unknown | Execution::NotStarted => None,
-    };
-    Ok(RemoteRun {
-        stdout,
-        stderr,
-        status,
-        failure: None,
-    })
 }
 
 /// Runs one remote command through the normal execution path and reports its

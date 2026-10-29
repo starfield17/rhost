@@ -130,13 +130,25 @@ pub fn input(source: &Value, op: &str) -> Result<Value, String> {
     if matching.len() != 1 {
         return Err("operation parameters must have one branch".into());
     }
-    let params = matching
-        .into_iter()
-        .next()
-        .map(|v| v["then"]["properties"]["params"].clone())
-        .ok_or("operation parameters")?;
+    let branch = matching.into_iter().next().ok_or("operation parameters")?;
+    let mut properties = Map::new();
+    for field in ["host", "params", "if_boot_id"] {
+        let value = branch["then"]["properties"]
+            .get(field)
+            .unwrap_or(&source["properties"][field]);
+        if value != &Value::Bool(false) {
+            properties.insert(field.into(), value.clone());
+        }
+    }
+    let mut required = vec![Value::String("params".into())];
+    if branch["then"]["required"]
+        .as_array()
+        .is_some_and(|values| values.iter().any(|v| v == "host"))
+    {
+        required.push(Value::String("host".into()));
+    }
     bundle(
         source,
-        json!({"type":"object","additionalProperties":false,"required":["host","params"],"properties":{"host":source["properties"]["host"],"params":params,"if_boot_id":source["properties"]["if_boot_id"]}}),
+        json!({"type":"object","additionalProperties":false,"required":required,"properties":properties}),
     )
 }

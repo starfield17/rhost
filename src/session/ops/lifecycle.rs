@@ -4,6 +4,7 @@
 use super::errors::{helper_failure, run_helper, session_error, unhealthy};
 use super::shared::FIELD_CAPTURE;
 use crate::remote::Error;
+use crate::remote::Observation;
 use crate::session::{self, HelperFailure, ListEntry, Status};
 use crate::transport::Client;
 use std::time::Duration;
@@ -45,8 +46,16 @@ impl Info {
 /// Every session this account has a record for, with each one's liveness as
 /// remote tmux just reported it.
 pub fn list(client: &Client, host: &str, timeout: Duration) -> Result<Vec<Info>, Error> {
+    list_observed(&Observation::new(client, &|| false), host, timeout)
+}
+
+pub(in crate::session) fn list_observed(
+    observation: &Observation<'_>,
+    host: &str,
+    timeout: Duration,
+) -> Result<Vec<Info>, Error> {
     let stdout = run_helper(
-        client,
+        observation,
         host,
         &session::list_script(),
         timeout,
@@ -76,8 +85,22 @@ pub fn recover(
     reference: &str,
     timeout: Duration,
 ) -> Result<Recover, Error> {
+    recover_observed(
+        &Observation::new(client, &|| false),
+        host,
+        reference,
+        timeout,
+    )
+}
+
+pub(in crate::session) fn recover_observed(
+    observation: &Observation<'_>,
+    host: &str,
+    reference: &str,
+    timeout: Duration,
+) -> Result<Recover, Error> {
     let stdout = run_helper(
-        client,
+        observation,
         host,
         &session::recover_script(reference, timeout),
         timeout,
@@ -120,8 +143,22 @@ pub fn recover(
 }
 
 pub fn close(client: &Client, host: &str, reference: &str, timeout: Duration) -> Result<(), Error> {
+    close_observed(
+        &Observation::new(client, &|| false),
+        host,
+        reference,
+        timeout,
+    )
+}
+
+pub(in crate::session) fn close_observed(
+    observation: &Observation<'_>,
+    host: &str,
+    reference: &str,
+    timeout: Duration,
+) -> Result<(), Error> {
     let stdout = run_helper(
-        client,
+        observation,
         host,
         &session::close_script(reference),
         timeout,

@@ -1,16 +1,13 @@
 //! Running `doctor`: probe the host and deliver what the probe proved.
 
 use super::{Doctor, app, dto};
-use crate::audit::Timer;
 use crate::cli::{Failure, Sink, field, ok_missing, warn, yes};
 use crate::transport::Client;
 use crate::wire;
 use std::time::Duration;
 
 pub fn run(sink: &mut Sink, client: &Client, command: &Doctor, json: bool) -> u8 {
-    let timer = Timer::start("doctor", &command.host);
     if command.timeout_nanos < 0 {
-        timer.failed("CONFIG_INVALID");
         return Failure::new(
             "doctor",
             &command.host,
@@ -29,23 +26,15 @@ pub fn run(sink: &mut Sink, client: &Client, command: &Doctor, json: bool) -> u8
         timeout,
         fresh: command.fresh,
     };
-    let probe = match app::probe(client, &options) {
+    let probe = match super::execute(client, &options, &|| false) {
         Ok(probe) => probe,
         Err(reason) => {
-            timer.failed(reason.code());
-            return Failure::new("doctor", &command.host, reason.code(), reason.to_string())
+            return Failure::new("doctor", &command.host, reason.code, reason.message)
                 .deliver(sink, json);
         }
     };
     if let Some(outcome) = &probe.failure {
         let status = outcome.process_status();
-        match wire::exec_diagnostic(outcome) {
-            Some((code, _)) => timer.failed(code),
-            // Every failure has a code, so this is an exhaustiveness guard rather
-            // than a path: the honest answer when a failure had none is that the
-            // execution is unknown.
-            None => timer.failed("REMOTE_EXECUTION_UNKNOWN"),
-        }
         if json {
             sink.envelope(&dto::doctor_failure(&probe.report, outcome));
         } else if let Some((code, message)) = wire::exec_diagnostic(outcome) {
@@ -58,7 +47,6 @@ pub fn run(sink: &mut Sink, client: &Client, command: &Doctor, json: bool) -> u8
         }
         return status;
     }
-    timer.succeeded("", "", None);
     if json {
         sink.envelope(&dto::doctor(&probe.report));
         return 0;

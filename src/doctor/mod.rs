@@ -6,6 +6,8 @@
 //! state using the shared `connection` DTO shape.
 
 mod app;
+mod application;
+pub(crate) use application::{execute, prepare};
 mod command;
 mod dto;
 mod run;

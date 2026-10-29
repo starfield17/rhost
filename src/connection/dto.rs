@@ -1,4 +1,4 @@
-//! The schema-v2 view of a control master's state, shared by `connection` and
+//! The schema-v3 view of a control master's state, shared by `connection` and
 //! `doctor` (which reports the same shape as part of a probe).
 
 use crate::transport;

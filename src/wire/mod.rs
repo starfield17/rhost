@@ -1,4 +1,4 @@
-//! The schema-v2 wire envelope and the delivery it is written through.
+//! The schema-v3 wire envelope and the delivery it is written through.
 //!
 //! This is the shared half of the wire format: the envelope every operation
 //! returns, the error payload every failure carries, the single-write delivery

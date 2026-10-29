@@ -174,6 +174,7 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
 
 `test-smoke` is the complete local Rust black-box suite without network access.
 Live suites use explicit environment targets and exercise real SSH behavior.
+Real-host verification is a required manual pre-release step.
 Pre-release verification also runs `test-live-helper` with an exact remote
 helper supplied through RHOST_HELPER_BIN. CI tests exact locally built helpers
 through disposable strict-host-key sshd fixtures; it does not compile replacement

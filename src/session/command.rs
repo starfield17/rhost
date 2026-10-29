@@ -145,13 +145,9 @@ static ANY_FLAGS: &[FlagSpec] = &[
 /// Each operation's own budget. A create waits for a shell to come up, while a
 /// list or a close is one short round trip; a caller who says nothing gets the
 /// reference's default rather than "no deadline at all".
-pub(super) const CREATE_TIMEOUT: Duration = Duration::from_secs(60);
-pub(super) const LIST_TIMEOUT: Duration = Duration::from_secs(30);
-pub(super) const EXEC_TIMEOUT: Duration = Duration::from_secs(60);
-pub(super) const SEND_TIMEOUT: Duration = Duration::from_secs(30);
-pub(super) const READ_TIMEOUT: Duration = Duration::from_secs(30);
-pub(super) const RECOVER_TIMEOUT: Duration = Duration::from_secs(30);
-pub(super) const CLOSE_TIMEOUT: Duration = Duration::from_secs(30);
+use super::application::{
+    CREATE_TIMEOUT, EXEC_TIMEOUT, LIST_TIMEOUT, READ_TIMEOUT, RECOVER_TIMEOUT,
+};
 
 pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
     let scanned = match parse(argv, ANY_FLAGS) {

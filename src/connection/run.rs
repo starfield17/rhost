@@ -7,7 +7,13 @@ use crate::cli::{Sink, field, warn};
 use crate::transport::{Client, ConnectionStatus};
 
 pub fn status(sink: &mut Sink, client: &Client, host: &str, json: bool) -> u8 {
-    let status = client.connection_status(host);
+    let status = match super::observe(client, host, &|| false) {
+        Ok(status) => status,
+        Err(error) => {
+            return crate::cli::Failure::from_error("connection.status", host, error)
+                .deliver(sink, json);
+        }
+    };
     if json {
         let data = ConnectionDto::from(&status);
         sink.envelope(&super::connection("connection.status", host, &data));
