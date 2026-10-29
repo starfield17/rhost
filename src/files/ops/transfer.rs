@@ -295,28 +295,19 @@ pub fn get(
     let metadata = std::fs::metadata(&effective).map_err(|error| {
         Error::new(
             "TRANSFER_FAILED",
-            format!(
-                "scp reported success but {} cannot be inspected: {error}",
-                effective
-            ),
+            format!("scp reported success but {effective} cannot be inspected: {error}"),
         )
     })?;
     if !metadata.is_file() {
         return Err(Error::new(
             "TRANSFER_FAILED",
-            format!(
-                "scp reported success but {} is not a regular file",
-                effective
-            ),
+            format!("scp reported success but {effective} is not a regular file"),
         ));
     }
     std::fs::File::open(&effective).map_err(|error| {
         Error::new(
             "TRANSFER_FAILED",
-            format!(
-                "scp reported success but {} cannot be read: {error}",
-                effective
-            ),
+            format!("scp reported success but {effective} cannot be read: {error}"),
         )
     })?;
     let size = metadata.len();
