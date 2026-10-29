@@ -115,6 +115,10 @@ the remote pipe-drain grace. The suite now accepts the registered launch state,
 holds work behind an explicit release file, and requires an exited leader plus
 incomplete stream evidence while its descendant still holds the pipe. Network
 latency is not the oracle for remote process/stream independence.
+Fast disposable SSH can return multiple exited observations before the remote
+drain grace ends. The suite observes `open:false` before requiring the final
+incomplete-tail flag; a poll wait budget does not wait for stream closure after
+leader exit. The descendant fixture also has a finite independent lifetime.
 
 ### Two-phase v5 publication
 
@@ -143,3 +147,5 @@ the helper to be reaped, and stops that live parent before reading its cumulativ
 I/O counters. Linux adds reaped child accounting to the parent's signal record.
 The same scan-byte limit, read-counter comparison and fixed wrapper allowance
 remain enforced; no privileged access or skipped assertion is introduced.
+Writer shutdown/join and the unreaped shell/helper process group are owned by
+scope guards, including input/spawn errors, timeout and assertion failure.
