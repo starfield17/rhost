@@ -97,7 +97,7 @@ def main() -> int:
         if not re.search(r"manual[*_ ]*pre-release", (ROOT / name).read_text(), re.I):
             report(f"{name} does not state that real-remote verification is manual pre-release")
     toolchain_read = 'rust_version=$(sed -n \'s/^rust-version = "\\([^"]*\\)"/\\1/p\' Cargo.toml)'
-    python_action = "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
+    python_action = "actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0"
     for job in ("verify", "native"):
         require_job_once(workflow, job, toolchain_read)
         require_job_once(workflow, job, 'rustup toolchain install "$rust_version" --profile minimal')
