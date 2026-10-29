@@ -15,7 +15,7 @@ fn mcp_session_state_busy_io_timeout_and_close_use_the_existing_contract() -> Re
     )?;
     assert_eq!(created["ok"], true, "{created}");
     let id = text(&created, "/data/session_id")?.to_string();
-    let result = (|| {
+    let result: Result<(), String> = (|| {
         let executed=m.call("session.exec",Some(&host),json!({"session":id,"command":"export RHOST_LIVE_VALUE=retained; printf '中文-finished'; false"}))?;
         assert_eq!(executed["data"]["execution"]["exit_code"], 1, "{executed}");
         assert!(text(&executed, "/data/output/content")?.contains("中文-finished"));
@@ -111,7 +111,7 @@ fn cancellation_case(cancelled: bool) -> Result<(), String> {
     let name = unique("rlive-mcp-cancel");
     let created = live.ok(&["session", "create", &host, "--name", &name, "--json"])?;
     let id = text(&created.value, "/data/session_id")?.to_string();
-    let result = (|| {
+    let result: Result<(), String> = (|| {
         let mut m = Mcp::open(live.command(&["mcp"]))?;
         let request=m.start("session.exec",Some(&host),json!({"session":id,"command":"sh -c 'trap \"printf unintended-interrupt\" INT; printf observer-ready; while :; do sleep 1; done'","timeout_ms":60000}))?;
         poll(|| {

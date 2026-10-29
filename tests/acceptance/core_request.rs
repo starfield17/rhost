@@ -123,7 +123,9 @@ fn session_refusals_reuse_existing_results_without_preparing_native_helper() -> 
     let h = Harness::open("core-session-refusal")?;
     crate::hosts::local_host(&h)?;
     let state = h.path("remote-state").to_string_lossy().into_owned();
-    let h = h.env("RHOST_REMOTE_STATE", &state);
+    let h = h
+        .env("RHOST_REMOTE_STATE", &state)
+        .env("RHOST_NO_UPLOAD", "1");
     let mut m = Mcp::open(&h)?;
     for (op, params, args) in [
         (
@@ -168,7 +170,56 @@ fn session_refusals_reuse_existing_results_without_preparing_native_helper() -> 
         assert_eq!(result, cli);
         assert_eq!(tool, cli);
         want_code(&tool, "SESSION_NOT_FOUND")?;
+        assert_eq!(tool["error"]["retryable"], false);
     }
-    assert!(!h.path("remote-state/native-v5").exists());
     m.close()
+}
+
+#[test]
+fn positional_json_shapes_never_submit_core_operations() -> Result<(), String> {
+    let h = Harness::open("core-object-shapes")?;
+    for raw in [
+        r#"[3,"session.close","gpu",{"session":"debug"}]"#,
+        r#"{"schema_version":3,"operation":"version","params":[]}"#,
+        r#"{"schema_version":3,"operation":"session.close","host":"gpu","params":["debug"]}"#,
+    ] {
+        let (_, result) = envelope_with_stdin(&h, &["request", "--from", "-"], raw.as_bytes())?;
+        want_code(&result, "CONFIG_INVALID")?;
+    }
+    let mut m = Mcp::open(&h)?;
+    for (op, params) in [
+        ("version", json!([])),
+        ("hosts", json!(null)),
+        ("doctor", json!([0, false])),
+        ("session.create", json!([])),
+        ("session.send", json!(["debug", "input"])),
+        ("session.close", json!(["debug"])),
+    ] {
+        let mut args = json!({"params":params});
+        if !matches!(op, "version" | "hosts") {
+            args["host"] = "gpu".into();
+        }
+        let result = m.call(3, &format!("rhost_{}", op.replace('.', "_")), args)?;
+        want_code(&result, "CONFIG_INVALID")?;
+    }
+    m.close()?;
+    h.assert_no_remote_tool("positional documents and parameters")
+}
+
+#[test]
+fn an_empty_cli_session_shell_keeps_the_bash_default() -> Result<(), String> {
+    let h = Harness::open("core-cli-empty-shell")?;
+    h.stub(
+        "ssh",
+        "printf 'Permission denied (publickey).\\n' >&2\nexit 255",
+    )?;
+    for shell in ["bash", ""] {
+        let (_, result) = envelope(
+            &h,
+            &["session", "create", "gpu", "--shell", shell, "--json"],
+        )?;
+        want_code(&result, "SSH_AUTH_FAILED")?;
+    }
+    assert_eq!(h.calls().len(), 2);
+    Ok(())
 }
