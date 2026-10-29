@@ -12,7 +12,7 @@ struct Host {
     binary: PathBuf,
     host: String,
     root: String,
-    local: PathBuf,
+    scratch: PathBuf,
 }
 fn required(name: &str) -> Result<String, String> {
     std::env::var(name)
@@ -60,17 +60,17 @@ impl Host {
         if !root.starts_with("/tmp/rhost-helper-live-") || root.contains(['\n', '\r']) {
             return Err("unsafe remote test directory".into());
         }
-        let local = std::env::temp_dir().join(format!(
+        let scratch = std::env::temp_dir().join(format!(
             "rhost-helper-live-{}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
-        std::fs::create_dir_all(&local).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
         Ok(Self {
             binary,
             host,
             root,
-            local,
+            scratch,
         })
     }
     fn spawn(&self, operation: &str, params: Value) -> Result<Child, String> {
@@ -78,8 +78,8 @@ impl Host {
             .args(["request", "--from", "-"])
             .env("RHOST_HELPER_CACHE_DIR", format!("{}/helper", self.root))
             .env("RHOST_REMOTE_STATE", format!("{}/state", self.root))
-            .env("RHOST_CACHE_DIR", self.local.join("transport"))
-            .env("RHOST_STATE_DIR", self.local.join("state"))
+            .env("RHOST_CACHE_DIR", self.scratch.join("transport"))
+            .env("RHOST_STATE_DIR", self.scratch.join("state"))
             .env("RHOST_NO_SOURCE_BUILD", "1")
             .env("RHOST_NO_DOWNLOAD", "1")
             .stdin(Stdio::piped())
@@ -165,7 +165,7 @@ impl Drop for Host {
             ])
             .stdin(Stdio::null())
             .output();
-        let _ = std::fs::remove_dir_all(&self.local);
+        let _ = std::fs::remove_dir_all(&self.scratch);
     }
 }
 
