@@ -26,6 +26,7 @@ mod edit;
 mod examples;
 mod exec;
 mod files;
+mod helper;
 mod hosts;
 mod inspect;
 mod mcp;
