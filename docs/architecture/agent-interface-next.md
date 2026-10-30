@@ -109,14 +109,17 @@ a separately mutable counter:
 | --- | --- |
 | Run with active owner or nonterminal/lost evidence | max(actual, 145 MiB) |
 | Exited Run with unowned lifetime lock | actual |
-| Active or nonterminal changeset | max(actual, 33 MiB) |
-| Terminal unowned changeset | max(actual, 33 MiB) |
+| Active or nonterminal changeset | max(actual, 41 MiB) |
+| Terminal unowned changeset | max(actual, 41 MiB) |
 | Any retained collection, including expired/failed/building | max(actual, 10 MiB) |
 
 Run bounds cover both immutable request/stdin copies, both 64 MiB streams and
 metadata. Legacy v5 monitors obey these same bounds. Exited leader evidence alone
 cannot release a reservation while the monitor can still drain output. Changeset
-bounds cover request, originals, replacements and metadata. Every retained
+bounds cover request, originals, replacements, one atomic archive rewrite and
+metadata. Explicit recovery reconciles only validated abandoned `.write-*`
+files under exclusive record ownership and fsyncs before further writes.
+This keeps repeated process deaths from accumulating unbounded rewrite copies. Every retained
 changeset keeps its full reservation because explicit recovery can allocate
 again even from a refused/applied terminal state. All pending/staging
 directories are charged. Unknown/corrupt accounting refuses new admission and

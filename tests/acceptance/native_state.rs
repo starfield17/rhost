@@ -185,3 +185,27 @@ fn pending_records_and_partial_tombstones_have_explicit_prune_receipts() -> Resu
     assert!(!base.join(format!(".pruned-{tomb}")).exists());
     Ok(())
 }
+
+#[test]
+fn invalid_optional_state_parameters_never_reach_ssh() -> Result<(), String> {
+    let h = Harness::open("state-invalid-params")?;
+    for (op, params) in [
+        (
+            "run.list",
+            json!({"generation":"a".repeat(32),"limit":null}),
+        ),
+        (
+            "state.list",
+            json!({"generation":"a".repeat(32),"kind":"queries","cursor":null}),
+        ),
+        (
+            "state.prune",
+            json!({"generation":"a".repeat(32),"kind":"runs","ids":[format!("+123-{}","a".repeat(64))]}),
+        ),
+    ] {
+        let refused = request(&h, op, params)?;
+        assert_eq!(refused["error"]["code"], "CONFIG_INVALID", "{refused}");
+        assert_eq!(refused["error"]["recovery"]["submission"], "not_submitted");
+    }
+    h.assert_no_remote_tool("invalid state parameters")
+}
