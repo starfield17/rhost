@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/starfield17/rhost/schemas/result-v3.schema.json",
+  "$id": "https://github.com/starfield17/rhost/schemas/result-v4.schema.json",
   "title": "rhost result envelope v4",
   "type": "object",
   "required": [

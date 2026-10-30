@@ -1608,5 +1608,6 @@
         }
       }
     }
-  }
+  },
+  "$id": "https://github.com/starfield17/rhost/schemas/request-v4.schema.json"
 }
