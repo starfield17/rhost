@@ -11,7 +11,7 @@ lists local OpenSSH aliases; it is best-effort, not a host inventory.
 Choose the operation by its guarantees, then use its available interface.
 MCP tools take structured arguments; CLI provides streaming foreground exec,
 transfers and tunnels. Use the names/schemas advertised by the connected server.
-Missing tools can mean an older binary; do not repeat an uncertain mutation
+Missing tools can mean an older binary or a configured tool group; do not repeat an uncertain mutation
 through another interface to test whether it worked.
 
 ## Read only the guide needed now
@@ -34,8 +34,9 @@ native operations.
 ## Keep the evidence
 
 - Use CLI `--json` for hashes and programmatic decisions. MCP returns the same
-  schema-v3 envelope in `structuredContent`. Branch on `error.code` and the
-  operation's completion/mutation evidence, never English messages alone.
+  schema-v4 envelope in `structuredContent`. Branch on `error.code` and the
+  operation's completion/mutation evidence plus `error.recovery`, never English
+  messages alone.
 - Replacing or patching a file requires an observed hash. Re-read and merge on
   conflict; a changeset has no global atomic visibility or automatic rollback.
 - Run wait/cancellation ends observation. Session exec timeout may interrupt its

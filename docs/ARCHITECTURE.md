@@ -84,7 +84,7 @@ recoverable named edits without workspace or Git ownership.
 
 For getting started, use the [README](../README.md). The
 [contract ledger](CONTRACT.md) owns required behavior and executable evidence;
-the [schema](../schemas/result-v3.schema.json) owns JSON shape.
+the [schema](../schemas/result-v4.schema.json) owns JSON shape.
 [Maintenance policy](MAINTENANCE.md) owns compatibility, change risk and release
 requirements; the migration record is frozen history.
 

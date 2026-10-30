@@ -1,6 +1,6 @@
 # Maintenance policy
 
-v5 uses one schema-v3 envelope for all public JSON operations. Changes are conservative by default:
+v5 uses one schema-v4 envelope for all public JSON operations. Changes are conservative by default:
 the contract and existing gates define the product, and implementation work does
 not grant permission to reinterpret them.
 
@@ -11,7 +11,11 @@ compatibility generation, not a release train.
 
 A producer may keep its current schema version only when every DTO shape it can
 emit is accepted by the published compatibility validator for that generation.
-All actual DTO cases must pass the active schema v3. Preserved v4 payloads
+All actual DTO cases must pass the active schema v4. Published v5.1.0 schema-3
+request/result validators and fixtures remain frozen and digest-protected.
+Schema 4 adds required recovery evidence and replaces search/list shapes; callers
+must update their validator and continuation handling. Durable v5 Run and
+changeset records remain compatible. Preserved v4 payloads
 projected onto their frozen v2 envelope continue to pass the published validator
 in `schemas/compat/result-v2-v4.1.0.schema.json`. That baseline is a
 byte-for-byte copy from the v4.1.0 tag, protected by a SHA-256 assertion and CI;

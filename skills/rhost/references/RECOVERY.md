@@ -4,6 +4,14 @@ Read `ok`, `error.code`, `error.retryable`, and the operation's `data`. English
 messages are diagnostics, not a branching interface. Missing evidence remains
 unknown rather than being converted into success or safe retry permission.
 
+Schema 4 supplies `error.recovery`: stage (validation/preparation/submission/
+observation/operation/unknown), submission (not_submitted/may_have_submitted/
+confirmed), and action. Confirmed submission does not mean successful completion.
+`retry_request` applies to known non-submission; `retry_observation` repeats a read;
+`retry_same_request` requires the unchanged retained Run/changeset identity and
+intent. `inspect_state` grants no replay permission. Private helper preparation
+may have effects while the requested capability remains not_submitted.
+
 The sections below are the RECOVERY table: every `error.code` the binary can
 return, grouped by cause, with what it does and does not prove. Branch on the
 code, then confirm state with the operation named here. `--help` and
@@ -194,3 +202,14 @@ MCP lost the response.
 `CONTEXT_UNAVAILABLE` means the native helper cannot establish that identity.
 Inspect unguarded metadata and decide which task assumptions to rebuild before
 submitting another mutation; rhost does not update the guard automatically.
+
+## Bounded admission and collections
+
+- `MCP_BUSY`: local queue capacity was refused before dispatch. Retry after
+  capacity returns, subject to the typed recovery evidence.
+- `STATE_CAPACITY_EXCEEDED`: new record reservation was refused. Inspect usage
+  and explicit prune previews; do not delete project directories to repair rhost state.
+- `QUERY_EXPIRED`: retained collection lifetime ended. Explicitly start a new
+  query and account for newly discovered paths.
+- `QUERY_NOT_FOUND`: the collection is no longer retained. Do not interpret a
+  missing collection as an empty search result.

@@ -40,9 +40,10 @@ install -m 755 target/release/rhost ~/.local/bin/rhost
 
 `make build-release` uses locked dependencies and stamps commit/build date into
 `rhost version --json`. `make build` provides the debug development binary.
-v5.1.0 adds discovery, diagnostic and persistent-session MCP tools alongside the
-native Run/file tools introduced in v5.0.0. Inspect the connected server's tool
-list when the installed binary and skill differ.
+v5.2.0 adds bounded independent MCP control admission, tool groups, structured
+recovery evidence, paginated state discovery and durable path collections.
+Public JSON moves to schema 4; schema-3 callers must update their validators.
+Inspect the connected server's tool list when the installed binary and skill differ.
 
 ## Connect an agent
 
@@ -61,6 +62,9 @@ For Claude Code:
 ```bash
 claude mcp add --transport stdio --scope local rhost -- rhost mcp
 ```
+
+Limit advertised tools at startup with `rhost mcp --tools runs,files`
+(default `all`); discovery and invocation use the same filter.
 
 A generic stdio client launches command `rhost` with args `["mcp"]`. Use an
 absolute binary path when a GUI client's PATH differs. See the
@@ -117,7 +121,7 @@ It never installs packages. See [preparation policies](skills/rhost/references/N
 
 ## Preserve completion and mutation evidence
 
-All public JSON uses **schema v3**. CLI JSON writes one result to stdout without
+All public JSON uses **schema v4**. CLI JSON writes one result to stdout without
 mixing command output or progress into it. MCP returns the same versioned
 envelope in structuredContent. Branch on error.code and operation-specific data.
 
@@ -125,7 +129,7 @@ For one JSON operation without MCP:
 
 ```bash
 rhost request --from - <<'EOF'
-{"schema_version":3,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
+{"schema_version":4,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 EOF
 ```
 
@@ -140,10 +144,21 @@ same valid identity and payload. Session exec timeout has different semantics
 and may interrupt the pane. Cancellation of an MCP call does not itself stop a
 Run or send a terminal key. See the workflow guides before retrying effects.
 
+Errors include `recovery.stage`, `recovery.submission` and `recovery.action`.
+These distinguish preparation from ambiguous submission without parsing prose.
+`retry_same_request` requires retained immutable intent; it never restarts lost work.
+
 File replacement and patches require an observed hash. Structured search and
-read-many return hashes and bounded observations. Named changesets preflight all
+read-many return hashes and bounded observations. `fs.find` discovers paths without
+content reads. Search/find accept explicit `exclude_dirs` and return expiring
+collection cursors; later search pages read fresh content only for new paths. Named changesets preflight all
 files and journal individual changes; they have no global atomic visibility or
 automatic rollback. Validation is a separate Run, and recovery is explicit.
+
+`run.list`, `fs.changeset.list` and `state.list` discover retained records in
+pages. `state.usage` reports logical/reserved bytes; `state.prune` takes explicit
+IDs and defaults to a preview. Only rhost records/logs are managed. See the
+[file and state guide](skills/rhost/references/FILES.md#state-discovery-and-retention).
 
 When evidence is missing, completion stays unknown. Confirmed cleanup does not
 undo side effects. Consult [recovery](skills/rhost/references/RECOVERY.md) and,
@@ -160,7 +175,7 @@ scheduler when those lifecycle guarantees are needed.
 - [Architecture and ownership](docs/ARCHITECTURE.md)
 - [Contract and executable evidence](docs/CONTRACT.md)
 - [Agent skill](skills/rhost/SKILL.md)
-- [Result schema](schemas/result-v3.schema.json) and [request schema](schemas/request-v3.schema.json)
+- [Result schema](schemas/result-v4.schema.json) and [request schema](schemas/request-v4.schema.json)
 - [Contributor rules](AGENTS.md) and [maintenance policy](docs/MAINTENANCE.md)
 
 ```bash

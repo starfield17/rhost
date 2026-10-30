@@ -1,6 +1,6 @@
 {
   "name": "rhost",
-  "version": "5.2.0-dev.0",
+  "version": "5.2.0",
   "description": "Operate SSH-reachable hosts with the installed rhost CLI or configured stdio MCP tools.",
   "author": {
     "name": "starfield17",

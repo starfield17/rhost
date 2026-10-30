@@ -1,7 +1,7 @@
 # Agent interface development contract
 
-Status: planned for the local 5.2.0-dev.0 development tree. This is not a
-published release. Schema 4 replaces schema 3 for public delivery; the published
+Status: implemented for the v5.2.0 candidate. Formal publication requires the
+complete local, CI and exact-artifact real-host evidence. Schema 4 replaces schema 3 for public delivery; the published
 v5.1.0 schemas and fixtures remain immutable. Existing v5 Run and changeset
 records remain readable and recoverable. Project directories and Git remain
 caller-owned.

@@ -96,8 +96,8 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   tests. [Architecture](docs/ARCHITECTURE.md) explains boundaries and reasons.
   `scripts/check-structure.py` owns dependency policy; `make structure` checks it.
 - [Contract ledger](docs/CONTRACT.md) owns required semantics and executable
-  evidence; `schemas/result-v3.schema.json` owns the active wire shape. Each
-  capability's DTO maps its values into v3; `src/wire/` owns the shared envelope
+  evidence; `schemas/result-v4.schema.json` owns the active wire shape. Each
+  capability's DTO maps its values into v4; `src/wire/` owns the shared envelope
   and `src/domain/` stays pure. `session attach` is refused with `USAGE_ERROR`.
 - [Maintenance policy](docs/MAINTENANCE.md) owns compatibility, MSRV, release,
   change risk and regression-memory policy. `make check` runs the complete local

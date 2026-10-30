@@ -119,15 +119,20 @@ evidence even on failure; see [RECOVERY.md](RECOVERY.md).
 ## Search, read-many and named changesets
 
 
-`fs.search` params: an explicit `root`, optional POSIX `glob`, single-line
-literal `pattern`, result/match/text limits and collection-bound `cursor`.
-`data.items[]` returns file paths, full hashes and line matches from the same
-observed bytes. `matches_truncated` means that file's match list was shortened;
-the next cursor advances beyond that file. Scans are bounded by entries/depth,
-8 MiB per file and 64 MiB actual read bytes. Check `incomplete`, `reasons` and
-`skipped`; incomplete scans have no continuation. Symlinks are excluded. The
-glob uses POSIX fnmatch over relative paths; `*` can cross `/` and match dots,
-and `**` has no special recursive meaning.
+`fs.find` discovers regular-file paths without reading contents; `fs.search`
+returns literal matches with hashes from the same observed bytes. Both take
+root/glob, explicit root-relative `exclude_dirs`, result budgets, optional cursor
+and `collection_ttl_seconds` (default 600, maximum 3600). No implicit ignores apply.
+
+The first page fixes discovered paths, not a directory snapshot. Resume with
+`next_cursor` and the same root/glob/pattern/exclusions; page budgets may change.
+Later search pages read new paths with fresh hashes. Removed/unreadable paths are
+explicit skips; new paths need a new query. Check `incomplete`, `reasons`, `skipped`
+and per-file `matches_truncated`; an incomplete page may still have a continuation.
+Expired, missing or corrupt collections refuse rather than silently restarting.
+Traversal caps at 100000 entries/paths, depth 32 and an 8 MiB path manifest;
+content reads cap at 8 MiB/file and 64 MiB/page. POSIX fnmatch `*` can cross `/`
+and match dots; `**` has no special recursive meaning.
 
 `fs.read_many` takes up to 64 explicit `paths`, optional line range and one
 aggregate `max_bytes` budget. `data.items[]` preserves input order with per-file
@@ -148,11 +153,31 @@ versions and preserves later external edits. Read status, per-file states,
 forward application; rollback does not erase that history. Pruning explicitly
 ends recovery for an eligible expired terminal journal.
 
-CLI views use `rhost fs changeset <apply|query|recover|prune> gpu --from params.json`,
-`rhost fs search gpu --from params.json` and `rhost fs read-many gpu --from params.json`.
+CLI views use `rhost fs changeset <apply|query|recover|prune|list> gpu --from params.json`,
+`rhost fs search gpu --from params.json`, `rhost fs find gpu --from params.json` and `rhost fs read-many gpu --from params.json`.
 Their input is the operation's params object. Request/MCP use the same semantics.
 
 There is no global multi-file atomic visibility or automatic rollback. Run
 validation separately and explicitly request recovery. rhost creates no project,
 branch, worktree or snapshot; manage those through your own chosen tools.
 
+
+## State discovery and retention
+
+`run.list`, `fs.changeset.list` and `state.list` return `items` and `next_cursor`;
+pass the same generation/kind with that cursor. Pages default to 64, maximum 256.
+Items carry their own evidence errors; a list is not a snapshot. For `state.list`,
+kind is `runs`, `changesets` or `queries`. These operations are available through
+JSON requests and MCP; `run list` also accepts `--limit` and `--cursor`.
+
+`state.usage` takes generation and reports logical bytes, reserved bytes, counts,
+limits and `complete`. Incomplete accounting refuses new registrations. Admission
+caps retained records at 16384 and reserved logical state at 8 GiB, with at most
+32 queries. Expiry does not delete records automatically.
+
+`state.prune` takes generation, kind and 1–64 explicit IDs. Default `dry_run:true`
+previews eligibility without advancing the clock or deleting. Submit the same
+IDs with `dry_run:false` only when their retention is no longer needed. Check every
+receipt and `failed`; partial cleanup leaves discoverable tombstones for explicit
+retry. Active/lost Runs and partial/unknown changesets remain protected.
+Only rhost records and logs are affected; manage project/Git directories yourself.

@@ -49,7 +49,7 @@ unrelated client settings.
 ## Discover and call tools
 
 Use the connected server's tool list; clients may add a server prefix to names.
-v5.1.0 provides local discovery, diagnostic and session tools alongside the
+v5.2.0 uses schema 4, adds state discovery and path collections, and provides local discovery, diagnostic and session tools alongside the
 native helper/Run/file tools available in v5.0.0. Older clients expose a smaller
 set; use advertised tools or the corresponding CLI operation.
 
@@ -61,6 +61,7 @@ set; use advertised tools or the corresponding CLI operation.
 | `rhost_helper_prepare`, `rhost_metadata` | host, empty params; native preparation or read-only namespace observation. |
 | `rhost_run_*` | [RUNS.md](RUNS.md): recoverable execution and separate byte streams. |
 | `rhost_fs_*` | [FILES.md](FILES.md): observations, CAS edits and named recovery. |
+| `rhost_state_*` | Explicit state discovery, usage and prune preview; [FILES.md](FILES.md#state-discovery-and-retention). |
 | `rhost_session_*` | [SESSIONS.md](SESSIONS.md): persistent terminal interaction. |
 
 For example, `rhost_fs_read` takes:
@@ -69,7 +70,7 @@ For example, `rhost_fs_read` takes:
 {"host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 ```
 
-`structuredContent` is the schema-v3 envelope. Inspect operation-specific
+`structuredContent` is the schema-v4 envelope. Inspect operation-specific
 completion and partial-result fields. A successful Run observation can contain
 a failed child exit; an error can still contain effects or useful data.
 
@@ -87,7 +88,7 @@ and streaming/pipelines belong to CLI. `session attach` remains refused.
 
 ```bash
 rhost request --from - <<'EOF'
-{"schema_version":3,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
+{"schema_version":4,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 EOF
 ```
 
@@ -104,7 +105,11 @@ probes. Omitting it makes no pinning claim.
 
 ## Cancellation and context
 
-At most 16 observations are admitted. Canceled queued work never submits later.
+Ordinary calls have 16 active slots and 32 queue places (32 MiB queued arguments).
+Control calls (`run.signal`, session recover/close) have two independent slots
+and eight queue places (4 MiB). Local discovery has its own two/eight capacity.
+`MCP_BUSY` means bounded admission refused before submission. Canceled queued work
+never submits later. Control still obeys remote ownership locks and network limits.
 Cancellation/EOF stop observers, not Runs or terminal panes; an already submitted
 session timeout may still interrupt if its helper continues. The SDK may suppress
 a canceled call's reply, so retain identity and inspect through a new call.
@@ -114,3 +119,16 @@ Read only the workflow reference needed now. Skill disclosure and MCP tool
 discovery are separate: clients control eager versus deferred tool definitions.
 See [Claude Code tool search](https://code.claude.com/docs/en/mcp#scale-with-mcp-tool-search)
 and Codex's tool filters. Connecting MCP does not imply zero context cost.
+
+## Select tool groups
+
+Launch `rhost mcp --tools runs,files` to expose only selected groups; options are
+`runs`, `files`, `sessions`, `diagnostics`, or default `all`. Base version, metadata,
+helper preparation and state-management tools remain available. The same filter
+rejects calls to hidden tools. Restart/reconnect to change the selection.
+
+All tools carry conservative behavior annotations. Native reads may prepare a
+helper/cache, so their annotations do not promise a side-effect-free environment.
+Annotations are hints, not authorization. Results retain both structured JSON and
+serialized text as recommended by the MCP tools specification. Wire-byte savings
+from specialized schemas do not establish a particular client's token savings.

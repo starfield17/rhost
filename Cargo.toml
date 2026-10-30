@@ -1,6 +1,6 @@
 [package]
 name = "rhost"
-version = "5.2.0-dev.0"
+version = "5.2.0"
 edition = "2024"
 rust-version = "1.88.0"
 publish = false

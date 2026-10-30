@@ -84,3 +84,11 @@ A nonzero child exit can accompany `ok:true`; inspect `data.run.completion`.
 Bounded key deduplication does not make external side effects exactly once.
 For helper build/cache policies, load [NATIVE.md](NATIVE.md#preparation-policies)
 only when needed.
+
+## Rediscover retained work
+
+`run.list` is a bounded page object with `items` and `next_cursor`, not an array.
+Pass generation, optional limit (1–256) and the returned cursor to continue.
+Inspect per-item evidence errors and use `run.poll` for full Run/output evidence.
+For namespace usage and explicit prune preview, read
+[FILES.md](FILES.md#state-discovery-and-retention).

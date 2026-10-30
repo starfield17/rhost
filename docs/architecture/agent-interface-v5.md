@@ -1,7 +1,9 @@
 # Native agent interface (v5)
 
-Status: implemented, with process-level acceptance and real Linux SSH
-verification. The active public envelope is schema v3 for every operation.
+Status: implemented v5.0/v5.1 baseline, with process-level acceptance and real
+Linux SSH verification. That baseline uses schema v3. The
+[v5.2 interface contract](agent-interface-next.md) supersedes its public wire,
+inspection and state-discovery details with schema v4.
 Frozen v2 payload compatibility remains covered independently.
 
 ## Boundaries and owners

@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
-  "release": "v5.1.0",
+  "source_digest": "ac6f4c7de7856a6a87b5ec24ae987a746a2c8b1426d2f90946c3065455e5d7aa",
+  "release": "v5.2.0",
   "toolchain": {
     "llvm_source_commit": "7a941dfb2877a0b8cf30323fefa85ad019e0b0f5",
     "musl_package": "musl-dev-1.2.5-r13",
@@ -11,25 +11,25 @@
       "x86_64": "2ca496dd68c0b340b50cf9940bc2f3312eac8b56ec2d3284a621be6f0c09ffb1"
     },
     "source_commits": {
-      "darwin-aarch64": "42a14f3a44b24ff5dc72a41a9fa90f714250c69d",
-      "linux-aarch64": "a96f56ea8afbe20b0ecdb7bd59a8120df0ce8707",
-      "linux-x86_64": "a96f56ea8afbe20b0ecdb7bd59a8120df0ce8707"
+      "darwin-aarch64": "a1a5073d08b1a91b5051871f6c7a6f6a9733fefb",
+      "linux-aarch64": "a1a5073d08b1a91b5051871f6c7a6f6a9733fefb",
+      "linux-x86_64": "a1a5073d08b1a91b5051871f6c7a6f6a9733fefb"
     },
     "configurations": {
       "darwin-aarch64": {
         "profile": "c99-os-v1",
         "target": "darwin-aarch64",
-        "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
+        "source_digest": "ac6f4c7de7856a6a87b5ec24ae987a746a2c8b1426d2f90946c3065455e5d7aa",
         "compiler_sha256": "ed6f5284033aa2aae6a58427c25ba3ab119947b40365627b24e5d51a4b70a1cd",
         "strip_sha256": "ed6f5284033aa2aae6a58427c25ba3ab119947b40365627b24e5d51a4b70a1cd",
-        "compiler_version": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+        "compiler_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
         "abi": "native-darwin",
         "deployment_target": "13.0"
       },
       "linux-aarch64": {
         "profile": "c99-os-v1",
         "target": "linux-aarch64",
-        "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
+        "source_digest": "ac6f4c7de7856a6a87b5ec24ae987a746a2c8b1426d2f90946c3065455e5d7aa",
         "compiler_sha256": "a3f510aa37c9a3082649435e39e3f7c808b6696bb62f077b141c271b5aa783a2",
         "strip_sha256": "9b4b6714ccf3c4b7cdb7f38c5a868a0bb064165e6ff9ebee1a34b7bf7785f3eb",
         "compiler_version": "Homebrew clang version 23.1.4",
@@ -41,7 +41,7 @@
       "linux-x86_64": {
         "profile": "c99-os-v1",
         "target": "linux-x86_64",
-        "source_digest": "a5c9673b738d987fee143f56f11ffa5a06ac8252edc8208c229cdb04c7531d37",
+        "source_digest": "ac6f4c7de7856a6a87b5ec24ae987a746a2c8b1426d2f90946c3065455e5d7aa",
         "compiler_sha256": "a3f510aa37c9a3082649435e39e3f7c808b6696bb62f077b141c271b5aa783a2",
         "strip_sha256": "9b4b6714ccf3c4b7cdb7f38c5a868a0bb064165e6ff9ebee1a34b7bf7785f3eb",
         "compiler_version": "Homebrew clang version 23.1.4",
@@ -55,27 +55,27 @@
   "artifacts": [
     {
       "target": "darwin-aarch64",
-      "asset": "rhost-helper_5.1.0_darwin-aarch64",
-      "sha256": "1883bbd1c5e23c16846cab9fbae7b965f4a6189d3c046fc2cfcaae876252d40f",
-      "size": 105280,
+      "asset": "rhost-helper_5.2.0_darwin-aarch64",
+      "sha256": "195ec8617e66957e1dc5e1a2285c6af1218f9e22b0c6794bb8e9808db89b76d3",
+      "size": 122288,
       "role": "fixture",
-      "build_config": "aaf8a5f64c3c0a9c51cf4eb4909d3e964514a36ddba1891288eb523ae785b088"
+      "build_config": "a632eac89e3cd42aa611f9c5e14a3ebf3296b95f410c7018eee4a8ac128d0d25"
     },
     {
       "target": "linux-aarch64",
-      "asset": "rhost-helper_5.1.0_linux-aarch64",
-      "sha256": "c1dc059842b7feeebb96ba2454a0dce0df0c62de23066b7aecee6af42f109089",
-      "size": 140456,
+      "asset": "rhost-helper_5.2.0_linux-aarch64",
+      "sha256": "1350c486e73048d58208b2f73609d949ca587e193080b83de18bf3651d5b3d62",
+      "size": 160472,
       "role": "runtime",
-      "build_config": "b71d37a9ceef03fb22d5c36f997768d93534a5638b9e18bd207fa1f6afdbb085"
+      "build_config": "45ad6a37897a5b02e72d7d1b882b26f6f213e01f92211a07749f7dfce49a2b57"
     },
     {
       "target": "linux-x86_64",
-      "asset": "rhost-helper_5.1.0_linux-x86_64",
-      "sha256": "df043941b1545cda6ec7017890f86ff226fc164fa2cf51dc21f2f41022ae4430",
-      "size": 136776,
+      "asset": "rhost-helper_5.2.0_linux-x86_64",
+      "sha256": "9a30fe8d017f0ddd64de78fd016743609b2fc3c1507873fb1cfce2fd738c7e9b",
+      "size": 158248,
       "role": "runtime",
-      "build_config": "38600f621c7edd7e95fcc847aaf0bedf754df64bc91b2a1d2992ee0854515247"
+      "build_config": "45cb1ac63ad30a7e74eca6a2466099d365b320dcefc47620b9e19c21eabe2400"
     }
   ]
 }
