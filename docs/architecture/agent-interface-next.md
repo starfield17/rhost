@@ -62,7 +62,9 @@ fingerprint binds operation, normalized root, glob, literal pattern and sorted
 exclusions; page size/budgets are not fingerprint fields. Default lifetime is
 600 seconds, maximum 3600, against the durable effective remote clock. A cursor
 binds generation, collection ID and the next manifest record byte offset.
-Offsets must be valid record boundaries; IDs, fingerprint, manifest size and
+Each path record has a checksum bound to its query identity, ordinal and offset.
+Stored paths must have canonical root-contained components. Index and record
+boundaries are checked locally to each page. Offsets must be valid record boundaries; IDs, fingerprint, manifest size and
 regular-file ownership are validated before reading a page. Expired, missing or
 corrupt collections refuse continuation; they never silently start a new search.
 
@@ -109,7 +111,7 @@ a separately mutable counter:
 | Exited Run with unowned lifetime lock | actual |
 | Active or nonterminal changeset | max(actual, 33 MiB) |
 | Terminal unowned changeset | max(actual, 33 MiB) |
-| Any retained collection, including expired/failed/building | max(actual, 9 MiB) |
+| Any retained collection, including expired/failed/building | max(actual, 10 MiB) |
 
 Run bounds cover both immutable request/stdin copies, both 64 MiB streams and
 metadata. Legacy v5 monitors obey these same bounds. Exited leader evidence alone
@@ -127,7 +129,8 @@ reservation would exceed a limit. No background GC exists.
 default. It returns one bounded receipt per ID: eligibility, reason, deletion
 result and optional error. Eligibility requires expired Run completion plus an
 unowned monitor lock, an expired terminal changeset with no pending cleanup, or
-an expired unowned collection. Active/lost Runs and partial/unknown changesets
+an expired unowned collection. An expired unpublished pending registration with
+no active owner is also eligible; its identity survives missing metadata. Active/lost Runs and partial/unknown changesets
 are retained. The durable expiry clock is advanced before deletion authorization.
 
 Prune acquires namespace then record ownership without waiting while holding
@@ -174,5 +177,5 @@ and corrupt collections; discovery beyond 4096 records, partial prune receipts,
 crash/legacy reservation accounting and capacity refusal before effects; typed
 recovery across preparation/submission failures; filtered tools and equivalent
 smaller schemas. Exact helper binaries are built locally and verified through
-real Linux SSH, with sanitizer/allocation-failure complements. No helper is
-compiled in CI, uploaded or published by this local development task.
+real Linux SSH, with sanitizer/allocation-failure complements. No helper is compiled in CI. Formal v5.2.0 publication follows the existing
+exact-candidate procedure after all required evidence passes.

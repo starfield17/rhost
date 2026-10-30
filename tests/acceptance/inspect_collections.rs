@@ -75,3 +75,41 @@ fn cursor_boundaries_and_expired_collections_never_silently_restart() -> Result<
     assert_eq!(ask(&h, q)?["error"], "QUERY_EXPIRED");
     Ok(())
 }
+
+#[test]
+fn corrupted_path_records_and_indexes_are_refused_before_content_reads() -> Result<(), String> {
+    let h = Harness::open("collection-corruption")?;
+    create(&h, "tree/a", b"needle\n")?;
+    create(&h, "tree/b", b"needle\n")?;
+    let mut q = json!({"op":"search","root":h.path("tree"),"pattern":"needle","max_results":1});
+    let first = ask(&h, q.clone())?;
+    q["cursor"] = first["next_cursor"].clone();
+    let id = first["collection"]["id"].as_str().ok_or("id")?;
+    let directory = h.path(&format!("home/.local/state/rhost/v5/queries/{id}"));
+    let manifest = directory.join("paths");
+    let original = std::fs::read(&manifest).map_err(|e| e.to_string())?;
+    let mut bytes = original.clone();
+    let offset = first["next_cursor"]
+        .as_str()
+        .and_then(|s| s.rsplit(':').next())
+        .ok_or("offset")?
+        .parse::<usize>()
+        .map_err(|e| e.to_string())?;
+    bytes[offset + 4] ^= 1;
+    std::fs::write(&manifest, bytes).map_err(|e| e.to_string())?;
+    assert_eq!(ask(&h, q.clone())?["error"], "STATE_UNAVAILABLE");
+    std::fs::write(&manifest, original).map_err(|e| e.to_string())?;
+    let index = directory.join("paths.index");
+    let mut bytes = std::fs::read(&index).map_err(|e| e.to_string())?;
+    bytes[15] ^= 1;
+    std::fs::write(index, bytes).map_err(|e| e.to_string())?;
+    let refused = ask(&h, q)?;
+    assert!(
+        matches!(
+            refused["error"].as_str(),
+            Some("CONFIG_INVALID" | "STATE_UNAVAILABLE")
+        ),
+        "{refused}"
+    );
+    Ok(())
+}

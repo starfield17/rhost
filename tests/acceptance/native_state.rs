@@ -131,3 +131,57 @@ fn conservative_capacity_refusal_precedes_new_launch_registration() -> Result<()
     );
     Ok(())
 }
+
+#[test]
+fn pending_records_and_partial_tombstones_have_explicit_prune_receipts() -> Result<(), String> {
+    let (h, generation, now) = setup("state-prune-receipts")?;
+    let base = h.path("remote-state/queries");
+    std::fs::create_dir(&base).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    let good = format!("{}-{}", now - 1, "c".repeat(64));
+    let bad = format!("{}-{}", now - 1, "d".repeat(64));
+    let tomb = format!("{}-{}", now - 1, "e".repeat(64));
+    for name in [
+        format!(".pending-{good}"),
+        format!(".pending-{bad}"),
+        format!(".pruned-{tomb}"),
+    ] {
+        let path = base.join(name);
+        std::fs::create_dir(&path).map_err(|e| e.to_string())?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+    }
+    std::fs::write(base.join(format!(".pending-{bad}/foreign")), b"retain")
+        .map_err(|e| e.to_string())?;
+    std::fs::write(base.join(format!(".pruned-{tomb}/paths")), b"partial")
+        .map_err(|e| e.to_string())?;
+    let before = std::fs::read(h.path("remote-state/clock")).map_err(|e| e.to_string())?;
+    let preview = request(
+        &h,
+        "state.prune",
+        json!({"generation":generation,"kind":"queries","ids":[good,bad,tomb]}),
+    )?;
+    assert_eq!(preview["data"]["dry_run"], true, "{preview}");
+    assert_eq!(
+        std::fs::read(h.path("remote-state/clock")).map_err(|e| e.to_string())?,
+        before
+    );
+    assert!(base.join(format!(".pending-{good}")).exists());
+    let pruned = request(
+        &h,
+        "state.prune",
+        json!({"generation":generation,"kind":"queries","ids":[good,bad,tomb],"dry_run":false}),
+    )?;
+    assert_eq!(pruned["ok"], true, "{pruned}");
+    assert_eq!(pruned["data"]["failed"], 1, "{pruned}");
+    assert_eq!(pruned["data"]["items"][0]["pruned"], true);
+    assert_eq!(
+        pruned["data"]["items"][1]["error"]["code"],
+        "STATE_UNAVAILABLE"
+    );
+    assert_eq!(pruned["data"]["items"][2]["pruned"], true);
+    assert!(base.join(format!(".pending-{bad}/foreign")).is_file());
+    assert!(!base.join(format!(".pruned-{tomb}")).exists());
+    Ok(())
+}
