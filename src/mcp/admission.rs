@@ -48,14 +48,14 @@ impl Lane {
 pub(super) struct Admission {
     ordinary: Lane,
     control: Lane,
-    local: Lane,
+    discovery: Lane,
 }
 impl Default for Admission {
     fn default() -> Self {
         Self {
             ordinary: Lane::new(16, 32, 32 * 1024 * 1024),
             control: Lane::new(2, 8, 4 * 1024 * 1024),
-            local: Lane::new(2, 8, 4 * 1024 * 1024),
+            discovery: Lane::new(2, 8, 4 * 1024 * 1024),
         }
     }
 }
@@ -67,7 +67,7 @@ impl Admission {
         cancelled: impl std::future::Future<Output = ()>,
     ) -> Result<Option<OwnedSemaphorePermit>, ()> {
         let lane = match operation {
-            "version" | "hosts" => &self.local,
+            "version" | "hosts" => &self.discovery,
             "run.signal" | "session.recover" | "session.close" => &self.control,
             _ => &self.ordinary,
         };
