@@ -173,3 +173,12 @@ interrupt marker. Product behavior and time budgets are unchanged.
 The detach fixture completes naturally only after that independent release and
 waits for a subsequent shell completion boundary before closing. Close/recover
 correctly cannot bypass an active writer lock; cleanup must respect that owner.
+
+### Search continuation acceptance in schema 4
+
+The schema-3 whole-collection revision contract required rereading prior file
+contents and invalidated pagination on unrelated content changes. The requested
+large-repository contract instead binds immutable discovered paths and observes
+content afresh per visited file. Schema 3 stays frozen; FS-010 and FS-012 define
+schema 4 with explicit expiry, corruption and incomplete-traversal evidence.
+Acceptance changed separately before implementation.

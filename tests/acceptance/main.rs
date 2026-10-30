@@ -404,3 +404,5 @@ fn a_missing_command_file_fails_locally_before_any_submission() -> Result<(), St
     want_code(&value_sess, "CONFIG_INVALID")?;
     harness.assert_no_remote_tool("command-file")
 }
+
+mod recovery_evidence;

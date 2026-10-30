@@ -127,10 +127,7 @@
       "if": {
         "properties": {
           "operation": {
-            "enum": [
-              "run.list",
-              "run.prune"
-            ]
+            "const": "run.prune"
           }
         }
       },
@@ -862,6 +859,25 @@
         "properties": {
           "params": {
             "$ref": "#/$defs/fs_find"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "run.list"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "host"
+        ],
+        "properties": {
+          "params": {
+            "$ref": "#/$defs/state_page"
           }
         }
       }
