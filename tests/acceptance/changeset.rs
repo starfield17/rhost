@@ -293,3 +293,36 @@ fn process_death_keeps_partial_evidence_and_retry_never_continues_writing() -> R
     );
     Ok(())
 }
+
+#[test]
+fn recovery_reconciles_abandoned_atomic_writes_under_exclusive_ownership() -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let h = Harness::open("changeset-abandoned-writes")?;
+    let (generation, time) = prepare_native(&h)?;
+    let expiry = time + 3600;
+    let path = create(&h, "files/a", b"a")?;
+    let id = format!("{expiry}-{}", "a".repeat(64));
+    let refused = ask(
+        &h,
+        json!({"op":"changeset.apply","generation":generation,"key":id,"expires_unix":expiry,"changes":[{"op":"write","path":path,"if_hash":sha256_hex(b"later"),"content":"eAo="}]}),
+    )?;
+    assert_eq!(refused["record"]["status"], "refused", "{refused}");
+    let directory = h.path(&format!("home/.local/state/rhost/v5/changes/{id}"));
+    let stale = directory.join(format!(".write-{}", "b".repeat(32)));
+    std::fs::write(&stale, b"abandoned").map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&path, b"later").map_err(|e| e.to_string())?;
+    let dangerous = directory.join(format!(".write-{}", "c".repeat(32)));
+    std::os::unix::fs::symlink(&path, &dangerous).map_err(|e| e.to_string())?;
+    let q = json!({"op":"changeset.recover","generation":generation,"id":id,"action":"resume"});
+    let rejected = ask(&h, q.clone())?;
+    assert_eq!(rejected["error"]["code"], "STATE_UNAVAILABLE", "{rejected}");
+    assert_eq!(read_bytes(&path)?, b"later");
+    std::fs::remove_file(&dangerous).map_err(|e| e.to_string())?;
+    let resumed = ask(&h, q)?;
+    assert_eq!(resumed["record"]["status"], "applied", "{resumed}");
+    assert!(!stale.exists());
+    assert_eq!(read_bytes(&path)?, b"x\n");
+    Ok(())
+}
