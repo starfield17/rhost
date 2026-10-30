@@ -211,16 +211,24 @@ impl Helper<'_> {
         cap: usize,
         files: bool,
     ) -> Result<(Value, Vec<u8>), Error> {
-        match self.attempt(kind, input, budget, cap, files)? {
-            Attempt::Answer(identity, bytes) => return Ok((identity, bytes)),
-            Attempt::Missing if kind == 8 && !files => {
+        match self.attempt(kind, input, budget, cap, files) {
+            Ok(Attempt::Answer(identity, bytes)) => return Ok((identity, bytes)),
+            Ok(Attempt::Missing) if kind == 8 && !files => {
                 return Err(Error::new(
                     "HELPER_PREPARATION_FAILED",
                     "matching helper is absent; prepare explicitly",
                 )
                 .with_recovery(Recovery::preparation()));
             }
-            Attempt::Missing => (),
+            Ok(Attempt::Missing) => (),
+            // Explicit preparation can repair a known incompatible image only
+            // after a complete refusal proves no capability was dispatched.
+            Err(error)
+                if kind == 7
+                    && !files
+                    && error.code == "HELPER_INCOMPATIBLE"
+                    && error.recovery.submission() == "not_submitted" => {}
+            Err(error) => return Err(error),
         }
         self.ensure()
             .map_err(|e| e.with_recovery(Recovery::preparation()))?;
