@@ -1,6 +1,7 @@
 #include "files.h"
 #include "changes.h"
 #include "inspect.h"
+#include "registry.h"
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -31,7 +32,8 @@ static j_value *resolve(const j_value *q,const char *path,f_error *e){
 }
 static j_value *operation(const j_value *q,f_error *e){
     const char *op=j_string(j_get(q,"op"));if(!op)return f_fail(e,"CONFIG_INVALID","request needs an operation");
-    if(!strcmp(op,"search"))return f_search(q,e);
+    if(!strncmp(op,"state.",6))return rg_json(q,e);
+    if(!strcmp(op,"search") || !strcmp(op,"find"))return f_search(q,e);
     if(!strcmp(op,"read_many"))return f_read_many(q,e);
     if(!strncmp(op,"changeset.",10))return f_changes(q,op,e);
     int reading=!strcmp(op,"read"),writing=!strcmp(op,"write"),patch=!strcmp(op,"patch"),resolving=!strcmp(op,"resolve");

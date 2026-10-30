@@ -29,6 +29,7 @@ int ch_reconcile(ch_set *s);
 int ch_apply(ch_set *s,int rollback);
 int ch_cleanup(ch_set *s);
 int ch_prune(ch_set *s,uint64_t now);
+int ch_can_prune(int directory,const char *generation,const char *id);
 j_value *f_changes(const j_value *q,const char *op,f_error *e);
 int f_mode(const j_value *q,mode_t *out,f_error *e);
 int f_save(int fd,const void *data,size_t size);

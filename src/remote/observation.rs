@@ -16,7 +16,8 @@ impl<'a> Observation<'a> {
             Err(Error::new(
                 "REMOTE_COMMAND_CANCELLED",
                 "observation cancelled; inspect remote state before retrying",
-            ))
+            )
+            .with_recovery(crate::domain::Recovery::not_dispatched()))
         } else {
             Ok(())
         }

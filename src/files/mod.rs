@@ -7,6 +7,7 @@
 
 mod backend;
 mod changes;
+mod collection;
 pub mod command;
 mod dto;
 mod input;

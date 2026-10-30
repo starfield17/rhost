@@ -3,6 +3,7 @@ mod artifact;
 mod build;
 pub mod codec;
 mod prepare;
+pub mod registry;
 mod sources;
 mod target;
 mod verified;
@@ -53,10 +54,10 @@ impl<'a> Helper<'a> {
         cap: usize,
     ) -> Result<(Run, Vec<u8>, Vec<u8>), Error> {
         if (self.cancelled)() {
-            return Err(Error::new(
-                "REMOTE_COMMAND_CANCELLED",
-                "local observation cancelled",
-            ));
+            return Err(
+                Error::new("REMOTE_COMMAND_CANCELLED", "local observation cancelled")
+                    .with_recovery(crate::domain::Recovery::not_dispatched()),
+            );
         }
         let mut stdout = Recorder::new(cap);
         let mut stderr = Recorder::new(cap);

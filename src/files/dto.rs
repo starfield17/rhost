@@ -234,4 +234,5 @@ pub fn file_failure(
         error.retryable,
         error.mutation,
     )
+    .with_recovery(error.recovery)
 }

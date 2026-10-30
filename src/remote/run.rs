@@ -19,7 +19,7 @@ pub(crate) fn internal(message: impl Into<String>) -> Error {
 /// its status is the caller's to interpret.
 fn submission(outcome: &ExecOutcome) -> Option<Error> {
     let failure = outcome.failure()?;
-    Some(match failure {
+    let error = match failure {
         ExecFailure::Interrupted(Interruption::Timeout) => Error::new(
             "REMOTE_COMMAND_TIMEOUT",
             "the operation exceeded its timeout; remote state is unknown",
@@ -56,7 +56,21 @@ fn submission(outcome: &ExecOutcome) -> Option<Error> {
                 "a required remote command is unavailable",
             ),
         },
-    })
+    };
+    Some(error.with_recovery(match failure {
+        ExecFailure::BeforeSubmission(PreExecFailure::Usage | PreExecFailure::Config) => {
+            crate::domain::Recovery::invalid()
+        }
+        ExecFailure::BeforeSubmission(_) => crate::domain::Recovery::preparation(),
+        _ => crate::domain::Recovery::inspect(
+            crate::domain::Phase::Submission,
+            if matches!(outcome.execution(), Execution::Completed(_)) {
+                crate::domain::Submission::Confirmed
+            } else {
+                crate::domain::Submission::MayHaveSubmitted
+            },
+        ),
+    }))
 }
 
 /// One remote run's outcome: what it printed, whether it completed, and why not.

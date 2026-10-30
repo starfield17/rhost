@@ -1,5 +1,6 @@
 #define _XOPEN_SOURCE 700
 #include "state.h"
+#include "registry.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -100,9 +101,8 @@ static int submit(uint32_t kind,rh_reader *r) {
         char *resolved=realpath(context,NULL);free(expanded);
         if(!resolved){error="CONFIG_INVALID";goto refused;}
         free(q.cwd);q.cwd=resolved;
-        char random[33],staging[64];
-        if(!rh_random(random,16)){error="STATE_UNAVAILABLE";goto refused;}
-        snprintf(staging,sizeof staging,".stage-%s",random);
+        error=rg_capacity(&s,0);if(error)goto refused;
+        char staging[96];snprintf(staging,sizeof staging,".pending-%s",q.key);
         if(mkdirat(s.runs,staging,0700)<0){error="STATE_UNAVAILABLE";goto refused;}
         directory=openat(s.runs,staging,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
         if(directory<0){error="STATE_UNAVAILABLE";goto refused;}
@@ -191,9 +191,8 @@ int rh_runs(uint32_t kind,rh_reader *r) {
         }else if(kind==6 && expiry<=now && status.state==4) {
             int lock=openat(directory,"owner.lock",O_RDWR|O_NOFOLLOW|O_CLOEXEC);
             if(lock>=0 && flock(lock,LOCK_EX|LOCK_NB)==0) {
-                const char *names[]={"request","fingerprint","stdin","stdout","stderr","status","control.sock","owner.lock"};
-                int removed=1;for(unsigned i=0;i<sizeof names/sizeof names[0];i++)if(unlinkat(directory,names[i],0)<0 && errno!=ENOENT)removed=0;
-                if(!removed || unlinkat(s.runs,entry->d_name,AT_REMOVEDIR)<0 || fsync(s.runs)<0)failed=1;
+                f_error deletion={NULL,NULL,"not_applied"};
+                if(!rg_remove(&s,0,entry->d_name,directory,&deletion))failed=1;
                 else {rh_text(&records,entry->d_name);count++;}
             }
             if(lock>=0)close(lock);

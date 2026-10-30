@@ -169,7 +169,69 @@ fn bundle(source: &Value, mut selected: Value) -> Result<Value, String> {
     if !b.definitions.is_empty() {
         selected["$defs"] = Value::Object(b.definitions);
     }
+    compact(&mut selected);
     Ok(selected)
+}
+/// Walk schema positions only: property names and const/enum data are opaque.
+fn compact(v: &mut Value) {
+    let Some(m) = v.as_object_mut() else {
+        return;
+    };
+    for key in ["title", "description", "$comment", "examples", "$schema"] {
+        m.remove(key);
+    }
+    for key in [
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+    ] {
+        if let Some(children) = m.get_mut(key).and_then(Value::as_object_mut) {
+            for child in children.values_mut() {
+                compact(child);
+            }
+        }
+    }
+    for key in ["allOf", "anyOf", "oneOf", "prefixItems"] {
+        if let Some(children) = m.get_mut(key).and_then(Value::as_array_mut) {
+            for child in children {
+                compact(child);
+            }
+        }
+    }
+    for key in [
+        "if",
+        "then",
+        "else",
+        "items",
+        "additionalProperties",
+        "propertyNames",
+        "contains",
+        "not",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+    ] {
+        if let Some(child) = m.get_mut(key) {
+            compact(child);
+        }
+    }
+    if let Some(children) = m.get_mut("allOf").and_then(Value::as_array_mut) {
+        let mut unique = Vec::new();
+        for child in std::mem::take(children) {
+            if !unique.contains(&child) {
+                unique.push(child);
+            }
+        }
+        *children = unique;
+    }
+    if m.len() == 1
+        && m.get("allOf")
+            .and_then(Value::as_array)
+            .is_some_and(|a| a.len() == 1)
+    {
+        *v = m["allOf"][0].clone();
+    }
 }
 pub fn output(source: &Value, op: &str) -> Result<Value, String> {
     let branches = ["legacy", "native"]

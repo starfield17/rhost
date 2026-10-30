@@ -10,6 +10,8 @@ typedef struct {
 int rh_random(char *out,size_t bytes);
 int rh_directory(const char *path,int create);
 int rh_atomic(int directory,const char *name,const void *data,size_t size);
+/* Caller holds exclusive record ownership; never traverse or follow a temp. */
+int rh_clear_atomic(int directory);
 int rh_file(int directory,const char *name,unsigned char **data,size_t *size,size_t limit);
 int rh_state_open(rh_state *s,int create);
 void rh_state_close(rh_state *s);

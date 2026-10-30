@@ -126,7 +126,10 @@ impl HelperRefusal {
 /// an error, which the caller reports as `INTERNAL` rather than a code an agent
 /// might branch on.
 pub fn known_refusal_code(code: &str) -> Option<&'static str> {
-    const CODES: [&str; 18] = [
+    const CODES: [&str; 21] = [
+        "STATE_CAPACITY_EXCEEDED",
+        "QUERY_EXPIRED",
+        "QUERY_NOT_FOUND",
         "NAMESPACE_MISMATCH",
         "IDEMPOTENCY_CONFLICT",
         "REQUEST_EXPIRED",

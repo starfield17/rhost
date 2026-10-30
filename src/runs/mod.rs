@@ -20,6 +20,11 @@ pub fn execute_params(
     cancelled: &dyn Fn() -> bool,
     boot_guard: Option<&crate::domain::BootId>,
 ) -> Result<Value, Error> {
+    if operation == "run.list" || operation.starts_with("state.") {
+        return crate::helper::registry::execute(
+            client, host, operation, params, cancelled, boot_guard,
+        );
+    }
     let prepared = request::prepare(operation, host, params)?;
     let helper = Helper::new(client, &prepared.host)
         .with_cancellation(cancelled)

@@ -24,6 +24,8 @@ pub static FLAGS: &[FlagSpec] = &[
     FlagSpec::value("stdout-since", true, "stdout source-byte cursor"),
     FlagSpec::value("stderr-since", true, "stderr source-byte cursor"),
     FlagSpec::value("max-bytes", true, "per-stream page budget; default 4096"),
+    FlagSpec::value("limit", true, "state page size; default 64, maximum 256"),
+    FlagSpec::value("cursor", true, "state discovery continuation"),
     FlagSpec::value("sig", true, "INT, TERM or KILL"),
 ];
 pub enum Input {
@@ -65,7 +67,8 @@ fn allowed(group: &str, leaf: Option<&str>) -> &'static [&'static str] {
             "max-bytes",
         ],
         ("run", Some("signal")) => &["json", "generation", "sig", "if-boot-id"],
-        ("run", Some("list" | "prune")) => &["json", "generation", "if-boot-id"],
+        ("run", Some("list")) => &["json", "generation", "if-boot-id", "limit", "cursor"],
+        ("run", Some("prune")) => &["json", "generation", "if-boot-id"],
         _ => &[],
     }
 }
@@ -201,6 +204,15 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
                     }
                 }
                 "list" | "prune" => {
+                    if leaf == "list" {
+                        if let Some(v) = p.value("limit") {
+                            params["limit"] =
+                                v.parse::<u16>().map_err(|_| "invalid page size")?.into();
+                        }
+                        if let Some(v) = p.value("cursor") {
+                            params["cursor"] = v.into();
+                        }
+                    }
                     if p.operands.len() != 2 {
                         return Err("run list/prune accepts one host".into());
                     }
@@ -216,7 +228,13 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
             document["if_boot_id"] = guard.into();
         }
         let raw = document.to_string();
-        super::request::prepare(&operation, host, &params.to_string()).map_err(|e| e.message)?;
+        if operation == "run.list" {
+            crate::helper::registry::validate(&operation, &params.to_string())
+                .map_err(|e| e.message)?;
+        } else {
+            super::request::prepare(&operation, host, &params.to_string())
+                .map_err(|e| e.message)?;
+        }
         Ok(Input::Document(raw))
     })();
     Invocation {

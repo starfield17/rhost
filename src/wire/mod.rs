@@ -30,6 +30,12 @@ pub struct Envelope<T> {
 impl<T: Serialize> Envelope<T> {
     /// Delivery is attempted once. A broken sink cannot carry its own error
     /// envelope; the CLI reports that failure on stderr and exits nonzero.
+    pub fn with_recovery(mut self, value: crate::domain::Recovery) -> Self {
+        if let Some(e) = self.error.as_mut() {
+            e.recovery = recovery(value);
+        }
+        self
+    }
     pub fn write(&self, sink: &mut impl Write) -> io::Result<()> {
         let mut bytes = serde_json::to_vec(self).map_err(io::Error::other)?;
         bytes.push(b'\n');

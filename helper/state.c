@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "state.h"
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +48,17 @@ int rh_atomic(int directory,const char *name,const void *data,size_t size) {
     if(ok && renameat(directory,temporary,directory,name)<0)ok=0;
     if(ok && fsync(directory)<0)ok=0;
     unlinkat(directory,temporary,0);return ok;
+}
+int rh_clear_atomic(int directory){
+    int copy=dup(directory);DIR *dir=copy<0?NULL:fdopendir(copy);if(!dir){if(copy>=0)close(copy);return 0;}
+    struct dirent *p;size_t count=0;int ok=1,changed=0;
+    while((errno=0,p=readdir(dir))){
+        if(!strcmp(p->d_name,".") || !strcmp(p->d_name,".."))continue;
+        if(++count>1024){ok=0;break;}
+        if(strncmp(p->d_name,".write-",7))continue;
+        struct stat st;if(!rh_generation(p->d_name+7) || fstatat(directory,p->d_name,&st,AT_SYMLINK_NOFOLLOW)<0 || !S_ISREG(st.st_mode) || st.st_uid!=geteuid() || (st.st_mode&0077) || unlinkat(directory,p->d_name,0)<0){ok=0;break;}changed=1;
+    }
+    if(errno)ok=0;closedir(dir);if(changed && fsync(directory)<0)ok=0;return ok;
 }
 int rh_file(int directory,const char *name,unsigned char **data,size_t *size,size_t limit) {
     *data=NULL;*size=0;

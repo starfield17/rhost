@@ -74,6 +74,7 @@ pub(super) fn key_expiry(key: &str) -> Result<u64, Error> {
 }
 fn invalid() -> Error {
     Error::new("CONFIG_INVALID", "invalid changeset identity or bounds")
+        .with_recovery(crate::domain::Recovery::invalid())
 }
 fn generation(s: &str) -> Result<(), Error> {
     crate::domain::InvocationToken::new(s.into())
@@ -81,7 +82,10 @@ fn generation(s: &str) -> Result<(), Error> {
         .map_err(|_| invalid())
 }
 fn parse<T: for<'a> Deserialize<'a>>(raw: &str) -> Result<T, Error> {
-    serde_json::from_str(raw).map_err(|e| Error::new("CONFIG_INVALID", e.to_string()))
+    serde_json::from_str(raw).map_err(|e| {
+        Error::new("CONFIG_INVALID", e.to_string())
+            .with_recovery(crate::domain::Recovery::invalid())
+    })
 }
 fn prepare(operation: &str, raw: &str) -> Result<(Value, String, String), Error> {
     if operation == "fs.changeset.apply" {
@@ -260,7 +264,12 @@ fn decode(bytes: &[u8], operation: &str, expected_generation: &str, id: &str) ->
                 if e.mutation != r.mutation {
                     return Err(bad());
                 }
-                Ok(Error::new(code, e.message).with_mutation(mutation))
+                Ok(Error::new(code, e.message)
+                    .with_mutation(mutation)
+                    .with_recovery(crate::domain::Recovery::inspect(
+                        crate::domain::Phase::Operation,
+                        crate::domain::Submission::Confirmed,
+                    )))
             })
             .transpose()?;
         Ok(RequestOutcome {
@@ -282,7 +291,8 @@ pub(super) fn execute(
     guard: Option<&crate::domain::BootId>,
 ) -> RequestOutcome {
     let result = (|| {
-        let (payload, generation, id) = prepare(operation, raw)?;
+        let (payload, generation, id) = prepare(operation, raw)
+            .map_err(|e| e.with_recovery(crate::domain::Recovery::invalid()))?;
         let bytes = serde_json::to_vec(&payload).map_err(|_| invalid())?;
         if bytes.len() > 12 * 1024 * 1024 {
             return Err(Error::new(
@@ -293,7 +303,28 @@ pub(super) fn execute(
         let reply = crate::helper::Helper::new(client, host)
             .with_cancellation(cancelled)
             .with_boot_guard(guard)
-            .file_call(&bytes, std::time::Duration::from_secs(60), 512 * 1024)?;
+            .file_call(&bytes, std::time::Duration::from_secs(60), 512 * 1024)
+            .map_err(|mut e| {
+                if e.recovery.submission() != "not_submitted" && e.recovery.stage() == "unknown" {
+                    e.recovery = if operation == "fs.changeset.apply" {
+                        crate::domain::Recovery::same_request(
+                            crate::domain::Phase::Submission,
+                            crate::domain::Submission::MayHaveSubmitted,
+                        )
+                    } else if operation == "fs.changeset.query" {
+                        crate::domain::Recovery::observe(
+                            crate::domain::Phase::Observation,
+                            crate::domain::Submission::MayHaveSubmitted,
+                        )
+                    } else {
+                        crate::domain::Recovery::inspect(
+                            crate::domain::Phase::Submission,
+                            crate::domain::Submission::MayHaveSubmitted,
+                        )
+                    };
+                }
+                e
+            })?;
         Ok(decode(&reply, operation, &generation, &id))
     })();
     match result {

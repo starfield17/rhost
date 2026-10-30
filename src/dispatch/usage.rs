@@ -148,8 +148,13 @@ const FS_LEAVES: &[Leaf] = &[
         summary: "Read named files within one aggregate budget",
     },
     Leaf {
+        name: "find",
+        usage: "find <host> --from <params.json>",
+        summary: "Discover paths without reading file contents",
+    },
+    Leaf {
         name: "changeset",
-        usage: "changeset <apply|query|recover|prune> <host> --from <params.json>",
+        usage: "changeset <apply|query|recover|prune|list> <host> --from <params.json>",
         summary: "Apply or explicitly recover named file changes",
     },
 ];

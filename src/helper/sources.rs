@@ -19,6 +19,12 @@ pub const SOURCES: &[(&str, &str)] = &[
         "changes_prepare.c",
         include_str!("../../helper/changes_prepare.c"),
     ),
+    ("collection.c", include_str!("../../helper/collection.c")),
+    ("collection.h", include_str!("../../helper/collection.h")),
+    (
+        "collection_build.c",
+        include_str!("../../helper/collection_build.c"),
+    ),
     ("file_edit.c", include_str!("../../helper/file_edit.c")),
     ("file_patch.c", include_str!("../../helper/file_patch.c")),
     ("file_path.c", include_str!("../../helper/file_path.c")),
@@ -47,12 +53,26 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("monitor.c", include_str!("../../helper/monitor.c")),
     ("protocol.c", include_str!("../../helper/protocol.c")),
     ("protocol.h", include_str!("../../helper/protocol.h")),
+    ("registry.h", include_str!("../../helper/registry.h")),
+    (
+        "registry_list.c",
+        include_str!("../../helper/registry_list.c"),
+    ),
+    (
+        "registry_prune.c",
+        include_str!("../../helper/registry_prune.c"),
+    ),
+    (
+        "registry_usage.c",
+        include_str!("../../helper/registry_usage.c"),
+    ),
     ("run.c", include_str!("../../helper/run.c")),
     ("sha256.c", include_str!("../../helper/sha256.c")),
     ("start.c", include_str!("../../helper/start.c")),
     ("state.c", include_str!("../../helper/state.c")),
     ("state.h", include_str!("../../helper/state.h")),
 ];
+
 pub fn digest() -> String {
     let mut hash = Sha256::new();
     for (name, source) in SOURCES {

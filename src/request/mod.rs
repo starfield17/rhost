@@ -32,10 +32,14 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
     };
     let result = if matches!(
         q.operation.as_str(),
-        "fs.read" | "fs.write" | "fs.patch" | "fs.search" | "fs.read_many"
+        "fs.read" | "fs.write" | "fs.patch" | "fs.search" | "fs.find" | "fs.read_many"
     ) || matches!(
         q.operation.as_str(),
-        "fs.changeset.apply" | "fs.changeset.query" | "fs.changeset.recover" | "fs.changeset.prune"
+        "fs.changeset.apply"
+            | "fs.changeset.query"
+            | "fs.changeset.recover"
+            | "fs.changeset.prune"
+            | "fs.changeset.list"
     ) {
         let outcome = crate::files::execute_params(
             client,
@@ -55,6 +59,9 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
             | "run.list"
             | "run.prune"
             | "run.signal"
+            | "state.list"
+            | "state.usage"
+            | "state.prune"
     ) {
         crate::runs::execute_params(
             client,

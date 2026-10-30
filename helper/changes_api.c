@@ -1,4 +1,5 @@
 #include "changes.h"
+#include "registry.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -28,17 +29,15 @@ static int pending_cleanup(const ch_set *s){j_value *v=j_get(s->manifest,"cleanu
 int ch_prune(ch_set *s,uint64_t now){
     const char *status=ch_text(s->manifest,"status");
     if(now<s->expiry || pending_cleanup(s) || (strcmp(status,"applied") && strcmp(status,"rolled_back") && strcmp(status,"refused"))){f_fail(s->error,"FILE_CONFLICT","changeset is unexpired or recovery evidence must be retained");return 0;}
-    int scan=dup(s->dir);DIR *dir=scan<0?NULL:fdopendir(scan);if(!dir){if(scan>=0)close(scan);return 0;}
-    char *names[CH_COUNT*2+4];size_t n=0;struct dirent *p;int ok=1;
-    while((p=readdir(dir))){if(!strcmp(p->d_name,".") || !strcmp(p->d_name,".."))continue;
-        int known=!strcmp(p->d_name,"manifest.json") || !strcmp(p->d_name,"request.json") || !strcmp(p->d_name,"owner.lock");
-        for(size_t i=0;!known && i<s->count;i++){char name[32];snprintf(name,sizeof name,"before-%zu",i);known=!strcmp(name,p->d_name);snprintf(name,sizeof name,"after-%zu",i);known=known || !strcmp(name,p->d_name);}
-        struct stat st;if(!known || n>=sizeof names/sizeof names[0] || fstatat(s->dir,p->d_name,&st,AT_SYMLINK_NOFOLLOW)<0 || !S_ISREG(st.st_mode) || st.st_uid!=geteuid()){ok=0;break;}
-        names[n]=strdup(p->d_name);if(!names[n]){ok=0;break;}n++;
-    }
-    closedir(dir);if(ok)for(size_t i=0;i<n;i++)if(unlinkat(s->dir,names[i],0)<0){ok=0;break;}for(size_t i=0;i<n;i++)free(names[i]);
-    if(ok)ok=fsync(s->dir)==0 && unlinkat(s->base,s->id,AT_REMOVEDIR)==0 && fsync(s->base)==0;
-    if(!ok)f_fail(s->error,"STATE_UNAVAILABLE","cannot prune changeset journal");return ok;
+    return rg_remove(&s->space,1,s->id,s->dir,s->error);
+}
+int ch_can_prune(int directory,const char *generation,const char *id){
+    f_error error={NULL,NULL,"not_applied"};ch_set s;memset(&s,0,sizeof s);s.error=&error;s.space.root=s.space.runs=s.space.registry=s.base=s.owner=-1;s.dir=dup(directory);s.id=(char *)id;
+    for(size_t i=0;i<CH_COUNT;i++)s.entries[i].dir=-1;
+    if(!rh_key(id,&s.expiry)){ch_close(&s);return 0;}strcpy(s.space.generation,generation);
+    int ok=s.dir>=0 && ch_load(&s);const char *status=ok?ch_text(s.manifest,"status"):"";
+    ok=ok && !pending_cleanup(&s) && (!strcmp(status,"applied") || !strcmp(status,"rolled_back") || !strcmp(status,"refused"));
+    ch_close(&s);return ok;
 }
 static void failure(ch_set *s,int preparing){
     int ambiguous=0,applied=0;for(size_t i=0;i<s->count;i++){const char *state=ch_text(s->entries[i].meta,"state");if(!strcmp(state,"installing") || !strcmp(state,"restoring"))ambiguous=1;j_value *ever=j_get(s->entries[i].meta,"ever_applied");if(ever && ever->number)applied=1;}
@@ -58,7 +57,7 @@ j_value *f_changes(const j_value *q,const char *op,f_error *e){
     if(applying){s.request=intent(q,e);if(!s.request)return NULL;j_buf raw={0};raw.limit=J_INPUT_LIMIT;if(!j_dump(s.request,&raw)){free(raw.data);ch_close(&s);return f_fail(e,"INTERNAL","cannot fingerprint changeset");}unsigned char digest[32];rh_sha256(raw.data,raw.size,digest);rh_hex(digest,32,fingerprint);free(raw.data);}
     if(!f_context(e)){ch_close(&s);return NULL;}
     int opened=ch_open(&s,q,applying);j_value *result=NULL;
-    if(!opened){if(!e->code)f_fail(e,"STATE_UNAVAILABLE","changeset namespace or journal is unavailable");e->mutation="unknown";goto done;}
+    if(!opened){if(!e->code)f_fail(e,"STATE_UNAVAILABLE","changeset namespace or journal is unavailable");if(strcmp(e->code,"STATE_CAPACITY_EXCEEDED"))e->mutation="unknown";goto done;}
     if(applying && strcmp(fingerprint,ch_text(s.manifest,"fingerprint"))){f_fail(e,"IDEMPOTENCY_CONFLICT","key already binds a different changeset");goto done;}
     s.owner=openat(s.dir,"owner.lock",O_RDWR|O_NOFOLLOW|O_CLOEXEC);struct stat owner;
     if(s.owner<0 || fstat(s.owner,&owner)<0 || !S_ISREG(owner.st_mode) || owner.st_uid!=geteuid() || (owner.st_mode&0077)){f_fail(e,"STATE_UNAVAILABLE","changeset ownership is unavailable");goto done;}
@@ -66,12 +65,13 @@ j_value *f_changes(const j_value *q,const char *op,f_error *e){
     if(active && errno!=EAGAIN && errno!=EWOULDBLOCK){f_fail(e,"STATE_UNAVAILABLE","cannot observe changeset ownership");goto done;}
     uint64_t prune_now=0;
     if(prune && !active && !rh_clock(&s.space,&prune_now)){f_fail(e,"STATE_UNAVAILABLE","cannot persist expiry clock");goto done;}
-    if(s.space.registry>=0){close(s.space.registry);s.space.registry=-1;}
+    if(!prune && s.space.registry>=0){close(s.space.registry);s.space.registry=-1;}
     if(query || (applying && opened==1)){result=ch_result(&s,active);goto done;}
     if(active){f_fail(e,"STATE_UNAVAILABLE","changeset has an active owner");result=ch_result(&s,1);goto done;}
     if(!ch_load(&s)){f_fail(e,"STATE_UNAVAILABLE","changeset journal changed or is corrupt");e->mutation="unknown";goto done;}
     if(prune){
         if(!ch_prune(&s,prune_now)){result=ch_result(&s,0);goto done;}result=j_new(J_OBJECT);if(result && (!j_text(result,"generation",generation,32) || !j_text(result,"id",id,strlen(id)) || !j_boolean(result,"pruned",1))){j_free(result);result=NULL;}goto done;}
+    if(!rh_clear_atomic(s.dir)){f_fail(e,"STATE_UNAVAILABLE","abandoned journal writes cannot be reconciled");e->mutation="unknown";result=ch_result(&s,0);goto done;}
     int preparing=!strcmp(ch_text(s.manifest,"status"),"registered") || !strcmp(ch_text(s.manifest,"status"),"refused");
     if(!ch_parents(&s)){failure(&s,preparing);result=ch_result(&s,0);goto done;}
     if(preparing && !ch_prepare(&s)){failure(&s,1);result=ch_result(&s,0);goto done;}

@@ -167,7 +167,22 @@ pub fn exec<'a>(host: &str, result: &'a domain::ExecOutcome) -> Envelope<ExecDto
     let failure = result.failure().and_then(|reason| {
         let (code, base, retryable) = failure_parts(reason)?;
         let message = diagnostic_message(result, reason, base);
-        Some(error(code, &message, retryable))
+        Some(
+            error(code, &message, retryable).with_recovery(match reason {
+                ExecFailure::BeforeSubmission(PreExecFailure::Usage | PreExecFailure::Config) => {
+                    domain::Recovery::invalid()
+                }
+                ExecFailure::BeforeSubmission(_) => domain::Recovery::preparation(),
+                _ => domain::Recovery::inspect(
+                    domain::Phase::Submission,
+                    match result.execution() {
+                        domain::Execution::Completed(_) => domain::Submission::Confirmed,
+                        domain::Execution::NotStarted => domain::Submission::NotSubmitted,
+                        domain::Execution::Unknown => domain::Submission::MayHaveSubmitted,
+                    },
+                ),
+            }),
+        )
     });
     let signal = match result.failure() {
         Some(ExecFailure::Interrupted(Interruption::Cancelled(CancelSignal::Int))) => {

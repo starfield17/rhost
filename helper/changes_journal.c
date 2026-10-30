@@ -1,4 +1,5 @@
 #include "changes.h"
+#include "registry.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -56,7 +57,8 @@ int ch_open(ch_set *s,const j_value *q,int apply){
     if(errno!=ENOENT || !apply){if(errno==ENOENT)f_fail(s->error,"FILE_NOT_FOUND","changeset record is not retained");return 0;}
     uint64_t now;if(!rh_clock(&s->space,&now))return 0;
     if(s->expiry<=now || s->expiry-now>604800){f_fail(s->error,"REQUEST_EXPIRED","new changeset key is expired or exceeds seven days");return 0;}
-    char token[33],pending[64];if(!rh_random(token,16))return 0;snprintf(pending,sizeof pending,".register-%s",token);
+    const char *capacity=rg_capacity(&s->space,1);if(capacity){f_fail(s->error,capacity,"changeset registration exceeds namespace capacity");return 0;}
+    char pending[96];snprintf(pending,sizeof pending,".pending-%s",s->id);
     if(mkdirat(s->base,pending,0700)<0)return 0;s->dir=openat(s->base,pending,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);if(!private_dir(s->dir))return 0;
     s->manifest=j_new(J_OBJECT);j_value *files=j_new(J_ARRAY);if(!s->manifest || !files)return 0;
     if(!j_integer(s->manifest,"version",1) || !j_text(s->manifest,"generation",s->space.generation,32) || !j_text(s->manifest,"id",s->id,strlen(s->id)) || !j_integer(s->manifest,"expires_unix",s->expiry) || !j_text(s->manifest,"status","registered",10) || !j_boolean(s->manifest,"cleanup_pending",0) || !j_add(s->manifest,"files",files))return 0;

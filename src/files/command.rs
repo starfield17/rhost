@@ -182,13 +182,13 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Fs> {
         ))
     };
     match leaf.as_str() {
-        "changeset" | "search" | "read-many" => {
+        "changeset" | "search" | "find" | "read-many" => {
             let nested = leaf == "changeset";
             let count = if nested { 2 } else { 1 };
             if let Err(message) = exact(
                 count,
                 if nested {
-                    "<apply|query|recover|prune> <host>"
+                    "<apply|query|recover|prune|list> <host>"
                 } else {
                     "<host>"
                 },
@@ -198,7 +198,7 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Fs> {
             let operation = if nested {
                 if !matches!(
                     operands[0].as_str(),
-                    "apply" | "query" | "recover" | "prune"
+                    "apply" | "query" | "recover" | "prune" | "list"
                 ) {
                     return ParsedCommand::usage(Scope::Fs, "unknown changeset operation");
                 }
@@ -385,7 +385,7 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Fs> {
 /// The flags each leaf accepts, so its `--help` page and its parse read one table.
 pub fn leaf_flags(leaf: &str) -> &'static [FlagSpec] {
     match leaf {
-        "changeset" | "search" | "read-many" => FS_NATIVE_FLAGS,
+        "changeset" | "search" | "find" | "read-many" => FS_NATIVE_FLAGS,
         "put" => FS_PUT_FLAGS,
         "get" => FS_GET_FLAGS,
         "sync" | "mirror" => FS_SYNC_FLAGS,

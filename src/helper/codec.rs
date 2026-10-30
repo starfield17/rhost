@@ -113,6 +113,7 @@ pub fn answer(bytes: &[u8], kind: u32) -> Result<Vec<u8>, Error> {
                 "PROTOCOL_ERROR" => "PROTOCOL_ERROR",
                 "HELPER_INCOMPATIBLE" => "HELPER_INCOMPATIBLE",
                 "STATE_UNAVAILABLE" => "STATE_UNAVAILABLE",
+                "STATE_CAPACITY_EXCEEDED" => "STATE_CAPACITY_EXCEEDED",
                 "NAMESPACE_MISMATCH" => "NAMESPACE_MISMATCH",
                 "REQUEST_EXPIRED" => "REQUEST_EXPIRED",
                 "IDEMPOTENCY_CONFLICT" => "IDEMPOTENCY_CONFLICT",

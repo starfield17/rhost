@@ -46,7 +46,10 @@ fn supplied_hash<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Er
 fn hash(s: &str) -> Result<(), Error> {
     crate::domain::Sha256::new(s.to_string())
         .map(|_| ())
-        .map_err(|e| Error::new("CONFIG_INVALID", e.to_string()))
+        .map_err(|e| {
+            Error::new("CONFIG_INVALID", e.to_string())
+                .with_recovery(crate::domain::Recovery::invalid())
+        })
 }
 fn one() -> u64 {
     1
@@ -58,10 +61,16 @@ fn cap() -> usize {
     256 * 1024
 }
 fn parse<T: for<'a> Deserialize<'a>>(s: &str) -> Result<T, Error> {
-    serde_json::from_str(s).map_err(|e| Error::new("CONFIG_INVALID", e.to_string()))
+    serde_json::from_str(s).map_err(|e| {
+        Error::new("CONFIG_INVALID", e.to_string())
+            .with_recovery(crate::domain::Recovery::invalid())
+    })
 }
 fn path(s: &str) -> Result<(), Error> {
-    super::backend::validate_remote_path(s).map_err(|e| Error::new("CONFIG_INVALID", e.to_string()))
+    super::backend::validate_remote_path(s).map_err(|e| {
+        Error::new("CONFIG_INVALID", e.to_string())
+            .with_recovery(crate::domain::Recovery::invalid())
+    })
 }
 fn execute_simple(
     client: &Client,
@@ -72,6 +81,7 @@ fn execute_simple(
     boot_guard: Option<&crate::domain::BootId>,
 ) -> Result<Value, Error> {
     let result = (|| {
+        let (payload, budget) = (|| -> Result<_, Error> {
         let (payload, budget) = match operation {
             "fs.read" => {
                 let p: Read = parse(raw)?;
@@ -137,6 +147,8 @@ fn execute_simple(
                 "encoded file request exceeds 12 MiB",
             ));
         }
+        Ok((payload, budget))
+        })().map_err(|e| e.with_recovery(crate::domain::Recovery::invalid()))?;
         let bytes = crate::helper::Helper::new(client, host)
             .with_cancellation(cancelled)
             .with_boot_guard(boot_guard)
@@ -168,6 +180,16 @@ fn execute_simple(
     result.map_err(|mut error: Error| {
         if operation == "fs.read" {
             error.mutation = None;
+            if error.recovery.submission() != "not_submitted" {
+                error.recovery = crate::domain::Recovery::observe(
+                    crate::domain::Phase::Observation,
+                    if error.recovery.submission() == "confirmed" {
+                        crate::domain::Submission::Confirmed
+                    } else {
+                        crate::domain::Submission::MayHaveSubmitted
+                    },
+                );
+            }
         }
         error
     })
@@ -187,7 +209,12 @@ pub(super) fn refusal(e: super::backend::HelperRefusal) -> Error {
     else {
         return bad_answer();
     };
-    Error::new(code, e.message()).with_mutation(mutation)
+    Error::new(code, e.message())
+        .with_mutation(mutation)
+        .with_recovery(crate::domain::Recovery::inspect(
+            crate::domain::Phase::Operation,
+            crate::domain::Submission::Confirmed,
+        ))
 }
 
 /// A partial journal survives a failed operation and must reach every delivery.
@@ -230,10 +257,17 @@ pub fn execute_params(
     cancelled: &dyn Fn() -> bool,
     guard: Option<&crate::domain::BootId>,
 ) -> RequestOutcome {
-    let mut outcome = if operation.starts_with("fs.changeset.") {
+    let mut outcome = if operation == "fs.changeset.list" {
+        match crate::helper::registry::execute(client, host, operation, raw, cancelled, guard) {
+            Ok(data) => RequestOutcome::done(data),
+            Err(e) => RequestOutcome::failed(e),
+        }
+    } else if operation.starts_with("fs.changeset.") {
         super::changes::execute(client, host, operation, raw, cancelled, guard)
-    } else if matches!(operation, "fs.search" | "fs.read_many") {
-        super::inspect::execute(client, host, operation, raw, cancelled, guard)
+    } else if matches!(operation, "fs.search" | "fs.find") {
+        super::collection::execute(client, host, operation, raw, cancelled, guard)
+    } else if operation == "fs.read_many" {
+        super::inspect::execute(client, host, raw, cancelled, guard)
     } else {
         match execute_simple(client, host, operation, raw, cancelled, guard) {
             Ok(data) => RequestOutcome::done(data),
