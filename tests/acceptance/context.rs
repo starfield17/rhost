@@ -1,6 +1,6 @@
 //! Shared delivery evidence for bounded, recoverable observations.
 use crate::{hosts, mcp::Mcp, remote_fs_support::create, support::Harness};
-use serde_json::{Value, json};
+use serde_json::json;
 #[test]
 fn file_pages_recover_long_lines_and_pending_matches() -> Result<(), String> {
     let h = Harness::open("context-file-pages")?;
@@ -62,10 +62,11 @@ fn file_pages_recover_long_lines_and_pending_matches() -> Result<(), String> {
 fn run_observation_reads_and_searches_have_recoverable_source_ranges() -> Result<(), String> {
     let h = Harness::open("context-run-logs")?;
     hosts::local_host(&h)?;
-    let state = h.path("state").to_string_lossy().into_owned();
+    let state = h.path("remote-state").to_string_lossy().into_owned();
     let h = h.env("RHOST_REMOTE_STATE", &state);
     let mut m = Mcp::open(&h)?;
     let prep = m.call(2, "rhost_helper_prepare", json!({"host":"gpu","params":{}}))?;
+    assert_eq!(prep["ok"], true, "{prep}");
     let generation = prep["data"]["generation"].clone();
     let expiry = prep["data"]["remote_time_unix"].as_u64().ok_or("clock")? + 3600;
     let key = format!("{expiry}-{}", "d".repeat(64));

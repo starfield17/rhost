@@ -1227,7 +1227,12 @@
             }
           }
         }
-      ]
+      ],
+      "dependentRequired": {
+        "if_hash": [
+          "offset_bytes"
+        ]
+      }
     },
     "fs_write": {
       "type": "object",
