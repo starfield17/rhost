@@ -288,14 +288,13 @@ pub fn execute(
             {
                 return Err(bad());
             }
-            if let Some(c) = &p.next_cursor {
-                if !cursor(c, &p.generation, kind)
+            if let Some(c) = &p.next_cursor
+                && (!cursor(c, &p.generation, kind)
                     || p.items
                         .last()
-                        .is_none_or(|e| !c.ends_with(&format!(":{}", e.id)))
-                {
-                    return Err(bad());
-                }
+                        .is_none_or(|e| !c.ends_with(&format!(":{}", e.id))))
+            {
+                return Err(bad());
             }
             serde_json::to_value(p)
         }

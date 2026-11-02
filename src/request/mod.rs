@@ -93,10 +93,11 @@ pub fn failure(operation: &str, host: Option<&str>, error: Error) -> Value {
         detail["mutation"] = "not_applied".into();
     }
     let mut envelope = json!({"schema_version":4,"operation":operation,"ok":false,"host":host,"data":null,"error":detail});
-    if host.is_none() && core::recognizes(operation) {
-        if let Some(object) = envelope.as_object_mut() {
-            object.remove("host");
-        }
+    if host.is_none()
+        && core::recognizes(operation)
+        && let Some(object) = envelope.as_object_mut()
+    {
+        object.remove("host");
     }
     envelope
 }
