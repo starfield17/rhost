@@ -185,8 +185,8 @@ fn cancellation_case(cancelled: bool) -> Result<(), String> {
 
 #[test]
 fn bounded_exec_tail_exposes_an_exact_recoverable_segment() -> Result<(), String> {
-    let live = Live::new()?;
-    let host = live.host.clone();
+    let live = Live::new("bounded-exec-context")?;
+    let host = live.host().to_owned();
     let dir = live.remote_dir()?;
     let mut m = Mcp::open(live.command(&["mcp"]))?;
     let created = m.call("session.create", Some(&host), json!({"cwd":dir}))?;

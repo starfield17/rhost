@@ -84,7 +84,7 @@ fn help_names_concrete_defaults_and_file_flags() -> Result<(), Box<dyn std::erro
     for (argv, wanted) in [
         (
             vec!["fs", "read", "--help"],
-            vec!["256 KiB", "8 MiB", "--max-bytes"],
+            vec!["8 KiB", "8 MiB", "--max-bytes"],
         ),
         (
             vec!["fs", "write", "--help"],
