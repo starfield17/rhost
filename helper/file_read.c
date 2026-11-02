@@ -18,9 +18,10 @@ int f_load(int fd,j_buf *out,f_error *e){
         j_append(out,buffer,(size_t)n);if(out->failed){f_fail(e,"FILE_TOO_LARGE","editing limit is 8388608 bytes");return 0;}}
     return 1;
 }
-typedef struct {j_buf page,line;uint64_t index,start,count,rows;int blocked,oversized;} page;
+typedef struct {j_buf page,line;uint64_t index,start,count,rows,position,line_bytes,from;int blocked,oversized;} page;
 static int row(page *p,f_error *e){
     p->index++;
+    if(p->index==p->start)p->from=p->position-p->line_bytes;
     if(p->index>=p->start && p->rows<p->count && !p->blocked){
         if(p->oversized || p->line.size>p->page.limit-p->page.size)p->blocked=1;
         else{
@@ -28,7 +29,7 @@ static int row(page *p,f_error *e){
             j_append(&p->page,p->line.data,p->line.size);if(p->page.failed){f_fail(e,"INTERNAL","allocation failed");return 0;}p->rows++;
         }
     }
-    p->line.size=0;p->line.failed=0;p->oversized=0;return 1;
+    p->line.size=0;p->line.failed=0;p->oversized=0;p->line_bytes=0;return 1;
 }
 /* Byte pages pin a complete-file hash and never split a UTF-8 character. */
 static j_value *byte_page(const j_value *q,const char *path,f_error *e){
@@ -60,7 +61,7 @@ static j_value *byte_page(const j_value *q,const char *path,f_error *e){
     uint64_t next=offset+delivered;coverage=j_new(J_OBJECT);result=j_new(J_OBJECT);
     if(!coverage || !result || !j_integer(coverage,"from",offset) || !j_integer(coverage,"next",next) ||
        !j_integer(coverage,"observed_bytes",(uint64_t)before.st_size) || !j_boolean(coverage,"more",next<(uint64_t)before.st_size) ||
-       !j_text(result,"path",path,strlen(path)) || !j_text(result,"sha256",hash,64) ||
+       !j_text(result,"path",path,strlen(path)) || !j_text(result,"requested_path",j_string(j_get(q,"path"))?j_string(j_get(q,"path")):path,strlen(j_string(j_get(q,"path"))?j_string(j_get(q,"path")):path)) || !j_text(result,"sha256",hash,64) ||
        !j_text(result,"content",bytes,delivered) || !j_take(result,"coverage",&coverage)){
         j_free(result);result=NULL;f_fail(e,"INTERNAL","allocation failed");}
  done:free(bytes);j_free(coverage);close(fd);return result;
@@ -80,7 +81,7 @@ j_value *f_read(const j_value *q,const char *path,f_error *e){
         ssize_t n=read(fd,bytes,sizeof bytes);if(n<0 && errno==EINTR)continue;if(n<0){f_os_error(e,0);goto done;}if(!n)break;
         rh_hash_update(&h,bytes,(size_t)n);
         for(ssize_t i=0;i<n;i++){
-            pending=1;
+            pending=1;p.position++;p.line_bytes++;
             if(!p.oversized){if(p.line.size==p.line.limit)p.oversized=1;else {j_append(&p.line,bytes+i,1);if(p.line.failed){f_fail(e,"INTERNAL","allocation failed");goto done;}}}
             if(bytes[i]=='\n'){if(!row(&p,e))goto done;pending=0;}
         }
@@ -89,8 +90,20 @@ j_value *f_read(const j_value *q,const char *path,f_error *e){
     if(fstat(fd,&after)<0){f_os_error(e,0);goto done;}
     if(!f_identity(&before,&after)){f_fail(e,"FILE_CONFLICT","file changed while reading");goto done;}
     unsigned char hash[32];char hex[65];rh_hash_finish(&h,hash);rh_hex(hash,32,hex);result=j_new(J_OBJECT);
-    if(!result || !j_text(result,"path",path,strlen(path)) || !j_text(result,"sha256",hex,64) || !j_text(result,"content",p.page.data,p.page.size) || !j_integer(result,"start",start) || !j_integer(result,"lines",p.rows) || !j_integer(result,"total_lines",p.index) || !j_boolean(result,"truncated",p.blocked)){
+    if(p.index<p.start)p.from=p.position;
+    int coverage=j_get(q,"with_coverage") && j_get(q,"with_coverage")->type==J_BOOL && j_get(q,"with_coverage")->number;
+    if(coverage && p.blocked && !p.rows && cap>=4){
+        j_value *request=j_new(J_OBJECT);
+        if(!request || !j_text(request,"path",j_string(j_get(q,"path"))?j_string(j_get(q,"path")):path,strlen(j_string(j_get(q,"path"))?j_string(j_get(q,"path")):path)) || !j_integer(request,"offset_bytes",p.from) || !j_integer(request,"max_bytes",cap<4?4:cap) || !j_text(request,"if_hash",hex,64)){j_free(request);j_free(result);result=NULL;f_fail(e,"INTERNAL","allocation failed");goto done;}
+        j_free(result);result=byte_page(request,path,e);j_free(request);goto done;
+    }
+
+    if(!result || !j_text(result,"path",path,strlen(path)) || (coverage && !j_text(result,"requested_path",j_string(j_get(q,"path"))?j_string(j_get(q,"path")):path,strlen(j_string(j_get(q,"path"))?j_string(j_get(q,"path")):path))) || !j_text(result,"sha256",hex,64) || !j_text(result,"content",p.page.data,p.page.size) || !j_integer(result,"start",start) || !j_integer(result,"lines",p.rows) || !j_integer(result,"total_lines",p.index) || !j_boolean(result,"truncated",p.blocked)){
         j_free(result);result=NULL;f_fail(e,"INTERNAL","allocation failed");
+    }
+    if(result && coverage){
+        j_value *v=j_new(J_OBJECT);uint64_t next=p.from+p.page.size;
+        if(!v || !j_integer(v,"from",p.from) || !j_integer(v,"next",next) || !j_integer(v,"observed_bytes",p.position) || !j_boolean(v,"more",next<p.position) || !j_take(result,"coverage",&v)){j_free(v);j_free(result);result=NULL;f_fail(e,"INTERNAL","allocation failed");}
     }
 done:free(p.page.data);free(p.line.data);close(fd);return result;
 }

@@ -26,6 +26,14 @@ pub static FLAGS: &[FlagSpec] = &[
     FlagSpec::value("max-bytes", true, "per-stream page budget; default 4096"),
     FlagSpec::value("limit", true, "state page size; default 64, maximum 256"),
     FlagSpec::value("cursor", true, "state discovery continuation"),
+    FlagSpec::value("output-stream", true, "stdout or stderr"),
+    FlagSpec::value("since", true, "source-byte start"),
+    FlagSpec::value("tail", true, "retained tail bytes"),
+    FlagSpec::value("until", true, "exclusive source-byte endpoint"),
+    FlagSpec::value("format", true, "text (default) or base64"),
+    FlagSpec::value("pattern", true, "literal log search"),
+    FlagSpec::value("context-lines", true, "search context lines; default 2"),
+    FlagSpec::value("max-matches", true, "search result count; default 32"),
     FlagSpec::value("sig", true, "INT, TERM or KILL"),
 ];
 pub enum Input {
@@ -66,6 +74,30 @@ fn allowed(group: &str, leaf: Option<&str>) -> &'static [&'static str] {
             "stderr-since",
             "max-bytes",
         ],
+        ("run", Some("watch")) => &["json", "generation", "if-boot-id", "wait"],
+        ("run", Some("read")) => &[
+            "json",
+            "generation",
+            "if-boot-id",
+            "output-stream",
+            "since",
+            "tail",
+            "until",
+            "max-bytes",
+            "format",
+        ],
+        ("run", Some("search")) => &[
+            "json",
+            "generation",
+            "if-boot-id",
+            "output-stream",
+            "since",
+            "until",
+            "max-bytes",
+            "pattern",
+            "context-lines",
+            "max-matches",
+        ],
         ("run", Some("signal")) => &["json", "generation", "sig", "if-boot-id"],
         ("run", Some("list")) => &["json", "generation", "if-boot-id", "limit", "cursor"],
         ("run", Some("prune")) => &["json", "generation", "if-boot-id"],
@@ -76,7 +108,8 @@ pub fn help(group: &str, leaf: Option<&str>) -> String {
     let mut text = match group {
         "request" => "rhost request --from <file|->\n".to_owned(),
         "helper" => "rhost helper <prepare|status> <host>\n".to_owned(),
-        _ => "rhost run <start|poll|list|signal|prune> <host> [run_id] [flags]\n".to_owned(),
+        _ => "rhost run <start|poll|watch|read|search|list|signal|prune> <host> [run_id] [flags]\n"
+            .to_owned(),
     };
     let allowed = allowed(group, leaf);
     for flag in FLAGS {
@@ -179,6 +212,40 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
                         params["deadline_ms"] = json!(milliseconds(p.value("deadline"))?);
                     }
                 }
+                "watch" | "read" | "search" => {
+                    if p.operands.len() != 3 {
+                        return Err("run observation requires host and run_id".into());
+                    }
+                    params["run_id"] = json!(p.operand(2));
+                    if leaf == "watch" {
+                        if p.value("wait").is_some() {
+                            params["wait_ms"] = json!(milliseconds(p.value("wait"))?);
+                        }
+                    } else {
+                        params["stream"] = json!(
+                            p.value("output-stream")
+                                .ok_or("--output-stream is required")?
+                        );
+                        for (flag, key) in [
+                            ("since", "since"),
+                            ("tail", "tail"),
+                            ("until", "until"),
+                            ("max-bytes", "max_bytes"),
+                            ("context-lines", "context_lines"),
+                            ("max-matches", "max_matches"),
+                        ] {
+                            if let Some(v) = p.value(flag) {
+                                params[key] =
+                                    json!(v.parse::<u64>().map_err(|_| "invalid integer")?);
+                            }
+                        }
+                        for flag in ["format", "pattern"] {
+                            if let Some(v) = p.value(flag) {
+                                params[flag] = json!(v);
+                            }
+                        }
+                    }
+                }
                 "poll" | "signal" => {
                     if p.operands.len() != 3 {
                         return Err("run poll/signal requires host and run_id".into());
@@ -222,7 +289,7 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
             format!("run.{leaf}")
         };
         let mut document =
-            json!({"schema_version":4,"operation":operation,"host":host,"params":params});
+            json!({"schema_version":5,"operation":operation,"host":host,"params":params});
         if let Some(guard) = p.value("if-boot-id") {
             crate::domain::BootId::new(guard.to_string()).map_err(|e| e.to_string())?;
             document["if_boot_id"] = guard.into();
@@ -231,6 +298,8 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
         if operation == "run.list" {
             crate::helper::registry::validate(&operation, &params.to_string())
                 .map_err(|e| e.message)?;
+        } else if matches!(operation.as_str(), "run.watch" | "run.read" | "run.search") {
+            // Capability execution validates the complete structured request.
         } else {
             super::request::prepare(&operation, host, &params.to_string())
                 .map_err(|e| e.message)?;

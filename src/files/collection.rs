@@ -11,6 +11,10 @@ use serde_json::{Value, json};
 #[serde(deny_unknown_fields)]
 struct Search {
     root: String,
+    #[serde(default)]
+    match_offset: u64,
+    #[serde(default, deserialize_with = "nonnull")]
+    if_hash: Option<String>,
     #[serde(default = "glob")]
     glob: String,
     #[serde(default, deserialize_with = "nonnull")]
@@ -41,7 +45,7 @@ fn matches() -> usize {
     128
 }
 fn cap() -> usize {
-    262144
+    8192
 }
 fn nonnull<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     String::deserialize(d).map(Some)
@@ -88,6 +92,12 @@ fn cursor(s: &str) -> Result<(&str, &str, u64), Error> {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Match {
+    #[serde(default)]
+    offset_bytes: u64,
+    #[serde(default)]
+    truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    next_request: Option<Value>,
     line: u64,
     text: String,
 }
@@ -132,6 +142,8 @@ struct Collection {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Page<T> {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pending: Option<Value>,
     root: String,
     collection: Collection,
     items: Vec<T>,
@@ -169,9 +181,17 @@ fn check<T>(r: &Page<T>, p: &Search) -> Result<(), Error> {
         let (g, id, offset) = cursor(c).map_err(|_| bad())?;
         if g != r.collection.generation
             || id != r.collection.id
-            || p.cursor
-                .as_deref()
-                .is_some_and(|old| cursor(old).is_ok_and(|(_, _, prior)| offset <= prior))
+            || p.cursor.as_deref().is_some_and(|old| {
+                cursor(old).is_ok_and(|(_, _, prior)| {
+                    offset < prior
+                        || (offset == prior
+                            && r.pending.as_ref().is_none_or(|pending| {
+                                pending["match_offset"]
+                                    .as_u64()
+                                    .is_none_or(|n| n <= p.match_offset)
+                            }))
+                })
+            })
         {
             return Err(bad());
         }
@@ -190,6 +210,13 @@ pub(super) fn execute(
         let original: Value = serde_json::from_str(raw).map_err(|_| invalid())?;
         let p: Search = serde_json::from_str(raw).map_err(|_| invalid())?;
         let find = operation == "fs.find";
+        if find
+            && ["pattern", "max_matches", "match_offset", "if_hash"]
+                .iter()
+                .any(|k| original.get(*k).is_some())
+        {
+            return Err(invalid());
+        }
         if !path(&p.root)
             || p.glob.is_empty()
             || p.glob.len() > 4096
@@ -232,6 +259,15 @@ pub(super) fn execute(
         if let Some(ref c) = p.cursor {
             q["cursor"] = c.clone().into();
         }
+        if !find {
+            q["match_offset"] = json!(p.match_offset);
+            if let Some(ref h) = p.if_hash {
+                if !sha(h) {
+                    return Err(invalid());
+                }
+                q["if_hash"] = json!(h);
+            }
+        }
         if find {
             let r: Page<Found> =
                 super::inspect::call(client, host, q, 16 * 1024 * 1024, cancelled, guard)?;
@@ -241,7 +277,7 @@ pub(super) fn execute(
             }
             serde_json::to_value(r).map_err(|_| bad())
         } else {
-            let r: Page<File> =
+            let mut r: Page<File> =
                 super::inspect::call(client, host, q, 16 * 1024 * 1024, cancelled, guard)?;
             check(&r, &p)?;
             if r.items.iter().map(|f| f.matches.len()).sum::<usize>() > p.max_matches
@@ -259,6 +295,15 @@ pub(super) fn execute(
                 })
             {
                 return Err(bad());
+            }
+            for file in &mut r.items {
+                for row in &mut file.matches {
+                    if row.truncated {
+                        row.next_request = Some(
+                            json!({"operation":"fs.read","params":{"path":file.path,"offset_bytes":row.offset_bytes,"if_hash":file.sha256,"max_bytes":8192}}),
+                        );
+                    }
+                }
             }
             serde_json::to_value(r).map_err(|_| bad())
         }

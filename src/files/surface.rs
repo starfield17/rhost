@@ -46,6 +46,8 @@ pub enum Fs {
         timeout_nanos: i64,
     },
     Read {
+        offset_bytes: Option<u64>,
+        if_hash: Option<String>,
         host: String,
         path: String,
         start: u64,

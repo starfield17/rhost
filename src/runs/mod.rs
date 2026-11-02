@@ -3,6 +3,7 @@ pub mod command;
 mod dto;
 #[cfg(test)]
 mod dto_tests;
+mod logs;
 mod request;
 #[cfg(test)]
 mod request_tests;
@@ -20,6 +21,19 @@ pub fn execute_params(
     cancelled: &dyn Fn() -> bool,
     boot_guard: Option<&crate::domain::BootId>,
 ) -> Result<Value, Error> {
+    if matches!(operation, "run.watch" | "run.read" | "run.search") {
+        return logs::execute(client, host, operation, params, cancelled, boot_guard).map_err(
+            |mut e| {
+                if e.recovery.stage() == "unknown" {
+                    e.recovery = crate::domain::Recovery::observe(
+                        crate::domain::Phase::Observation,
+                        crate::domain::Submission::MayHaveSubmitted,
+                    );
+                }
+                e
+            },
+        );
+    }
     if operation == "run.list" || operation.starts_with("state.") {
         return crate::helper::registry::execute(
             client, host, operation, params, cancelled, boot_guard,

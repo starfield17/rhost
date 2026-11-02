@@ -252,7 +252,7 @@ pub(crate) fn root() -> String {
         "\n",
         "Usage:\n",
         "  rhost request --from <file|->\n",
-        "  rhost run start|poll|list|signal|prune <host> [run_id]\n",
+        "  rhost run start|poll|watch|read|search|list|signal|prune <host> [run_id]\n",
         "  rhost helper prepare|status <host>\n",
         "  rhost mcp\n",
         "  rhost exec <host> (--command <shell-program> | --command-file <local-file>)\n",

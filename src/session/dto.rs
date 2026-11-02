@@ -1,4 +1,4 @@
-//! The schema-v2 view of a session.
+//! The schema-v5 view of a session.
 //!
 //! Two of these carry partial data on failure, because the session's *state* is
 //! the answer: an exec that timed out and a recover that found a program still
@@ -58,7 +58,7 @@ pub fn session_created<'a>(
     info: &'a app_session::Info,
 ) -> Envelope<SessionInfoDto<'a>> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "session.create",
         ok: true,
         host: Some(host.into()),
@@ -80,7 +80,7 @@ pub fn session_create_failure<'a>(
         .map(|failure| error(failure.code, &failure.message, failure.retryable))
         .unwrap_or_else(|| error("INTERNAL", "missing create failure", false));
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "session.create",
         ok: false,
         host: Some(host.into()),
@@ -100,7 +100,7 @@ pub struct SessionsDto<'a> {
 
 pub fn sessions<'a>(host: &str, rows: &'a [app_session::Info]) -> Envelope<SessionsDto<'a>> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "session.list",
         ok: true,
         host: Some(host.into()),
@@ -128,7 +128,7 @@ pub fn session_exec<'a>(
         .map(|(code, message, retryable)| error(code, &message, retryable));
     let capture = &result.output().0;
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "session.exec",
         ok: failure.is_none(),
         host: Some(host.into()),
@@ -219,7 +219,7 @@ pub struct SessionReadDto<'a> {
 
 pub fn session_read<'a>(host: &str, result: &'a app_session::Read) -> Envelope<SessionReadDto<'a>> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "session.read",
         ok: true,
         host: Some(host.into()),
@@ -259,7 +259,7 @@ pub fn session_recover<'a>(
     };
     match &result.failure {
         None => Envelope {
-            schema_version: 4,
+            schema_version: 5,
             operation: "session.recover",
             ok: true,
             host: Some(host.into()),
@@ -267,7 +267,7 @@ pub fn session_recover<'a>(
             error: None,
         },
         Some(failure) => Envelope {
-            schema_version: 4,
+            schema_version: 5,
             operation: "session.recover",
             ok: false,
             host: Some(host.into()),
@@ -286,7 +286,7 @@ pub struct SessionSentDto {
 /// the whole claim, and it is only made after the helper confirmed the paste.
 pub fn session_sent(host: &str) -> Envelope<SessionSentDto> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "session.send",
         ok: true,
         host: Some(host.into()),
@@ -302,7 +302,7 @@ pub struct SessionClosedDto {
 
 pub fn session_closed(host: &str) -> Envelope<SessionClosedDto> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "session.close",
         ok: true,
         host: Some(host.into()),

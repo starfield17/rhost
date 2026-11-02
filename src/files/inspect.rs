@@ -1,13 +1,10 @@
 //! Structured, bounded observations; revisions are not workspace snapshots.
-use super::{
-    RequestOutcome,
-    backend::{Answer, ReadResult},
-};
+use super::{RequestOutcome, backend::Answer};
 use crate::{remote::Error, transport::Client};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 fn cap() -> usize {
-    262144
+    8192
 }
 fn one() -> u64 {
     1
@@ -47,11 +44,7 @@ fn bad() -> Error {
 fn path(s: &str) -> Result<(), Error> {
     super::backend::validate_remote_path(s).map_err(|_| invalid())
 }
-fn sha(s: &str) -> Result<(), Error> {
-    crate::domain::Sha256::new(s.into())
-        .map(|_| ())
-        .map_err(|_| bad())
-}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Detail {
@@ -64,7 +57,7 @@ struct Item {
     path: String,
     ok: bool,
     #[serde(deserialize_with = "required")]
-    data: Option<ReadResult>,
+    data: Option<Value>,
     #[serde(deserialize_with = "required")]
     error: Option<Detail>,
 }
@@ -115,10 +108,10 @@ pub(super) fn execute(
         for name in &p.paths {
             path(name)?;
         }
-        let r: ManyResult = call(
+        let mut r: ManyResult = call(
             client,
             host,
-            json!({"op":"read_many","paths":p.paths,"start":p.start,"lines":p.lines,"max_bytes":p.max_bytes}),
+            json!({"op":"read_many","paths":p.paths,"start":p.start,"lines":p.lines,"max_bytes":p.max_bytes,"with_coverage":true}),
             64 * 1024 * 1024,
             cancelled,
             guard,
@@ -127,18 +120,16 @@ pub(super) fn execute(
             return Err(bad());
         }
         let mut bytes = 0;
-        for item in &r.items {
-            match (&item.data, &item.error, item.ok) {
+        for item in &mut r.items {
+            match (&mut item.data, &item.error, item.ok) {
                 (Some(data), None, true) => {
-                    sha(&data.sha256)?;
-                    if data.path != item.path
-                        || data.start != p.start
-                        || data.lines > p.lines
-                        || data.lines > data.total_lines
-                    {
-                        return Err(bad());
-                    }
-                    bytes += data.content.len();
+                    *data = super::page::validate(
+                        data.take(),
+                        &item.path,
+                        p.max_bytes,
+                        Some((p.start, p.lines)),
+                    )?;
+                    bytes += data["content"].as_str().ok_or_else(bad)?.len();
                 }
                 (None, Some(error), false) => {
                     if super::backend::known_refusal_code(&error.code).is_none() {

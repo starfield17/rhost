@@ -22,6 +22,7 @@ pub enum Session {
         timeout_nanos: i64,
     },
     Exec {
+        max_bytes: usize,
         host: String,
         session: String,
         program: CommandText,
@@ -35,6 +36,7 @@ pub enum Session {
         enter: bool,
     },
     Read {
+        until: Option<u64>,
         host: String,
         session: String,
         offset: session::ReadOffset,
@@ -76,6 +78,11 @@ static LIST_FLAGS: &[FlagSpec] = &[
     ),
 ];
 static EXEC_FLAGS: &[FlagSpec] = &[
+    FlagSpec::value(
+        "max-bytes",
+        false,
+        "exec output bytes; default 4096, max 2097152",
+    ),
     JSON,
     FlagSpec::value("command", true, "shell program to run in the session"),
     FlagSpec::value("command-file", true, "read the program from a local file"),
@@ -92,6 +99,7 @@ static SEND_FLAGS: &[FlagSpec] = &[
     FlagSpec::long("enter", "press Enter after the data"),
 ];
 static READ_FLAGS: &[FlagSpec] = &[
+    FlagSpec::value("until", false, "exclusive source-byte end"),
     JSON,
     FlagSpec::value(
         "since",
@@ -106,7 +114,7 @@ static READ_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "max-bytes",
         false,
-        "raw bytes per page; default 262144, range 4..262144",
+        "raw bytes per page; default 4096, range 4..262144",
     ),
     FlagSpec::value(
         "timeout",
@@ -247,7 +255,19 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
             } else {
                 CommandText::File(parsed.value("command-file").unwrap_or_default().to_string())
             };
+            let max_bytes = match parsed
+                .value("max-bytes")
+                .map(str::parse::<usize>)
+                .transpose()
+            {
+                Ok(n) => n.unwrap_or(4096),
+                Err(_) => return ParsedCommand::usage(Scope::Session, "invalid output budget"),
+            };
+            if !(4..=session::EXEC_OUTPUT_LIMIT).contains(&max_bytes) {
+                return ParsedCommand::usage(Scope::Session, "invalid output budget");
+            }
             ParsedCommand::Run(Session::Exec {
+                max_bytes,
                 host: operands[0].clone(),
                 session: operands[1].clone(),
                 program,
@@ -303,7 +323,7 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
                 (None, None) => session::ReadOffset::Since(0),
             };
             let max_bytes = match parsed.value("max-bytes") {
-                None => session::MAX_READ_BYTES,
+                None => 4096,
                 Some(raw) => match raw.parse::<usize>() {
                     Ok(value) if (4..=session::MAX_READ_BYTES).contains(&value) => value,
                     _ => {
@@ -317,7 +337,12 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Session> {
                     }
                 },
             };
+            let until = match parsed.value("until").map(str::parse::<u64>).transpose() {
+                Ok(v) => v,
+                Err(_) => return ParsedCommand::usage(Scope::Session, "invalid output end"),
+            };
             ParsedCommand::Run(Session::Read {
+                until,
                 host: operands[0].clone(),
                 session: operands[1].clone(),
                 offset,

@@ -56,6 +56,9 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
             | "helper.prepare"
             | "run.start"
             | "run.poll"
+            | "run.watch"
+            | "run.read"
+            | "run.search"
             | "run.list"
             | "run.prune"
             | "run.signal"
@@ -80,7 +83,7 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
     };
     match result {
         Ok(data) => {
-            json!({"schema_version":4,"operation":q.operation,"ok":true,"host":host,"data":data,"error":null})
+            json!({"schema_version":5,"operation":q.operation,"ok":true,"host":host,"data":data,"error":null})
         }
         Err(e) => failure(&q.operation, Some(host), e),
     }
@@ -92,7 +95,7 @@ pub fn failure(operation: &str, host: Option<&str>, error: Error) -> Value {
     } else if matches!(operation, "fs.write" | "fs.patch") {
         detail["mutation"] = "not_applied".into();
     }
-    let mut envelope = json!({"schema_version":4,"operation":operation,"ok":false,"host":host,"data":null,"error":detail});
+    let mut envelope = json!({"schema_version":5,"operation":operation,"ok":false,"host":host,"data":null,"error":detail});
     if host.is_none()
         && core::recognizes(operation)
         && let Some(object) = envelope.as_object_mut()

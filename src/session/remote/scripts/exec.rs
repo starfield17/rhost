@@ -5,7 +5,9 @@ use super::shared::{
     timeout_seconds,
 };
 use crate::base64;
-use crate::session::{DEFAULT_SHELL, EXEC_OUTPUT_LIMIT};
+use crate::session::DEFAULT_SHELL;
+#[cfg(test)]
+use crate::session::EXEC_OUTPUT_LIMIT;
 use crate::shell;
 use std::time::Duration;
 
@@ -16,7 +18,17 @@ use std::time::Duration;
 /// non-blocking `flock`: another writer holding it is reported immediately rather
 /// than queued behind it. On its own timeout the helper interrupts the command and
 /// reports whether the shell came back to a prompt.
+#[cfg(test)]
 pub fn exec(name_or_id: &str, command: &str, timeout: Duration, token: &str) -> String {
+    exec_bounded(name_or_id, command, timeout, token, EXEC_OUTPUT_LIMIT)
+}
+pub fn exec_bounded(
+    name_or_id: &str,
+    command: &str,
+    timeout: Duration,
+    token: &str,
+    limit: usize,
+) -> String {
     let payload = format!("{{\n{command}\ncommand printf '\\033]133;R;{token};%d\\007' \"$?\"\n}}");
     let command_b64 = base64::encode(payload.as_bytes());
     let timeout_sec = timeout_seconds(timeout);
@@ -122,10 +134,11 @@ pub fn exec(name_or_id: &str, command: &str, timeout: Duration, token: &str) -> 
     // The *full* segment length is reported before the bytes are capped, so the
     // caller can tell omission from completeness (SESSION-012).
     out.push_str("echo \"RHOST_OUTPUT_BYTES=$((abs - start))\"\n");
-    out.push_str(&format!("lim={EXEC_OUTPUT_LIMIT}\n"));
+    out.push_str("echo \"RHOST_FROM=$start\"\necho \"RHOST_UNTIL=$abs\"\n");
+    out.push_str(&format!("lim={limit}\n"));
     out.push_str("printf 'RHOST_OUTPUT='\n");
     out.push_str(
-        "tail -c +$((start+1)) \"$LOG\" | head -c \"$((abs - start))\" | head -c \"$lim\" | base64 -w0\n",
+        "tail -c +$((start+1)) \"$LOG\" | head -c \"$((abs - start))\" | tail -c \"$lim\" | base64 -w0\n",
     );
     out.push_str("printf '\\n'\n");
     out

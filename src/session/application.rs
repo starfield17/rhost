@@ -24,6 +24,7 @@ pub(crate) enum Request {
         timeout: Duration,
     },
     Exec {
+        max_bytes: usize,
         session: String,
         command: String,
         timeout: Duration,
@@ -35,6 +36,7 @@ pub(crate) enum Request {
         enter: bool,
     },
     Read {
+        until: Option<u64>,
         session: String,
         offset: ops::ReadOffset,
         max_bytes: usize,
@@ -51,7 +53,7 @@ pub(crate) enum Request {
 pub(crate) enum Outcome {
     Created(ops::Created),
     Listed(Vec<ops::Info>),
-    Executed(crate::domain::SessionExecOutcome),
+    Executed(ops::ExecObservation),
     Sent,
     Read(ops::Read),
     Recovered(ops::Recover),
@@ -132,7 +134,14 @@ impl Outcome {
                 None => serde_json::to_value(dto::session_create_failure(host, value)),
             },
             Self::Listed(value) => serde_json::to_value(dto::sessions(host, value)),
-            Self::Executed(value) => serde_json::to_value(dto::session_exec(host, value)),
+            Self::Executed(value) => {
+                let mut result = serde_json::to_value(dto::session_exec(host, &value.outcome))?;
+                result["data"]["output_range"] = value
+                    .range
+                    .map(|(from, until)| serde_json::json!({"from":from,"until":until,"next_request":if value.output().0.truncated(){Some(serde_json::json!({"operation":"session.read","params":{"session":value.id().map(|i|i.as_str()),"since":from,"until":until,"max_bytes":4096}}))}else{None}}))
+                    .into();
+                Ok(result)
+            }
             Self::Sent => serde_json::to_value(dto::session_sent(host)),
             Self::Read(value) => serde_json::to_value(dto::session_read(host, value)),
             Self::Recovered(value) => serde_json::to_value(dto::session_recover(host, value)),
@@ -176,12 +185,14 @@ pub(crate) fn execute(
             ops::list_observed(&observation, host, *timeout).map(Outcome::Listed)
         }
         Request::Exec {
+            max_bytes,
             session,
             command,
             timeout,
         } => ops::exec_observed(
             &observation,
             &ops::ExecOptions {
+                max_bytes: *max_bytes,
                 host,
                 session,
                 command,
@@ -207,12 +218,21 @@ pub(crate) fn execute(
         )
         .map(|()| Outcome::Sent),
         Request::Read {
+            until,
             session,
             offset,
             max_bytes,
             timeout,
-        } => ops::read_observed(&observation, host, session, *offset, *max_bytes, *timeout)
-            .map(Outcome::Read),
+        } => ops::read_observed_until(
+            &observation,
+            host,
+            session,
+            *offset,
+            *max_bytes,
+            *timeout,
+            *until,
+        )
+        .map(Outcome::Read),
         Request::Recover { session, timeout } => {
             ops::recover_observed(&observation, host, session, *timeout).map(Outcome::Recovered)
         }

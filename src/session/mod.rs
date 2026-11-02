@@ -47,8 +47,8 @@ pub use remote::protocol::{
 pub use run::run;
 
 pub(crate) use remote::scripts::{
-    SendKind, close as close_script, create as create_script, exec as exec_script,
-    list as list_script, read as read_script, recover as recover_script, send as send_script,
+    SendKind, close as close_script, create as create_script, list as list_script,
+    read as read_script, recover as recover_script, send as send_script,
 };
 
 use serde::{Deserialize, Serialize};

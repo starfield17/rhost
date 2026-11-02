@@ -161,16 +161,30 @@ static int watch_run(uint32_t kind,rh_state *s,const char *key,int directory,uin
     rh_byte(&b,status.incomplete || status.err_bytes>status.err_kept);
     int result=rh_emit(kind,&b);free(b.data);return result;
 }
+static int read_run(uint32_t kind,rh_state *s,const char *key,int directory,unsigned which,unsigned selection,uint64_t from,uint64_t tail,uint64_t until,uint32_t cap){
+    rh_status status;if(!current_status(directory,&status))return rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish Run evidence");
+    uint64_t kept=which==1?status.out_kept:status.err_kept,observed=which==1?status.out_bytes:status.err_bytes;
+    if(selection&2)until=kept;
+    if(until>kept)return rh_refuse(kind,"OUTPUT_RANGE_UNAVAILABLE","requested output is not retained");
+    if(selection&1)from=until>tail?until-tail:0;
+    if(from>until)return rh_refuse(kind,"OUTPUT_RANGE_UNAVAILABLE","requested output range is unavailable");
+    uint64_t available=until-from;if(available<cap)cap=(uint32_t)available;
+    rh_buf b={0};rh_byte(&b,0);rh_record(&b,s,key,&status);rh_byte(&b,which);rh_long(&b,kept);rh_long(&b,until);
+    int ok=stream(&b,directory,which==1?"stdout":"stderr",from,cap,observed,kept,
+        which==1?status.out_open:status.err_open,status.incomplete);
+    int result=ok?rh_emit(kind,&b):rh_refuse(kind,"STATE_UNAVAILABLE","cannot read retained output");free(b.data);return result;
+}
 int rh_runs(uint32_t kind,rh_reader *r) {
     if(kind==2)return submit(kind,r);
-    char *generation=NULL,*key=NULL;uint32_t wait=0,cap=4096;uint64_t out=0,err=0,expiry;unsigned signal_tag=0;
+    char *generation=NULL,*key=NULL;uint32_t wait=0,cap=4096;uint64_t out=0,err=0,expiry;unsigned signal_tag=0,which=0,selection=0;uint64_t tail=0,until=UINT64_MAX;
     if(kind!=7 && kind!=8)generation=rh_read_text(r);
-    if(kind==3 || kind==5 || kind==9)key=rh_read_text(r);
+    if(kind==3 || kind==5 || kind==9 || kind==10)key=rh_read_text(r);
     if(kind==3){wait=rh_read_int(r);out=rh_read_long(r);err=rh_read_long(r);cap=rh_read_int(r);}
     if(kind==9)wait=rh_read_int(r);
+    if(kind==10){which=rh_read_byte(r);selection=rh_read_byte(r);out=rh_read_long(r);tail=rh_read_long(r);until=rh_read_long(r);cap=rh_read_int(r);}
     if(kind==5)signal_tag=rh_read_byte(r);
     if(!rh_done(r) || ((kind!=7 && kind!=8) && !rh_generation(generation)) ||
-       ((kind==3 || kind==5 || kind==9) && !rh_key(key,&expiry)) || wait>300000 || !cap || cap>1048576 || (kind==5 && (signal_tag<1 || signal_tag>3))) {
+       ((kind==3 || kind==5 || kind==9 || kind==10) && !rh_key(key,&expiry)) || wait>300000 || (kind==10 && (which<1 || which>2 || selection>3 || cap<4)) || !cap || cap>1048576 || (kind==5 && (signal_tag<1 || signal_tag>3))) {
         free(generation);free(key);return rh_refuse(kind,"PROTOCOL_ERROR","invalid Run request");
     }
     const char *context=rh_context_error();if(context){free(generation);free(key);return rh_refuse(kind,context,"boot guard refused operation");}
@@ -183,11 +197,12 @@ int rh_runs(uint32_t kind,rh_reader *r) {
         uint64_t now=0;if(!(kind==7?rh_clock(&s,&now):rh_clock_read(&s,&now))){free(b.data);result=rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish effective clock");goto done;}
         rh_long(&b,now);char boot[37];(void)rh_boot_id(boot);rh_text(&b,boot);result=rh_emit(kind,&b);free(b.data);goto done;
     }
-    if(kind==3 || kind==5 || kind==9) {
+    if(kind==3 || kind==5 || kind==9 || kind==10) {
         int directory=openat(s.runs,key,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
         if(!valid_directory(directory)){if(directory>=0)close(directory);result=rh_refuse(kind,"RUN_NOT_FOUND","Run is not available");goto done;}
         (void)flock(s.registry,LOCK_UN);
         if(kind==3)result=observation(kind,&s,key,directory,wait,out,err,cap,0);
+        else if(kind==10)result=read_run(kind,&s,key,directory,which,selection,out,tail,until,cap);
         else if(kind==9)result=watch_run(kind,&s,key,directory,wait);
         else result=signal_run(kind,directory,signal_tag,key);
         close(directory);goto done;

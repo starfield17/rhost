@@ -36,6 +36,7 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
             },
         ),
         Session::Exec {
+            max_bytes,
             host,
             session,
             program,
@@ -51,6 +52,7 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
             (
                 host,
                 Request::Exec {
+                    max_bytes,
                     session,
                     command,
                     timeout: budget(timeout_nanos),
@@ -73,6 +75,7 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
             },
         ),
         Session::Read {
+            until,
             host,
             session,
             offset,
@@ -81,6 +84,7 @@ pub fn run(sink: &mut Sink, client: &Client, command: Session, json: bool) -> u8
         } => (
             host,
             Request::Read {
+                until,
                 session,
                 offset,
                 max_bytes,

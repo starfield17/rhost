@@ -124,13 +124,35 @@ pub(in crate::session) fn read_observed(
     max_bytes: usize,
     timeout: Duration,
 ) -> Result<Read, Error> {
-    let stdout = run_helper(
+    read_observed_until(
         observation,
         host,
-        &session::read_script(reference, offset, max_bytes),
+        reference,
+        offset,
+        max_bytes,
         timeout,
-        FIELD_CAPTURE,
-    )?;
+        None,
+    )
+}
+pub(in crate::session) fn read_observed_until(
+    observation: &Observation<'_>,
+    host: &str,
+    reference: &str,
+    offset: ReadOffset,
+    max_bytes: usize,
+    timeout: Duration,
+    until: Option<u64>,
+) -> Result<Read, Error> {
+    if let (ReadOffset::Since(from), Some(end)) = (offset, until)
+        && from > end
+    {
+        return Err(Error::new("CONFIG_INVALID", "reversed output range"));
+    }
+    let mut script = session::read_script(reference, offset, max_bytes);
+    if let Some(end) = until {
+        script=script.replace("size=$((size))\n",&format!("size=$((size))\n[ {end} -le \"$size\" ] || {{ echo RHOST_ERR=protocol; exit 0; }}\nsize={end}\n"));
+    }
+    let stdout = run_helper(observation, host, &script, timeout, FIELD_CAPTURE)?;
     let result = session::parse_read(&stdout).map_err(session_error)?;
     // A page cut at the byte limit can land mid-rune: hold the partial trailing
     // bytes back and move the cursor with them, so the next read re-delivers them

@@ -55,6 +55,8 @@ struct List {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Exec {
+    #[serde(default = "page")]
+    max_bytes: usize,
     session: String,
     command: String,
     #[serde(default)]
@@ -74,6 +76,8 @@ struct Send {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Read {
+    #[serde(default, deserialize_with = "optional")]
+    until: Option<u64>,
     session: String,
     #[serde(default, deserialize_with = "optional")]
     since: Option<u64>,
@@ -85,7 +89,7 @@ struct Read {
     timeout_ms: u64,
 }
 fn page() -> usize {
-    super::MAX_READ_BYTES
+    4096
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -120,6 +124,7 @@ pub(crate) fn prepare(operation: &str, raw: &str) -> Result<Request, Error> {
         "session.exec" => {
             let p: Exec = parse(raw)?;
             Request::Exec {
+                max_bytes: p.max_bytes,
                 session: p.session,
                 command: p.command,
                 timeout: timeout(p.timeout_ms, EXEC_TIMEOUT.as_secs())?,
@@ -153,6 +158,7 @@ pub(crate) fn prepare(operation: &str, raw: &str) -> Result<Request, Error> {
                 (since, None) => super::ReadOffset::Since(since.unwrap_or(0)),
             };
             Request::Read {
+                until: p.until,
                 session: p.session,
                 offset,
                 max_bytes: p.max_bytes,

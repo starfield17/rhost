@@ -67,7 +67,7 @@ fn token() -> String {
 #[test]
 fn an_exec_result_needs_this_invocations_token_and_one_status() {
     let good = format!(
-        "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=7\nRHOST_OUTPUT_BYTES=4\nRHOST_OUTPUT={}\n",
+        "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=7\nRHOST_OUTPUT_BYTES=4\nRHOST_FROM=0\nRHOST_UNTIL=4\nRHOST_OUTPUT={}\n",
         token(),
         base64::encode(b"out\n")
     );
@@ -77,6 +77,7 @@ fn an_exec_result_needs_this_invocations_token_and_one_status() {
             output,
             source_bytes,
             exit_code,
+            ..
         } => {
             assert_eq!(id, "s_ab");
             assert_eq!(output, b"out\n");
@@ -89,27 +90,27 @@ fn an_exec_result_needs_this_invocations_token_and_one_status() {
         // Another invocation's token, a duplicated status, a status written
         // differently, a missing identity, a stray line, a duplicate identity.
         format!(
-            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_OUTPUT=\n",
+            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_FROM=0\nRHOST_UNTIL=0\nRHOST_OUTPUT=\n",
             "b".repeat(32)
         ),
         format!(
-            "RHOST_ID=s_ab\nRHOST_TOKEN={0}\nRHOST_EXIT=0\nRHOST_EXIT=1\nRHOST_OUTPUT_BYTES=0\nRHOST_OUTPUT=\n",
+            "RHOST_ID=s_ab\nRHOST_TOKEN={0}\nRHOST_EXIT=0\nRHOST_EXIT=1\nRHOST_OUTPUT_BYTES=0\nRHOST_FROM=0\nRHOST_UNTIL=0\nRHOST_OUTPUT=\n",
             token()
         ),
         format!(
-            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=07\nRHOST_OUTPUT_BYTES=0\nRHOST_OUTPUT=\n",
+            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=07\nRHOST_OUTPUT_BYTES=0\nRHOST_FROM=0\nRHOST_UNTIL=0\nRHOST_OUTPUT=\n",
             token()
         ),
         format!(
-            "RHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_OUTPUT=\n",
+            "RHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_FROM=0\nRHOST_UNTIL=0\nRHOST_OUTPUT=\n",
             token()
         ),
         format!(
-            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_OUTPUT=\nnoise\n",
+            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_FROM=0\nRHOST_UNTIL=0\nRHOST_OUTPUT=\nnoise\n",
             token()
         ),
         format!(
-            "RHOST_ID=s_ab\nRHOST_ID=s_cd\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_OUTPUT=\n",
+            "RHOST_ID=s_ab\nRHOST_ID=s_cd\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=0\nRHOST_FROM=0\nRHOST_UNTIL=0\nRHOST_OUTPUT=\n",
             token()
         ),
     ] {
@@ -131,7 +132,7 @@ fn an_exec_result_reports_a_bounded_capture_as_truncated() {
     // The helper caps the segment but still names its true length; the parser has
     // to keep both, or a large command would look like a protocol failure.
     let truncated = format!(
-        "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=1000\nRHOST_OUTPUT={}\n",
+        "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=1000\nRHOST_FROM=0\nRHOST_UNTIL=1000\nRHOST_OUTPUT={}\n",
         token(),
         base64::encode(b"early bytes")
     );
@@ -150,7 +151,7 @@ fn an_exec_result_reports_a_bounded_capture_as_truncated() {
     // malformed count is not a size to trust.
     for broken in [
         format!(
-            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=3\nRHOST_OUTPUT={}\n",
+            "RHOST_ID=s_ab\nRHOST_TOKEN={}\nRHOST_EXIT=0\nRHOST_OUTPUT_BYTES=3\nRHOST_FROM=0\nRHOST_UNTIL=3\nRHOST_OUTPUT={}\n",
             token(),
             base64::encode(b"out\n")
         ),

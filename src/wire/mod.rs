@@ -1,4 +1,4 @@
-//! The schema-v4 wire envelope and the delivery it is written through.
+//! The schema-v5 wire envelope and the delivery it is written through.
 //!
 //! This is the shared half of the wire format: the envelope every operation
 //! returns, the error payload every failure carries, the single-write delivery
@@ -117,7 +117,7 @@ pub fn failure_with_mutation(
         .map(crate::domain::MutationEvidence::as_str)
         .or_else(|| matches!(operation, "fs.write" | "fs.patch").then_some("not_applied"));
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation,
         ok: false,
         host: (!host.is_empty()).then(|| host.to_string()),
@@ -136,7 +136,7 @@ pub struct VersionDto {
 
 pub fn version() -> Envelope<VersionDto> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "version",
         ok: true,
         host: None,
@@ -145,14 +145,14 @@ pub fn version() -> Envelope<VersionDto> {
             version: env!("CARGO_PKG_VERSION"),
             commit: option_env!("RHOST_BUILD_COMMIT").unwrap_or("none"),
             build_date: option_env!("RHOST_BUILD_DATE").unwrap_or("unknown"),
-            schema_version: 4,
+            schema_version: 5,
         },
     }
 }
 
 pub fn usage(message: &str) -> Envelope<Option<()>> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "usage",
         ok: false,
         host: None,
@@ -172,7 +172,7 @@ pub fn group_usage(group: &str, message: &str) -> Envelope<Option<()>> {
         message.to_string()
     };
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: match group {
             "session" => "session.usage",
             "connection" => "connection.usage",

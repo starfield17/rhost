@@ -50,6 +50,16 @@ static FS_BATCH_FLAGS: &[FlagSpec] = &[
     FlagSpec::value("manifest", false, "local JSON manifest of copies"),
 ];
 static FS_READ_FLAGS: &[FlagSpec] = &[
+    FlagSpec::value(
+        "offset-bytes",
+        false,
+        "raw byte offset; exclusive with line range",
+    ),
+    FlagSpec::value(
+        "if-hash",
+        false,
+        "expected whole-file hash for byte continuation",
+    ),
     JSON,
     FlagSpec::value(
         "timeout",
@@ -59,7 +69,7 @@ static FS_READ_FLAGS: &[FlagSpec] = &[
     FlagSpec::value(
         "max-bytes",
         false,
-        "maximum bytes to return; default 256 KiB, max 8 MiB",
+        "maximum bytes to return; default 8 KiB, max 8 MiB",
     ),
     FlagSpec::value("start", false, "first line to return (1-based); default 1"),
     FlagSpec::value("lines", false, "number of lines to return; default 200"),
@@ -309,7 +319,7 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Fs> {
                 }
             };
             let max_bytes = match parsed.value("max-bytes") {
-                None => 256 * 1024,
+                None => 8192,
                 Some(raw) => match raw.parse::<usize>() {
                     Ok(value) if (1..=super::ops::MAX_HELPER_BYTES).contains(&value) => value,
                     _ => {
@@ -331,7 +341,21 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Fs> {
                 Ok(value) => value,
                 Err(message) => return ParsedCommand::usage(Scope::Root, message),
             };
+            let offset_bytes = match parsed.value("offset-bytes") {
+                Some(v) => match v.parse::<u64>() {
+                    Ok(v) => Some(v),
+                    Err(_) => return ParsedCommand::usage(Scope::Fs, "invalid byte offset"),
+                },
+                None => None,
+            };
+            if offset_bytes.is_some()
+                && (parsed.value("start").is_some() || parsed.value("lines").is_some())
+            {
+                return ParsedCommand::usage(Scope::Fs, "byte and line ranges are exclusive");
+            }
             ParsedCommand::Run(Fs::Read {
+                offset_bytes,
+                if_hash: flag_or("if-hash"),
                 host: operands[0].clone(),
                 path: operands[1].clone(),
                 start,

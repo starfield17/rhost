@@ -84,28 +84,6 @@ pub(crate) fn sync(sink: &mut Sink, result: &ops::Sync, applied: &str, preview: 
     }
 }
 
-/// The human view of a read is the page itself, so `rhost fs read host file >
-/// copy.txt` stays clean; everything else goes to stderr.
-pub(crate) fn read(sink: &mut Sink, result: &ops::Read) {
-    sink.text(&result.content);
-    let last = if result.lines == 0 {
-        result.start
-    } else {
-        result.start + result.lines - 1
-    };
-    warn(&format!(
-        "{}: lines {}-{} of {} ({}...)",
-        result.path,
-        result.start,
-        last,
-        result.total_lines,
-        &result.sha256[..result.sha256.len().min(12)]
-    ));
-    if result.truncated {
-        warn("output was truncated: raise --lines or --max-bytes");
-    }
-}
-
 pub(crate) fn write(_sink: &mut Sink, result: &ops::Write) {
     warn(&format!(
         "wrote {} ({} bytes, sha256 {}...)",

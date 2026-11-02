@@ -29,7 +29,9 @@ mod lifecycle;
 mod shared;
 
 pub use create::create;
+#[cfg(test)]
 pub use exec::exec;
+pub use exec::exec_bounded;
 pub use io::{ReadOffset, SendKind, read, send};
 pub use lifecycle::{close, list, recover};
 
@@ -113,7 +115,7 @@ mod tests {
         // command is truncation rather than a lost completion marker.
         assert!(script.contains(&format!("lim={}", crate::session::EXEC_OUTPUT_LIMIT)));
         assert!(script.contains("echo \"RHOST_OUTPUT_BYTES=$((abs - start))\""));
-        assert!(script.contains("head -c \"$lim\" | base64 -w0"));
+        assert!(script.contains("tail -c \"$lim\" | base64 -w0"));
     }
 
     #[test]

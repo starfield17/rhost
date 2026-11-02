@@ -34,7 +34,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rhost",env!("CARGO_PKG_VERSION")))
-            .with_instructions("Operate SSH-reachable hosts with structured files, recoverable noninteractive Runs and persistent tmux terminals. Use hosts/version without a target; doctor diagnoses shell dependencies, helper_prepare establishes native readiness. Read/search then hash-guard edits. Run start requires a retained generation and expiring key; wait/cancellation only observes. Use session send/read for REPLs; session exec timeout may interrupt, and canceling its observer does not revoke that submitted timeout. Inspect schema-v4 completion/mutation evidence before retry. OpenSSH owns authentication and host keys. Manage project directories and Git branches yourself.")
+            .with_instructions("Inspect coverage and next_request before claiming completeness. Run wait/cancel stops observation, never work; retain generation/key/payload before start. Session exec timeout may interrupt; cancel does not revoke it. Inspect completion, mutation and error.recovery before retry. Use run.watch for status and run.read/search for bounded logs. Defaults: files 8192 bytes, logs 4096; resume source-byte cursors. OpenSSH owns authentication and host keys. Helper preparation establishes native readiness; doctor diagnoses shell dependencies.")
     }
     async fn list_tools(
         &self,
@@ -110,9 +110,9 @@ impl ServerHandler for Server {
     }
 }
 fn tools() -> Result<Vec<(String, Tool)>, String> {
-    let schema: Value = serde_json::from_str(include_str!("../../schemas/request-v4.schema.json"))
+    let schema: Value = serde_json::from_str(include_str!("../../schemas/request-v5.schema.json"))
         .map_err(|e| e.to_string())?;
-    let result: Value = serde_json::from_str(include_str!("../../schemas/result-v4.schema.json"))
+    let result: Value = serde_json::from_str(include_str!("../../schemas/result-v5.schema.json"))
         .map_err(|e| e.to_string())?;
     let operations = schema["properties"]["operation"]["enum"]
         .as_array()
@@ -177,6 +177,15 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
             "fs.changeset.prune" => {
                 "Explicitly remove eligible expired terminal changeset journals, ending their recovery retention."
             }
+            "run.watch" => {
+                "Wait for Run state/completion without transferring logs. Stream counters and gaps do not imply logs were read."
+            }
+            "run.read" => {
+                "Read one retained stdout/stderr range, default tail 4096 bytes. Text by default; request base64 for exact bytes. Inspect coverage and next_request."
+            }
+            "run.search" => {
+                "Search a fixed retained log interval for literal text with bounded context. Continue with next and the same until; omitted or unavailable output is explicit."
+            }
             "run.list" => {
                 "Discover retained Run registrations and lifecycle status in the expected namespace generation."
             }
@@ -199,7 +208,7 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
             "fs.write" | "fs.patch" => {
                 "Apply a hash-guarded file edit. Inspect mutation evidence even on failure."
             }
-            _ => "Perform one typed remote operation and return its schema-v4 envelope.",
+            _ => "Perform one typed remote operation and return its schema-v5 envelope.",
         };
         let mut tool = Tool::new(
             format!("rhost_{}", operation.replace('.', "_")),

@@ -1,5 +1,5 @@
 //! Structured file parameters are parsed once, before helper preparation.
-use super::backend::{Edit, ReadResult, WriteResult};
+use super::backend::{Edit, WriteResult};
 use crate::remote::Error;
 use crate::transport::Client;
 use serde::Deserialize;
@@ -9,6 +9,12 @@ use std::time::Duration;
 #[serde(deny_unknown_fields)]
 struct Read {
     path: String,
+    #[serde(default, deserialize_with = "optional_number")]
+    offset_bytes: Option<u64>,
+    #[serde(default, deserialize_with = "optional_hash")]
+    if_hash: Option<String>,
+    #[serde(default, deserialize_with = "optional_number")]
+    timeout_ms: Option<u64>,
     #[serde(default = "one")]
     start: u64,
     #[serde(default = "lines")]
@@ -35,6 +41,12 @@ struct Patch {
     if_hash: String,
     edits: Vec<Edit>,
 }
+fn optional_number<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    u64::deserialize(d).map(Some)
+}
+fn optional_hash<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
+}
 fn nonnull_mode<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
     String::deserialize(d).map(Some)
 }
@@ -58,7 +70,7 @@ fn lines() -> u64 {
     200
 }
 fn cap() -> usize {
-    256 * 1024
+    8192
 }
 fn parse<T: for<'a> Deserialize<'a>>(s: &str) -> Result<T, Error> {
     serde_json::from_str(s).map_err(|e| {
@@ -90,10 +102,14 @@ fn execute_simple(
                 {
                     return Err(Error::new("CONFIG_INVALID", "invalid read bounds"));
                 }
-                (
-                    json!({"op":"read","path":p.path,"start":p.start,"lines":p.lines,"max_bytes":p.max_bytes}),
-                    p.max_bytes,
-                )
+                if let Some(ref h)=p.if_hash {hash(h)?;}
+                let mut v=if let Some(offset)=p.offset_bytes {
+                    if p.start!=1 || p.lines!=200 || p.max_bytes<4{return Err(Error::new("CONFIG_INVALID","byte and line ranges are exclusive"));}
+                    json!({"op":"read","path":p.path,"offset_bytes":offset,"max_bytes":p.max_bytes})
+                }else {json!({"op":"read","path":p.path,"start":p.start,"lines":p.lines,"max_bytes":p.max_bytes,"with_coverage":true})};
+                if let Some(h)=p.if_hash {if p.offset_bytes.is_none(){return Err(Error::new("CONFIG_INVALID","hash guard requires byte offset"));}v["if_hash"]=json!(h);}
+                let _timeout=p.timeout_ms;
+                (v,p.max_bytes)
             }
             "fs.write" => {
                 let p: Write = parse(raw)?;
@@ -149,23 +165,45 @@ fn execute_simple(
         }
         Ok((payload, budget))
         })().map_err(|e| e.with_recovery(crate::domain::Recovery::invalid()))?;
+        let timeout = if operation == "fs.read" {
+            parse::<Read>(raw)?
+                .timeout_ms
+                .filter(|n| *n != 0)
+                .unwrap_or(60000)
+        } else {
+            30000
+        };
         let bytes = crate::helper::Helper::new(client, host)
             .with_cancellation(cancelled)
             .with_boot_guard(boot_guard)
             .file_call(
                 &payload,
-                Duration::from_secs(30),
+                Duration::from_millis(timeout),
                 super::backend::output_budget(budget),
             )?;
         if operation == "fs.read" {
-            let answer: super::backend::Answer<ReadResult> =
-                serde_json::from_slice(&bytes).map_err(|_| bad_answer())?;
-            match answer {
-                super::backend::Answer::Done(p) => Ok(
-                    json!({"path":p.path,"sha256":p.sha256,"content":p.content,"start":p.start,"lines":p.lines,"total_lines":p.total_lines,"truncated":p.truncated}),
-                ),
-                super::backend::Answer::Refused(e) => Err(refusal(e)),
+            let answer: Value = serde_json::from_slice(&bytes).map_err(|_| bad_answer())?;
+            if answer.get("error").is_some() {
+                return Err(refusal(
+                    serde_json::from_value(answer).map_err(|_| bad_answer())?,
+                ));
             }
+            let requested: Read = parse(raw)?;
+            if requested
+                .offset_bytes
+                .is_some_and(|n| answer["coverage"]["from"].as_u64() != Some(n))
+            {
+                return Err(bad_answer());
+            }
+            super::page::validate(
+                answer,
+                &requested.path,
+                budget,
+                requested
+                    .offset_bytes
+                    .is_none()
+                    .then_some((requested.start, requested.lines)),
+            )
         } else {
             let answer: super::backend::Answer<WriteResult> =
                 serde_json::from_slice(&bytes).map_err(|_| bad_answer())?;
@@ -237,7 +275,7 @@ impl RequestOutcome {
             }
             value
         });
-        json!({"schema_version":4,"operation":operation,"host":host,"ok":error.is_none(),"data":self.data,"error":error})
+        json!({"schema_version":5,"operation":operation,"host":host,"ok":error.is_none(),"data":self.data,"error":error})
     }
     pub fn done(data: Value) -> Self {
         Self { data, error: None }

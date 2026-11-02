@@ -39,7 +39,7 @@ static j_value *operation(const j_value *q,f_error *e){
     int reading=!strcmp(op,"read"),writing=!strcmp(op,"write"),patch=!strcmp(op,"patch"),resolving=!strcmp(op,"resolve");
     if(!reading && !writing && !patch && !resolving)return f_fail(e,"CONFIG_INVALID","unknown operation");
     for(const j_value *v=q->first;v;v=v->next){
-        const char *allowed=resolving?"op path delete":reading?"op path start lines max_bytes offset_bytes if_hash":patch?"op path edits if_hash max_bytes":"op path content if_hash parents file_mode max_bytes";
+        const char *allowed=resolving?"op path delete":reading?"op path start lines max_bytes offset_bytes if_hash with_coverage":patch?"op path edits if_hash max_bytes":"op path content if_hash parents file_mode max_bytes";
         int known=0;for(const char *a=allowed;*a;){const char *end=strchr(a,' ');size_t n=end?(size_t)(end-a):strlen(a);if(n==v->key_size && !memcmp(a,v->key,n)){known=1;break;}a=end?end+1:a+n;}
         if(!known)return f_fail(e,"CONFIG_INVALID","unknown request field");
     }

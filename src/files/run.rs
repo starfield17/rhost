@@ -237,6 +237,8 @@ pub(crate) fn run(
             }
         }
         Fs::Read {
+            offset_bytes,
+            if_hash,
             host,
             path,
             start,
@@ -244,24 +246,52 @@ pub(crate) fn run(
             max_bytes,
             timeout_nanos,
         } => {
-            let options = super::ops::ReadOptions {
-                host: &host,
-                path: &path,
-                start,
-                lines,
-                max_bytes,
-                timeout: fs_timeout(timeout_nanos),
-            };
-            deliver(
-                sink,
-                json,
-                "fs.read",
+            let timeout_ms = (timeout_nanos.max(0) as u64).div_ceil(1_000_000);
+            let mut params =
+                serde_json::json!({"path":path,"max_bytes":max_bytes,"timeout_ms":timeout_ms});
+            if let Some(offset) = offset_bytes {
+                params["offset_bytes"] = serde_json::json!(offset);
+            } else {
+                params["start"] = serde_json::json!(start);
+                params["lines"] = serde_json::json!(lines);
+            }
+            if let Some(hash) = if_hash {
+                params["if_hash"] = serde_json::json!(hash);
+            }
+            let outcome = super::execute_params(
+                client,
                 &host,
-                super::ops::read(client, &options),
-                |sink, result| sink.envelope(&dto::file_read(&host, result)),
-                render::read,
-            )
+                "fs.read",
+                &params.to_string(),
+                &|| false,
+                None,
+            );
+            let status = outcome
+                .error
+                .as_ref()
+                .map(|e| Failure::from_error("fs.read", &host, e.clone()).status())
+                .unwrap_or(0);
+            let value = outcome.envelope("fs.read", &host);
+            if json {
+                sink.line(&value.to_string());
+            } else if let Some(content) = value["data"]["content"].as_str() {
+                sink.text(content);
+                if value["data"]["coverage"]["more"] == true {
+                    crate::cli::warn(&format!(
+                        "partial file page; continue at byte {} with hash {}",
+                        value["data"]["coverage"]["next"], value["data"]["sha256"]
+                    ));
+                }
+            } else {
+                crate::cli::warn(
+                    value["error"]["message"]
+                        .as_str()
+                        .unwrap_or("file read failed"),
+                );
+            }
+            status
         }
+
         Fs::Write {
             host,
             path,

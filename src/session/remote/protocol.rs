@@ -109,6 +109,7 @@ pub enum ExecResult {
         /// larger than `output.len()`, which is how a bounded capture states
         /// truncation instead of the transport slicing the base64 line.
         source_bytes: u64,
+        range: Option<(u64, u64)>,
         exit_code: u8,
     },
     Failed {
@@ -209,8 +210,14 @@ pub fn parse_exec(stdout: &str, expected_token: &str) -> ExecResult {
     let mut exits: Vec<&str> = Vec::new();
     let mut outputs: Vec<&str> = Vec::new();
     let mut output_bytes: Vec<&str> = Vec::new();
+    let mut from = Vec::new();
+    let mut until = Vec::new();
     for line in stdout.lines() {
-        if let Some(value) = line.strip_prefix("RHOST_TOKEN=") {
+        if let Some(value) = line.strip_prefix("RHOST_FROM=") {
+            from.push(value);
+        } else if let Some(value) = line.strip_prefix("RHOST_UNTIL=") {
+            until.push(value);
+        } else if let Some(value) = line.strip_prefix("RHOST_TOKEN=") {
             tokens.push(value);
         } else if let Some(value) = line.strip_prefix("RHOST_EXIT=") {
             exits.push(value);
@@ -257,7 +264,15 @@ pub fn parse_exec(stdout: &str, expected_token: &str) -> ExecResult {
     if source_bytes < output.len() as u64 {
         return protocol_failure(Some(id));
     }
+    let range = match (from.as_slice(), until.as_slice()) {
+        ([f], [u]) => match (canonical_count(f), canonical_count(u)) {
+            (Some(f), Some(u)) if u >= f && u - f == source_bytes => Some((f, u)),
+            _ => return protocol_failure(Some(id)),
+        },
+        _ => return protocol_failure(Some(id)),
+    };
     ExecResult::Completed {
+        range,
         id,
         output,
         source_bytes,

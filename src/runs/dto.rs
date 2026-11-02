@@ -11,7 +11,7 @@ pub fn bind(
     generation: Option<&str>,
     key: Option<&str>,
 ) -> Result<(), Error> {
-    if matches!(kind, 2 | 3)
+    if matches!(kind, 2 | 3 | 9 | 10)
         && (data["run"]["generation"].as_str() != generation
             || data["run"]["run_id"].as_str() != key)
     {
@@ -31,7 +31,7 @@ pub fn bind(
     }
     Ok(())
 }
-fn record(r: &mut Reader<'_>) -> Result<Value, Error> {
+pub(super) fn record(r: &mut Reader<'_>) -> Result<Value, Error> {
     let generation = r.text()?;
     let run_id = r.text()?;
     super::request::generation(&generation)?;
@@ -56,7 +56,7 @@ fn record(r: &mut Reader<'_>) -> Result<Value, Error> {
     }
     Ok(value)
 }
-fn stream(r: &mut Reader<'_>) -> Result<Value, Error> {
+pub(super) fn stream(r: &mut Reader<'_>) -> Result<Value, Error> {
     let from = r.long()?;
     let next = r.long()?;
     let observed = r.long()?;
@@ -83,10 +83,44 @@ pub fn decode(kind: u32, bytes: &[u8]) -> Result<Value, Error> {
                 crate::domain::BootId::new(boot.clone())
                     .map_err(|_| protocol("invalid namespace boot identity"))?;
             }
-            json!({"schema_generations":[4],"generation":generation,"remote_time_unix":now,"context":{"boot_id":if boot.is_empty(){None}else{Some(boot)}}})
+            json!({"schema_generations":[5],"generation":generation,"remote_time_unix":now,"context":{"boot_id":if boot.is_empty(){None}else{Some(boot)}}})
         }
         2 | 3 => {
             json!({"run":record(&mut r)?,"stdout":stream(&mut r)?,"stderr":stream(&mut r)?,"stale":false})
+        }
+        9 => {
+            let run = record(&mut r)?;
+            let mut counts = Vec::new();
+            for _ in 0..2 {
+                let observed = r.long()?;
+                let retained = r.long()?;
+                if retained > observed {
+                    return Err(protocol("invalid retained byte count"));
+                }
+                counts.push(json!({"observed_bytes":observed,"retained_bytes":retained,"open":r.boolean()?,"incomplete":r.boolean()?}));
+            }
+            json!({"run":run,"stdout":counts[0],"stderr":counts[1]})
+        }
+        10 => {
+            let run = record(&mut r)?;
+            let which = match r.byte()? {
+                1 => "stdout",
+                2 => "stderr",
+                _ => return Err(protocol("invalid stream")),
+            };
+            let retained = r.long()?;
+            let until = r.long()?;
+            let mut output = stream(&mut r)?;
+            if retained > output["observed_bytes"].as_u64().unwrap_or(0)
+                || until > retained
+                || output["next"].as_u64().is_none_or(|n| n > until)
+            {
+                return Err(protocol("invalid output range"));
+            }
+            output["stream"] = json!(which);
+            output["retained_bytes"] = json!(retained);
+            output["until"] = json!(until);
+            json!({"run":run,"output":output})
         }
         4 => {
             let count = r.int()?;

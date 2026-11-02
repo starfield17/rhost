@@ -5,12 +5,20 @@
 #include <string.h>
 #include <unistd.h>
 static int contains(const unsigned char *text,size_t size,const j_value *pattern){if(!pattern)return 1;if(pattern->size>size)return 0;for(size_t i=0;i<=size-pattern->size;i++)if(!memcmp(text+i,pattern->text,pattern->size))return 1;return 0;}
-static j_value *item(const char *path,const char *hash,const j_buf *bytes,const j_value *pattern,uint64_t *matches,uint64_t *remaining){
-    j_value *v=j_new(J_OBJECT),*lines=j_new(J_ARRAY);if(!v || !lines)goto fail;uint64_t line=1;size_t at=0;int truncated=0;
+static j_value *item(const char *path,const char *hash,const j_buf *bytes,const j_value *pattern,uint64_t *matches,uint64_t *remaining,uint64_t resume,int paging,uint64_t *pending){
+    j_value *v=j_new(J_OBJECT),*lines=j_new(J_ARRAY);if(!v || !lines)goto fail;uint64_t line=1;size_t at=0;int truncated=0;*pending=UINT64_MAX;
     if(pattern)while(at<bytes->size){size_t end=at;while(end<bytes->size && bytes->data[end]!='\n')end++;
-        if(contains(bytes->data+at,end-at,pattern)){
-            if(!*matches || end-at>*remaining)truncated=1;
-            else{j_value *row=j_new(J_OBJECT);if(!row || !j_integer(row,"line",line) || !j_text(row,"text",bytes->data+at,end-at) || !j_take(lines,NULL,&row)){j_free(row);goto fail;}(*matches)--;*remaining-=end-at;}
+        if(at>=resume && contains(bytes->data+at,end-at,pattern)){
+            if(!*matches || (paging && !*remaining)){truncated=1;if(paging){*pending=at;break;}}
+            else if(end-at>*remaining && !paging)truncated=1;
+            else{
+                size_t n=end-at;if(n>*remaining)n=(size_t)*remaining;
+                if(paging)while(n && !rh_utf8(bytes->data+at,n,1))n--;
+                j_value *row=j_new(J_OBJECT);
+                if(!row || !j_integer(row,"line",line) || !j_text(row,"text",bytes->data+at,n) ||
+                   (paging && (!j_integer(row,"offset_bytes",at) || !j_boolean(row,"truncated",n<end-at))) || !j_take(lines,NULL,&row)){j_free(row);goto fail;}
+                (*matches)--;*remaining-=n;
+            }
         }
         line++;at=end+(end<bytes->size);
     }
@@ -27,7 +35,10 @@ static int load(int fd,j_buf *bytes,uint64_t *total,f_error *e){
 j_value *f_search(const j_value *q,f_error *e){
     int find=!strcmp(j_string(j_get(q,"op")),"find");uint64_t limit,matches,remaining,ttl;
     const char *glob=j_get(q,"glob")?j_string(j_get(q,"glob")):"*";j_value *pattern=j_get(q,"pattern");
-    if(!f_fields(q,find?"op root glob cursor max_results max_bytes exclude_dirs collection_ttl_seconds":"op root glob pattern cursor max_results max_matches max_bytes exclude_dirs collection_ttl_seconds") || !glob || !*glob || strlen(glob)>4096 || (pattern && (pattern->type!=J_TEXT || !pattern->size || pattern->size>4096 || memchr(pattern->text,'\n',pattern->size) || memchr(pattern->text,'\r',pattern->size))) || !f_number(q,"max_results",64,&limit) || !limit || limit>128 || !f_number(q,"max_matches",128,&matches) || !matches || matches>512 || !f_number(q,"max_bytes",262144,&remaining) || !remaining || remaining>1048576 || !f_number(q,"collection_ttl_seconds",600,&ttl) || !ttl || ttl>3600 || (j_get(q,"cursor") && !j_string(j_get(q,"cursor"))))return f_fail(e,"CONFIG_INVALID","invalid structured inspection bounds");
+    if(!f_fields(q,find?"op root glob cursor max_results max_bytes exclude_dirs collection_ttl_seconds match_offset if_hash":"op root glob pattern cursor max_results max_matches max_bytes exclude_dirs collection_ttl_seconds match_offset if_hash") || !glob || !*glob || strlen(glob)>4096 || (pattern && (pattern->type!=J_TEXT || !pattern->size || pattern->size>4096 || memchr(pattern->text,'\n',pattern->size) || memchr(pattern->text,'\r',pattern->size))) || !f_number(q,"max_results",64,&limit) || !limit || limit>128 || !f_number(q,"max_matches",128,&matches) || !matches || matches>512 || !f_number(q,"max_bytes",262144,&remaining) || !remaining || remaining>1048576 || !f_number(q,"collection_ttl_seconds",600,&ttl) || !ttl || ttl>3600 || (j_get(q,"cursor") && !j_string(j_get(q,"cursor"))))return f_fail(e,"CONFIG_INVALID","invalid structured inspection bounds");
+    uint64_t resume=0;int paging=j_get(q,"match_offset")!=NULL;const char *expected=j_get(q,"if_hash")?j_string(j_get(q,"if_hash")):NULL;
+    if(!f_number(q,"match_offset",0,&resume) || resume>F_EDIT_LIMIT || (resume && (!expected || strlen(expected)!=64)))return f_fail(e,"CONFIG_INVALID","invalid pending match position");
+    j_value *pending_page=NULL;
     j_value *root_request=j_new(J_OBJECT);if(!root_request || !j_add(root_request,"path",j_clone(j_get(q,"root")))){j_free(root_request);return f_fail(e,"CONFIG_INVALID","inspection needs a root");}
     char *root=f_path(root_request,e);j_free(root_request);if(!root)return NULL;
     i_collection c;memset(&c,0,sizeof c);c.directory=c.owner=c.paths=c.index=-1;i_tree tree={0};j_value *items=NULL,*reasons=NULL,*result=NULL,*identity=NULL;
@@ -48,20 +59,25 @@ j_value *f_search(const j_value *q,f_error *e){
         if(ok && (before.st_size<0 || (uint64_t)before.st_size>F_EDIT_LIMIT)){i_skip(&tree,path,"FILE_TOO_LARGE",3);ok=0;}
         else if(ok){ok=load(fd,&bytes,&total,&failure) && fstat(fd,&after)==0 && f_identity(&before,&after) && after.st_size>=0 && (uint64_t)after.st_size==bytes.size;if(!ok)i_skip(&tree,path,"FILE_CONFLICT",4);}
         else i_skip(&tree,path,failure.code?failure.code:"INVALID_TARGET",4);
-        if(fd>=0)close(fd);if(!ok){free(bytes.data);free(path);continue;}
+        if(fd>=0)close(fd);if(!ok){free(bytes.data);free(path);if(expected){f_fail(e,"FILE_CONFLICT","pending file is unavailable");goto done;}continue;}
+        if(expected){unsigned char d[32];char h[65];rh_sha256(bytes.data,bytes.size,d);rh_hex(d,32,h);if(strcmp(expected,h)){free(path);free(bytes.data);f_fail(e,"FILE_CONFLICT","pending file changed");goto done;}}
         if(!rh_utf8(bytes.data,bytes.size,1)){i_skip(&tree,path,"INVALID_TEXT",5);free(bytes.data);free(path);continue;}
         if(contains(bytes.data,bytes.size,pattern)){
             unsigned char digest[32];char hash[65];rh_sha256(bytes.data,bytes.size,digest);rh_hex(digest,32,hash);
-            j_value *v=item(path,hash,&bytes,pattern,&matches,&remaining);if(!v){free(path);free(bytes.data);goto allocation;}if(!j_add(items,NULL,v)){free(path);free(bytes.data);goto allocation;}count++;
+            if(expected && strcmp(expected,hash)){free(path);free(bytes.data);f_fail(e,"FILE_CONFLICT","pending file changed");goto done;}
+            uint64_t pending=UINT64_MAX;j_value *v=item(path,hash,&bytes,pattern,&matches,&remaining,resume,paging,&pending);resume=0;expected=NULL;
+            if(pending!=UINT64_MAX){c.offset=offset;c.position=position;pending_page=j_new(J_OBJECT);if(!pending_page || !j_integer(pending_page,"match_offset",pending) || !j_text(pending_page,"if_hash",hash,64)){j_free(v);free(bytes.data);free(path);goto allocation;}}
+if(!v){free(path);free(bytes.data);goto allocation;}if(!j_add(items,NULL,v)){free(path);free(bytes.data);goto allocation;}count++;
         }
-        free(bytes.data);free(path);
+        free(bytes.data);free(path);if(pending_page)break;
     }
     int incomplete=0;for(unsigned i=0;i<6;i++)if(tree.reasons[i]){incomplete=1;if(!j_text(reasons,NULL,names[i],strlen(names[i])))goto allocation;}
     result=j_new(J_OBJECT);
     if(!j_text(identity,"generation",c.generation,32) || !j_text(identity,"id",c.id,strlen(c.id)) || !j_integer(identity,"expires_unix",c.expiry) || !j_text(identity,"query_sha256",c.fingerprint,64) || !result || !j_text(result,"root",root,strlen(root)) || !j_take(result,"collection",&identity) || !j_integer(result,"scanned_files",scanned) || !j_integer(result,"scanned_bytes",total) || !j_boolean(result,"incomplete",incomplete))goto allocation;
     if(c.offset<c.size){char next[160];snprintf(next,sizeof next,"%s:%s:%llu",c.generation,c.id,(unsigned long long)c.offset);if(!j_text(result,"next_cursor",next,strlen(next)))goto allocation;}else if(!j_add(result,"next_cursor",j_new(J_NULL)))goto allocation;
+    if(paging){if(!pending_page)pending_page=j_new(J_NULL);if(!j_take(result,"pending",&pending_page))goto allocation;}
     if(!j_take(result,"items",&items) || !j_take(result,"skipped",&tree.skipped) || !j_take(result,"reasons",&reasons))goto allocation;goto done;
 corrupt:f_fail(e,"STATE_UNAVAILABLE","collection diagnostics are corrupt");goto done;
 allocation:j_free(result);result=NULL;f_fail(e,"INTERNAL","cannot allocate inspection result");
-done:i_collection_close(&c);free(root);j_free(items);j_free(tree.skipped);j_free(reasons);j_free(identity);return result;
+done:j_free(pending_page);i_collection_close(&c);free(root);j_free(items);j_free(tree.skipped);j_free(reasons);j_free(identity);return result;
 }

@@ -20,22 +20,33 @@ pub struct ExecOptions<'a> {
     pub session: &'a str,
     pub command: &'a str,
     pub timeout: Duration,
+    pub max_bytes: usize,
 }
 
+pub struct ExecObservation {
+    pub outcome: SessionExecOutcome,
+    pub range: Option<(u64, u64)>,
+}
+impl std::ops::Deref for ExecObservation {
+    type Target = SessionExecOutcome;
+    fn deref(&self) -> &Self::Target {
+        &self.outcome
+    }
+}
 /// Runs one command in a session.
 ///
 /// The outcome carries both the result and any session-level failure, because a
 /// refusal still has to describe the session: a timeout says whether the pane came
 /// back, and a busy pane says what is holding it. Only a transport failure is an
 /// `Err`, and then there is no session state to report.
-pub fn exec(client: &Client, options: &ExecOptions<'_>) -> Result<SessionExecOutcome, Error> {
+pub fn exec(client: &Client, options: &ExecOptions<'_>) -> Result<ExecObservation, Error> {
     exec_observed(&Observation::new(client, &|| false), options)
 }
 
 pub(in crate::session) fn exec_observed(
     observation: &Observation<'_>,
     options: &ExecOptions<'_>,
-) -> Result<SessionExecOutcome, Error> {
+) -> Result<ExecObservation, Error> {
     let reference = SessionRef::new(options.session.to_string())
         .map_err(|error| Error::new("CONFIG_INVALID", error.to_string()))?;
     if options.command.trim().is_empty() {
@@ -43,7 +54,16 @@ pub(in crate::session) fn exec_observed(
     }
     let token = session::new_token()
         .map_err(|error| internal(format!("could not generate a submission token: {error}")))?;
-    let script = session::exec_script(options.session, options.command, options.timeout, &token);
+    if !(4..=session::EXEC_OUTPUT_LIMIT).contains(&options.max_bytes) {
+        return Err(Error::new("CONFIG_INVALID", "invalid exec output budget"));
+    }
+    let script = session::remote::scripts::exec_bounded(
+        options.session,
+        options.command,
+        options.timeout,
+        &token,
+        options.max_bytes,
+    );
     let stdout = run_helper(
         observation,
         options.host,
@@ -51,7 +71,19 @@ pub(in crate::session) fn exec_observed(
         options.timeout,
         FIELD_CAPTURE,
     )?;
-    Ok(exec_outcome(&stdout, &token, reference))
+    let range = match session::parse_exec(&stdout, &token) {
+        ExecResult::Completed { range, .. } => range,
+        _ => None,
+    };
+    let outcome = exec_outcome(&stdout, &token, reference);
+    Ok(ExecObservation {
+        range: if outcome.failure().is_none() {
+            range
+        } else {
+            None
+        },
+        outcome,
+    })
 }
 
 /// Turns one helper answer into the domain outcome, so the wire mapping has a
@@ -63,6 +95,7 @@ fn exec_outcome(stdout: &str, token: &str, reference: SessionRef) -> SessionExec
             output,
             source_bytes,
             exit_code,
+            ..
         } => {
             let output = pty_output(&output, source_bytes);
             // An identity, a status or a token the domain refuses is not

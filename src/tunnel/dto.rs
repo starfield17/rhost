@@ -1,4 +1,4 @@
-//! The schema-v2 view of a tunnel.
+//! The schema-v5 view of a tunnel.
 //!
 //! Tunnel DTOs live here rather than with the others because a tunnel is the one
 //! result whose `status` is not rhost's claim but an observation: the DTO can
@@ -43,7 +43,7 @@ pub fn tunnel<'a>(
     value: &'a TunnelData,
 ) -> Envelope<TunnelDto<'a>> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation,
         ok: true,
         host: (!host.is_empty()).then(|| host.to_string()),
@@ -59,7 +59,7 @@ pub struct TunnelsDto<'a> {
 
 pub fn tunnels(rows: &[TunnelData]) -> Envelope<TunnelsDto<'_>> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "tunnel.list",
         ok: true,
         host: None,
@@ -80,7 +80,7 @@ pub struct TunnelClosedDto<'a> {
 
 pub fn tunnel_closed(id: &str) -> Envelope<TunnelClosedDto<'_>> {
     Envelope {
-        schema_version: 4,
+        schema_version: 5,
         operation: "tunnel.close",
         ok: true,
         host: None,

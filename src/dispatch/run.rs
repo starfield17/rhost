@@ -18,7 +18,7 @@ pub(crate) fn dispatch(
     match command {
         Command::Mcp { help, tools } => {
             if help {
-                sink.line("Usage: rhost mcp [--tools all|runs,files,sessions,diagnostics]\nServe schema-v4 operations over MCP stdio. --help shows this page; --tools restricts listing and calls (default all). Configure the MCP client with command rhost and args [\"mcp\"]. OpenSSH retains authentication and host-key ownership.");
+                sink.line("Usage: rhost mcp [--tools all|runs,files,sessions,diagnostics]\nServe schema-v5 operations over MCP stdio. --help shows this page; --tools restricts listing and calls (default all). Configure the MCP client with command rhost and args [\"mcp\"]. OpenSSH retains authentication and host-key ownership.");
                 0
             } else {
                 crate::mcp::run(client, interrupt, &tools)
@@ -79,5 +79,5 @@ fn version(sink: &mut Sink) {
         "build date",
         option_env!("RHOST_BUILD_DATE").unwrap_or("unknown"),
     );
-    field(sink, "schema version", "3");
+    field(sink, "schema version", "5");
 }

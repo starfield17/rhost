@@ -18,13 +18,13 @@ mod lifecycle;
 mod shared;
 
 pub use create::{CreateOptions, Created, CreationStatus, create};
-pub use exec::{ExecOptions, exec};
+pub use exec::{ExecObservation, ExecOptions, exec};
 pub use io::{Read, ReadOffset, SendOptions, read, send};
 pub use lifecycle::{Info, Recover, close, list, recover};
 
 pub(super) use create::create_observed;
 pub(super) use exec::exec_observed;
-pub(super) use io::{read_observed, send_observed};
+pub(super) use io::{read_observed_until, send_observed};
 pub(super) use lifecycle::{close_observed, list_observed, recover_observed};
 
 pub(super) use errors::{is_supported_key, valid_name};
