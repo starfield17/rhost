@@ -30,7 +30,44 @@ static int row(page *p,f_error *e){
     }
     p->line.size=0;p->line.failed=0;p->oversized=0;return 1;
 }
+/* Byte pages pin a complete-file hash and never split a UTF-8 character. */
+static j_value *byte_page(const j_value *q,const char *path,f_error *e){
+    uint64_t offset,cap,total_lines=0;
+    const char *expected=j_get(q,"if_hash")?j_string(j_get(q,"if_hash")):NULL;
+    if(j_get(q,"start") || j_get(q,"lines") || !f_number(q,"offset_bytes",0,&offset) ||
+       !f_number(q,"max_bytes",8192,&cap) || cap<4 || cap>F_EDIT_LIMIT ||
+       (j_get(q,"if_hash") && (!expected || strlen(expected)!=64)))
+        return f_fail(e,"CONFIG_INVALID","invalid byte page bounds");
+    if(!f_context(e))return NULL;
+    char *name=NULL;int dir=f_parent(path,0,&name,e);if(dir<0)return NULL;
+    int fd=f_open(dir,name,0,e);close(dir);free(name);if(fd<0)return NULL;
+    struct stat before,after;j_value *result=NULL,*coverage=NULL;unsigned char *bytes=NULL;char hash[65];
+    if(fstat(fd,&before)<0){f_os_error(e,0);goto done;}
+    if(!f_hash_fd(fd,hash,&total_lines,e))goto done;
+    if(expected && strcmp(expected,hash)){f_fail(e,"FILE_CONFLICT","file hash changed before continuation");goto done;}
+    if(before.st_size<0 || offset>(uint64_t)before.st_size){f_fail(e,"CONFIG_INVALID","byte offset exceeds file size");goto done;}
+    uint64_t available=(uint64_t)before.st_size-offset;size_t wanted=(size_t)(available<cap?available:cap),used=0;
+    bytes=malloc(wanted+1);if(!bytes){f_fail(e,"INTERNAL","allocation failed");goto done;}
+    while(used<wanted){ssize_t n=pread(fd,bytes+used,wanted-used,(off_t)(offset+used));
+        if(n<0 && errno==EINTR)continue;if(n<=0){f_fail(e,"FILE_CONFLICT","file changed while reading");goto done;}used+=(size_t)n;}
+    size_t delivered=used;
+    if(offset+used<(uint64_t)before.st_size){
+        for(unsigned cut=0;cut<3 && delivered && !rh_utf8(bytes,delivered,1);cut++)delivered--;
+    }
+    if(!rh_utf8(bytes,delivered,1) || (used && !delivered)){f_fail(e,"INVALID_TEXT","page is not valid UTF-8 at the requested boundary");goto done;}
+    if(fstat(fd,&after)<0){f_os_error(e,0);goto done;}
+    if(!f_identity(&before,&after)){f_fail(e,"FILE_CONFLICT","file changed while reading");goto done;}
+    uint64_t next=offset+delivered;coverage=j_new(J_OBJECT);result=j_new(J_OBJECT);
+    if(!coverage || !result || !j_integer(coverage,"from",offset) || !j_integer(coverage,"next",next) ||
+       !j_integer(coverage,"observed_bytes",(uint64_t)before.st_size) || !j_boolean(coverage,"more",next<(uint64_t)before.st_size) ||
+       !j_text(result,"path",path,strlen(path)) || !j_text(result,"sha256",hash,64) ||
+       !j_text(result,"content",bytes,delivered) || !j_take(result,"coverage",&coverage)){
+        j_free(result);result=NULL;f_fail(e,"INTERNAL","allocation failed");}
+ done:free(bytes);j_free(coverage);close(fd);return result;
+}
 j_value *f_read(const j_value *q,const char *path,f_error *e){
+    if(j_get(q,"offset_bytes"))return byte_page(q,path,e);
+    if(j_get(q,"if_hash"))return f_fail(e,"CONFIG_INVALID","hash guard requires byte paging");
     uint64_t start,count,cap;
     if(!f_number(q,"start",1,&start) || !f_number(q,"lines",200,&count) || !start || !count || !f_number(q,"max_bytes",0,&cap) || !cap || cap>F_EDIT_LIMIT)return f_fail(e,"CONFIG_INVALID","invalid read bounds");
     if(!f_context(e))return NULL;

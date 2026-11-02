@@ -146,15 +146,31 @@ done:
     if(!delivered)return rh_refuse(kind,"RUN_CONTROL_UNAVAILABLE","monitor did not confirm signal delivery");
     rh_buf b={0};rh_byte(&b,0);rh_text(&b,key);rh_byte(&b,1);int result=rh_emit(kind,&b);free(b.data);return result;
 }
+/* Observation owns no Run lifetime and never opens either log stream. */
+static int watch_run(uint32_t kind,rh_state *s,const char *key,int directory,uint32_t wait){
+    uint64_t until=rh_millis()+wait;rh_status status;
+    for(;;){
+        if(!current_status(directory,&status))return rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish Run evidence");
+        if(!wait || status.state>=4 || rh_millis()>=until)break;
+        struct timespec pause={0,25000000};nanosleep(&pause,NULL);
+    }
+    rh_buf b={0};rh_byte(&b,0);rh_record(&b,s,key,&status);
+    rh_long(&b,status.out_bytes);rh_long(&b,status.out_kept);rh_byte(&b,status.out_open);
+    rh_byte(&b,status.incomplete || status.out_bytes>status.out_kept);
+    rh_long(&b,status.err_bytes);rh_long(&b,status.err_kept);rh_byte(&b,status.err_open);
+    rh_byte(&b,status.incomplete || status.err_bytes>status.err_kept);
+    int result=rh_emit(kind,&b);free(b.data);return result;
+}
 int rh_runs(uint32_t kind,rh_reader *r) {
     if(kind==2)return submit(kind,r);
     char *generation=NULL,*key=NULL;uint32_t wait=0,cap=4096;uint64_t out=0,err=0,expiry;unsigned signal_tag=0;
     if(kind!=7 && kind!=8)generation=rh_read_text(r);
-    if(kind==3 || kind==5)key=rh_read_text(r);
+    if(kind==3 || kind==5 || kind==9)key=rh_read_text(r);
     if(kind==3){wait=rh_read_int(r);out=rh_read_long(r);err=rh_read_long(r);cap=rh_read_int(r);}
+    if(kind==9)wait=rh_read_int(r);
     if(kind==5)signal_tag=rh_read_byte(r);
     if(!rh_done(r) || ((kind!=7 && kind!=8) && !rh_generation(generation)) ||
-       ((kind==3 || kind==5) && !rh_key(key,&expiry)) || wait>300000 || !cap || cap>1048576 || (kind==5 && (signal_tag<1 || signal_tag>3))) {
+       ((kind==3 || kind==5 || kind==9) && !rh_key(key,&expiry)) || wait>300000 || !cap || cap>1048576 || (kind==5 && (signal_tag<1 || signal_tag>3))) {
         free(generation);free(key);return rh_refuse(kind,"PROTOCOL_ERROR","invalid Run request");
     }
     const char *context=rh_context_error();if(context){free(generation);free(key);return rh_refuse(kind,context,"boot guard refused operation");}
@@ -167,11 +183,12 @@ int rh_runs(uint32_t kind,rh_reader *r) {
         uint64_t now=0;if(!(kind==7?rh_clock(&s,&now):rh_clock_read(&s,&now))){free(b.data);result=rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish effective clock");goto done;}
         rh_long(&b,now);char boot[37];(void)rh_boot_id(boot);rh_text(&b,boot);result=rh_emit(kind,&b);free(b.data);goto done;
     }
-    if(kind==3 || kind==5) {
+    if(kind==3 || kind==5 || kind==9) {
         int directory=openat(s.runs,key,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
         if(!valid_directory(directory)){if(directory>=0)close(directory);result=rh_refuse(kind,"RUN_NOT_FOUND","Run is not available");goto done;}
         (void)flock(s.registry,LOCK_UN);
         if(kind==3)result=observation(kind,&s,key,directory,wait,out,err,cap,0);
+        else if(kind==9)result=watch_run(kind,&s,key,directory,wait);
         else result=signal_run(kind,directory,signal_tag,key);
         close(directory);goto done;
     }

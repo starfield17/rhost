@@ -123,7 +123,7 @@ int main(int argc,char **argv) {
         return refuse(kind, "PROTOCOL_ERROR", "request exceeds frame limit");
     if (kind == 0 || (kind & UINT32_C(0x80000000)) != 0)
         return refuse(kind, "PROTOCOL_ERROR", "invalid request kind");
-    if (kind > 8)
+    if (kind > 9)
         return refuse(kind, "PROTOCOL_ERROR", "unknown request kind");
     if (size != 0) {
         body = malloc((size_t)size);
