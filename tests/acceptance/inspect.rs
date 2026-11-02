@@ -268,3 +268,29 @@ fn byte_pages_reconstruct_long_utf8_lines_and_pin_hash() -> Result<(), String> {
     assert_eq!(refused["error"], "FILE_CONFLICT");
     Ok(())
 }
+
+#[test]
+fn byte_pages_reject_split_character_offsets_and_report_empty_eof() -> Result<(), String> {
+    let h = Harness::open("byte-page-boundaries")?;
+    let path = create(&h, "utf8", "界\n".as_bytes())?;
+    let invalid = ask(
+        &h,
+        json!({"op":"read","path":path,"offset_bytes":1,"max_bytes":4}),
+    )?;
+    assert_eq!(invalid["error"], "INVALID_TEXT");
+    let eof = ask(
+        &h,
+        json!({"op":"read","path":path,"offset_bytes":4,"max_bytes":4}),
+    )?;
+    assert_eq!(eof["content"], "");
+    assert_eq!(
+        eof["coverage"],
+        json!({"from":4,"next":4,"observed_bytes":4,"more":false})
+    );
+    let invalid = ask(
+        &h,
+        json!({"op":"read","path":path,"offset_bytes":5,"max_bytes":4}),
+    )?;
+    assert_eq!(invalid["error"], "CONFIG_INVALID");
+    Ok(())
+}
