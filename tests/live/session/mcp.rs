@@ -201,23 +201,28 @@ fn bounded_exec_tail_exposes_an_exact_recoverable_segment() -> Result<(), String
         let until = range["until"].as_u64().ok_or("range end")?;
         assert!(until > from + 4096);
         assert_eq!(range["next_request"]["operation"], "session.read");
+        let later = m.call(
+            "session.exec",
+            Some(&host),
+            json!({"session":id,"command":"printf LATER_OUTPUT"}),
+        )?;
+        assert_eq!(later["ok"], true, "{later}");
+        let mut params = range["next_request"]["params"].clone();
         let mut content = String::new();
         while from < until {
-            let page = m.call(
-                "session.read",
-                Some(&host),
-                json!({"session":id,"since":from,"until":until,"max_bytes":4096}),
-            )?;
+            let page = m.call("session.read", Some(&host), params.clone())?;
             assert_eq!(page["ok"], true, "{page}");
             assert_eq!(page["data"]["from"], from);
             let next = page["data"]["next"].as_u64().ok_or("next")?;
             assert!(next > from && next <= until);
             content.push_str(text(&page, "/data/content")?);
             from = next;
+            params["since"] = json!(next);
         }
         assert!(content.contains("BEGIN"));
         assert!(content.contains("MIDDLE_FAILURE"));
         assert!(content.contains("END"));
+        assert!(!content.contains("LATER_OUTPUT"));
         Ok(())
     })();
     let close = live.ok(&["session", "close", &host, &id, "--json"]);

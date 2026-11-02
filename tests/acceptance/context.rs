@@ -58,6 +58,47 @@ fn file_pages_recover_long_lines_and_pending_matches() -> Result<(), String> {
     assert_eq!(lines, vec![1, 2, 3]);
     m.close()
 }
+
+#[test]
+fn retained_utf8_fragment_has_an_executable_binary_continuation() -> Result<(), String> {
+    let h = Harness::open("context-retained-fragment")?;
+    hosts::local_host(&h)?;
+    let state = h.path("remote-state").to_string_lossy().into_owned();
+    let h = h.env("RHOST_REMOTE_STATE", &state);
+    let mut m = Mcp::open(&h)?;
+    let prep = m.call(2, "rhost_helper_prepare", json!({"host":"gpu","params":{}}))?;
+    assert_eq!(prep["ok"], true, "{prep}");
+    let generation = prep["data"]["generation"].clone();
+    let expiry = prep["data"]["remote_time_unix"].as_u64().ok_or("clock")? + 3600;
+    let key = format!("{expiry}-{}", "e".repeat(64));
+    let started = m.call(3, "rhost_run_start", json!({"host":"gpu","params":{"generation":generation,"key":key,"expires_unix":expiry,"cwd":"/","program":{"argv":["/bin/sh","-c","head -c 67108863 /dev/zero | tr '\\0' x; printf '€'"]},"environment":{"inherit":false,"values":{}},"wait_ms":3000}}))?;
+    assert_eq!(started["ok"], true, "{started}");
+    let watched = m.call(
+        4,
+        "rhost_run_watch",
+        json!({"host":"gpu","params":{"generation":generation,"run_id":key,"wait_ms":3000}}),
+    )?;
+    assert_eq!(watched["data"]["run"]["status"], "exited", "{watched}");
+    let page = m.call(
+        5,
+        "rhost_run_read",
+        json!({"host":"gpu","params":{"generation":generation,"run_id":key,"stream":"stdout"}}),
+    )?;
+    assert_eq!(page["ok"], true, "{page}");
+    let coverage = &page["data"]["output"]["coverage"];
+    assert_eq!(coverage["more"], true);
+    assert_eq!(coverage["unavailable_after"], 2);
+    assert_eq!(coverage["next_request"]["params"]["format"], "base64");
+    let last = m.call(
+        6,
+        "rhost_run_read",
+        json!({"host":"gpu","params":coverage["next_request"]["params"]}),
+    )?;
+    assert_eq!(last["ok"], true, "{last}");
+    assert_eq!(last["data"]["output"]["content"], "4g==");
+    assert_eq!(last["data"]["output"]["coverage"]["more"], false);
+    m.close()
+}
 #[test]
 fn run_observation_reads_and_searches_have_recoverable_source_ranges() -> Result<(), String> {
     let h = Harness::open("context-run-logs")?;
