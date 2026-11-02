@@ -410,8 +410,8 @@ fn watch_reports_counters_without_transferring_log_bodies() {
     for expected in [20, 6] {
         assert_eq!(r.long(), expected);
         assert_eq!(r.long(), expected);
-        assert_eq!(r.byte(), 0);
-        assert_eq!(r.byte(), 0);
+        assert!(r.byte() <= 1, "stream-open flag must be Boolean");
+        assert!(r.byte() <= 1, "incomplete flag must be Boolean");
     }
     assert!(r.0.is_empty(), "watch contains an unexpected log body");
 }

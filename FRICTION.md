@@ -193,3 +193,13 @@ Acceptance changed separately before implementation.
   pending file and retains fresh observations of later files (FS-012).
 - Evidence: acceptance changes must land separately under GateChange before
   implementation; frozen schema-4 evidence remains unchanged.
+
+### Watch completion is independent of stream EOF
+
+- Observation: the new watch test initially required closed streams at leader
+  completion, although descendants and monitor draining have independent lives.
+- Conflict: that assertion contradicts the existing Run completion/EOF contract.
+- Cause: the test conflated completion evidence with stream closure.
+- Resolution: validate Boolean stream evidence without requiring EOF, retaining
+  exact completion, byte counters and the no-body assertion.
+- Evidence: acceptance-only correction under GateChange, independent of source.
