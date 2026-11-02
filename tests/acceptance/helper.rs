@@ -12,7 +12,7 @@ fn local_host(h: &Harness) -> Result<(), String> {
     )
 }
 fn request(h: &Harness, operation: &str) -> Result<Value, String> {
-    let input = json!({"schema_version":4,"operation":operation,"host":"gpu","params":{}});
+    let input = json!({"schema_version":5,"operation":operation,"host":"gpu","params":{}});
     let (_, value) =
         envelope_with_stdin(h, &["request", "--from", "-"], input.to_string().as_bytes())?;
     Ok(value)
@@ -85,7 +85,7 @@ fn nonregular_configured_build_inputs_are_refused_without_blocking() -> Result<(
         .stdin
         .take()
         .ok_or("stdin")?
-        .write_all(br#"{"schema_version":4,"operation":"helper.prepare","host":"gpu","params":{}}"#)
+        .write_all(br#"{"schema_version":5,"operation":"helper.prepare","host":"gpu","params":{}}"#)
         .map_err(|e| e.to_string())?;
     let limit = Instant::now() + Duration::from_secs(3);
     while child.try_wait().map_err(|e| e.to_string())?.is_none() {
@@ -137,7 +137,7 @@ fn configured_linker_keeps_its_driver_name() -> Result<(), String> {
         .stdin
         .take()
         .ok_or("stdin")?
-        .write_all(br#"{"schema_version":4,"operation":"helper.prepare","host":"gpu","params":{}}"#)
+        .write_all(br#"{"schema_version":5,"operation":"helper.prepare","host":"gpu","params":{}}"#)
         .map_err(|e| e.to_string())?;
     let output = child.wait_with_output().map_err(|e| e.to_string())?;
     let value: Value = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
@@ -160,7 +160,7 @@ fn a_warm_native_file_operation_uses_one_ssh_invocation() -> Result<(), String> 
     assert_eq!(request(&h, "helper.prepare")?["ok"], true);
     h.write("content", "observed\n", None)?;
     let before = h.calls().iter().filter(|c| c.program == "ssh").count();
-    let payload = json!({"schema_version":4,"operation":"fs.read","host":"gpu","params":{"path":h.path("content")}});
+    let payload = json!({"schema_version":5,"operation":"fs.read","host":"gpu","params":{"path":h.path("content")}});
     let (_, result) = envelope_with_stdin(
         &h,
         &["request", "--from", "-"],
@@ -197,7 +197,7 @@ fn an_unrecognized_cached_executable_does_not_trigger_automatic_resubmission() -
     std::fs::rename(h.path("replacement"), &image).map_err(|e| e.to_string())?;
     let before = h.calls().iter().filter(|c| c.program == "ssh").count();
     let target = h.path("must-stay-absent");
-    let payload = json!({"schema_version":4,"operation":"fs.write","host":"gpu","params":{"path":target,"content":"effect"}});
+    let payload = json!({"schema_version":5,"operation":"fs.write","host":"gpu","params":{"path":target,"content":"effect"}});
     let (_, result) = envelope_with_stdin(
         &h,
         &["request", "--from", "-"],

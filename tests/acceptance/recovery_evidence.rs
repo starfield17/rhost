@@ -2,7 +2,7 @@
 use crate::support::{Harness, envelope_with_stdin};
 use serde_json::{Value, json};
 fn ask(h: &Harness, op: &str, params: Value) -> Result<Value, String> {
-    let q = json!({"schema_version":4,"operation":op,"host":"gpu","params":params});
+    let q = json!({"schema_version":5,"operation":op,"host":"gpu","params":params});
     envelope_with_stdin(h, &["request", "--from", "-"], q.to_string().as_bytes()).map(|(_, v)| v)
 }
 #[test]

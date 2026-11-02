@@ -8,7 +8,7 @@ fn actual_dtos_match_independent_schema() -> Result<(), Box<dyn std::error::Erro
     for (name, raw) in [
         (
             "active v4 schema",
-            include_str!("../schemas/result-v4.schema.json"),
+            include_str!("../schemas/result-v5.schema.json"),
         ),
         (
             "published v4.1.0 v2 validator",
@@ -135,7 +135,7 @@ fn schema4_preserves_published_legacy_payload_acceptance() -> Result<(), Box<dyn
 fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dyn std::error::Error>>
 {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schemas/result-v4.schema.json"))?;
+        serde_json::from_str(include_str!("../schemas/result-v5.schema.json"))?;
     let validator = jsonschema::validator_for(&schema)?;
 
     let mut covered: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -146,7 +146,7 @@ fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dy
     }
 
     let fixtures: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("fixtures/result-v4-valid.json"))?;
+        serde_json::from_str(include_str!("fixtures/result-v5-valid.json"))?;
     for fixture in &fixtures {
         let name = fixture["name"].as_str().unwrap_or("<unnamed>");
         let result = &fixture["result"];

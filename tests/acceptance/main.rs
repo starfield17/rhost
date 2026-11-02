@@ -3,7 +3,7 @@
 //! These tests drive the built binary the way an agent does: argv in, envelope
 //! out. They are the candidate's own acceptance evidence, independent of the
 //! frozen Go unit tests, and every document the binary prints on stdout is
-//! validated against `schemas/result-v4.schema.json` before any field of it is
+//! validated against `schemas/result-v5.schema.json` before any field of it is
 //! inspected.
 //!
 //! The stubs stop at the OpenSSH boundary. They deliberately neither emit nor
@@ -53,7 +53,7 @@ fn version_reports_the_binary_and_the_schema_independently() -> Result<(), Strin
     assert_eq!(outcome.status, 0);
     assert_eq!(outcome.stderr, "", "no diagnostics may join the document");
     assert_eq!(operation(&value), "version");
-    assert_eq!(value["schema_version"], 4);
+    assert_eq!(value["schema_version"], 5);
     assert_eq!(
         value
             .pointer("/data/version")
