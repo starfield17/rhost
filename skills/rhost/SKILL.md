@@ -34,7 +34,7 @@ native operations.
 ## Keep the evidence
 
 - Use CLI `--json` for hashes and programmatic decisions. MCP returns the same
-  schema-v4 envelope in `structuredContent`. Branch on `error.code` and the
+  schema-v5 envelope in `structuredContent`. Branch on `error.code` and the
   operation's completion/mutation evidence plus `error.recovery`, never English
   messages alone.
 - Replacing or patching a file requires an observed hash. Re-read and merge on

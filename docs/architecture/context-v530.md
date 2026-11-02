@@ -1,6 +1,7 @@
 # Context-bounded observation (v5.3.0)
 
-Status: acceptance design; implementation and release verification are pending.
+Status: implemented. Exact candidate publication evidence is recorded by the
+release and operator-attestation workflows, separately from this source document.
 Public JSON advances to schema 5. Published schema 4 validators and fixtures
 remain frozen. Existing Run and changeset records remain usable.
 
@@ -61,3 +62,30 @@ Run complete local gates and native helper sanitizer/fault complements, then
 verify exact candidate clients/helpers with test-live-all and test-live-helper.
 Publish v5.3.0 only through the existing immutable-candidate and operator-evidence
 workflow. Targets, private paths and real transcripts remain untracked.
+
+## Codex CLI measurement
+
+Measured with Codex CLI 0.166.0, schema 5 and the configured model
+`gpt-6.1-sol`, low reasoning effort, an empty working directory, ephemeral
+sessions and isolated per-invocation MCP configuration. No global configuration
+was changed. These are single observations, not a controlled token benchmark;
+Codex reports cumulative turn usage, including discovery and cached input.
+
+| Task | MCP selection | Input tokens | Cached input tokens | Completed MCP calls |
+| --- | --- | ---: | ---: | ---: |
+| Return OK without tools | none | 15011 | 12288 | 0 |
+| Return OK without tools | all | 14984 | 12288 | 0 |
+| Return OK without tools | runs,files | 15929 | 12288 | 0 |
+| Read binary/schema version | all | 48974 | 44544 | 1 |
+| Read binary/schema version | runs,files | 49017 | 44416 | 1 |
+
+Both version calls used the actual MCP tool and returned binary 5.3.0/schema 5.
+This client uses deferred discovery; this sample does not establish a token
+reduction from server-side filtering. Tool groups remain useful for limiting
+exposed capabilities and for clients that eagerly load definitions. The
+verified context improvement is bounded returned content and recoverability:
+8192-byte file defaults, 4096-byte Run/session previews, body-free watch,
+selected streams and explicit binary encoding. Explicit old-sized budgets are
+still available; larger files require intentional continuation calls. Wire JSON
+retains text plus structured content for MCP compatibility and must not be
+reported as the client's actual token count.

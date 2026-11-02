@@ -40,10 +40,12 @@ install -m 755 target/release/rhost ~/.local/bin/rhost
 
 `make build-release` uses locked dependencies and stamps commit/build date into
 `rhost version --json`. `make build` provides the debug development binary.
-v5.2.0 adds bounded independent MCP control admission, tool groups, structured
-recovery evidence, paginated state discovery and durable path collections.
-Public JSON moves to schema 4; schema-3 callers must update their validators.
-Inspect the connected server's tool list when the installed binary and skill differ.
+v5.3.0 introduces schema 5, recoverable file pages and per-file match
+continuations, independent Run watch/read/search operations, and bounded session
+output with exact command ranges. Defaults are 8 KiB for files and 4 KiB for
+logs. CLI, JSON requests and MCP share capability implementations. Published
+schema-4 callers must update validators; durable Run/changeset records remain
+compatible. See [context observation](docs/architecture/context-v530.md).
 
 ## Connect an agent
 

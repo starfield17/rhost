@@ -67,11 +67,11 @@ the data and presses Enter in the same submission.
 
 Session exec returns `data.session_id`, `data.session_ref`, `data.execution`,
 `data.session_preserved`, and PTY output at `data.output.content` with
-`data.output.kind == "pty"`. Inline exec output is bounded to 2 MiB:
+`data.output.kind == "pty"`. Inline exec output defaults to 4096 bytes (maximum 2 MiB):
 `data.output.bytes` counts the full segment and `data.output.truncated` reports
 omitted bytes. Use `session read` for the retained log instead of repeating the
-command. Read returns text at `data.content` and up to 256 KiB of source bytes
-per page. `--max-bytes N` lowers that budget (4..262144, default 262144); the
+command. Read returns text at `data.content` and up to the explicit 256 KiB maximum of source bytes
+per page. `--max-bytes N` lowers that budget (4..262144, default 4096); the
 minimum holds one complete UTF-8 character. An incomplete trailing character
 is held for the next page, so a page can be shorter than its budget.
 Use `--tail N` to select the last N bytes of retained output, or `--since` set
@@ -105,3 +105,10 @@ up), `unknown` (a timeout, cancellation, disconnect or missing evidence), or
 `session list` to confirm a candidate instead of retrying blind. A local
 argument mistake or an id that cannot be generated still reports `data: null`.
 
+
+Completed exec results include a raw half-open `output_range` and, when the
+preview omits content, an executable `next_request`. Its canonical session ID,
+`since` and exclusive `until` recover exactly that command's log segment even
+after later commands append output. `session exec --max-bytes` selects the
+preview budget; `session read --until` fixes the end of a read window. Unknown
+completion has no invented range. Preview text lengths never define offsets.

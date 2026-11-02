@@ -92,3 +92,16 @@ Pass generation, optional limit (1–256) and the returned cursor to continue.
 Inspect per-item evidence errors and use `run.poll` for full Run/output evidence.
 For namespace usage and explicit prune preview, read
 [FILES.md](FILES.md#state-discovery-and-retention).
+
+## State, preview and focused log retrieval
+
+`rhost run watch <host> <run-id> --generation <generation> --wait 30s --json`
+returns status, completion and stream counters, without transferring log bodies.
+Leader completion is independent of open streams and unread or unavailable logs.
+
+`run read` requires `--output-stream stdout|stderr`. The default is a bounded retained
+tail. `--since`, `--until`, `--max-bytes` and `--format text|base64` select an exact
+source range. `run search` adds `--pattern`, `--max-matches` and `--context-lines`.
+Continue with the returned `next` and fixed `until`. Text requires UTF-8; base64
+preserves arbitrary source bytes. Omitted prefix and unavailable suffix counts
+remain explicit. Existing `run poll` remains available with both byte streams.

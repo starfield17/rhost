@@ -24,7 +24,7 @@ Quote a leading `~` so the local shell does not expand it.
 new file needs no hash. Replacing an existing file and every patch require the
 fresh hash returned by the last read.
 
-`fs read` defaults to `--start 1 --lines 200`. `--max-bytes` defaults to 256 KiB
+`fs read` defaults to `--start 1 --lines 200`. `--max-bytes` defaults to 8 KiB
 and is capped at 8 MiB; an out-of-range CLI value is refused as `USAGE_ERROR`.
 `fs write --mode` is three or four octal digits;
 when it is omitted a newly created file is `0600` and a replacement keeps the
@@ -181,3 +181,17 @@ IDs with `dry_run:false` only when their retention is no longer needed. Check ev
 receipt and `failed`; partial cleanup leaves discoverable tombstones for explicit
 retry. Active/lost Runs and partial/unknown changesets remain protected.
 Only rhost records and logs are affected; manage project/Git directories yourself.
+
+## Recoverable coverage
+
+`fs.read` returns `coverage.from`, `next`, `observed_bytes`, `more`, and
+`next_request`. The continuation includes the canonical path, byte offset and
+whole-file hash. Changed content refuses continuation rather than joining
+versions. Long lines can span UTF-8 byte pages. A fulfilled line limit is not
+file EOF. CLI byte reads use `--offset-bytes` and `--if-hash`; these are exclusive
+with `--start`/`--lines`. Read-many retains one aggregate content budget.
+
+Search `pending` identifies a partly returned file. Continue with the returned
+path cursor plus `pending.match_offset` and `pending.if_hash` until that file is
+finished. Do not carry an old pending hash when moving to another file. A
+truncated matching-line excerpt supplies `next_request` for the full text.

@@ -191,7 +191,7 @@ unavailable. For file bytes, use `scp` only when the host supports SFTP or the
 required scp service, and inspect both source and destination after a failed
 transfer. A PTY is not a reliable byte-transfer channel.
 
-Direct OpenSSH output is terminal text and exit status, not a schema-v4 JSON
+Direct OpenSSH output is terminal text and exit status, not a schema-v5 JSON
 envelope. Do not infer rhost completion or cleanup evidence from a shell prompt.
 See [SAFETY.md](SAFETY.md) before replacing or deleting files this way.
 

@@ -49,7 +49,7 @@ unrelated client settings.
 ## Discover and call tools
 
 Use the connected server's tool list; clients may add a server prefix to names.
-v5.2.0 uses schema 4, adds state discovery and path collections, and provides local discovery, diagnostic and session tools alongside the
+v5.3.0 uses schema 5, adds state discovery and path collections, and provides local discovery, diagnostic and session tools alongside the
 native helper/Run/file tools available in v5.0.0. Older clients expose a smaller
 set; use advertised tools or the corresponding CLI operation.
 
@@ -70,7 +70,7 @@ For example, `rhost_fs_read` takes:
 {"host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 ```
 
-`structuredContent` is the schema-v4 envelope. Inspect operation-specific
+`structuredContent` is the schema-v5 envelope. Inspect operation-specific
 completion and partial-result fields. A successful Run observation can contain
 a failed child exit; an error can still contain effects or useful data.
 
@@ -88,7 +88,7 @@ and streaming/pipelines belong to CLI. `session attach` remains refused.
 
 ```bash
 rhost request --from - <<'EOF'
-{"schema_version":4,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
+{"schema_version":5,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 EOF
 ```
 
@@ -132,3 +132,28 @@ helper/cache, so their annotations do not promise a side-effect-free environment
 Annotations are hints, not authorization. Results retain both structured JSON and
 serialized text as recommended by the MCP tools specification. Wire-byte savings
 from specialized schemas do not establish a particular client's token savings.
+
+## Bounded context in v5.3
+
+Use `run.watch` for state and completion without log bodies. `run.read` defaults
+to a 4096-byte retained-tail preview of the selected stream; request text or
+base64 explicitly. `run.search` returns literal matches and bounded context.
+Repeat search with `since=data.next` and the same `until` for a fixed interval.
+A preview does not consume omitted bytes. Retention gaps are unavailable data,
+not empty successful output. File and Run pages expose executable continuation
+parameters; copy them rather than counting rendered characters.
+
+File content budgets default to 8192 bytes; session read/exec defaults are 4096.
+An explicit larger budget is available within the documented maximum. Keep the
+Codex tool timeout greater than the requested observation wait, for example:
+
+```toml
+[mcp_servers.rhost]
+command = "rhost"
+args = ["mcp"]
+tool_timeout_sec = 360
+```
+
+Codex registration and skill installation remain independent. Use a trusted
+project `.codex/config.toml` for project-local registration, or user config for
+shared registration; do not overwrite unrelated settings.
