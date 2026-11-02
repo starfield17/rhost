@@ -182,3 +182,49 @@ fn cancellation_case(cancelled: bool) -> Result<(), String> {
     files?;
     Ok(())
 }
+
+#[test]
+fn bounded_exec_tail_exposes_an_exact_recoverable_segment() -> Result<(), String> {
+    let live = Live::new()?;
+    let host = live.host.clone();
+    let dir = live.remote_dir()?;
+    let mut m = Mcp::open(live.command(&["mcp"]))?;
+    let created = m.call("session.create", Some(&host), json!({"cwd":dir}))?;
+    let id = text(&created, "/data/session_id")?.to_owned();
+    let result = (|| -> Result<(), String> {
+        let answer=m.call("session.exec",Some(&host),json!({"session":id,"command":"printf BEGIN; head -c 8000 /dev/zero | tr '\\0' x; printf MIDDLE_FAILURE; head -c 8000 /dev/zero | tr '\\0' x; printf END","max_bytes":4096}))?;
+        assert_eq!(answer["ok"], true, "{answer}");
+        assert_eq!(answer["data"]["output"]["truncated"], true);
+        assert!(text(&answer, "/data/output/content")?.contains("END"));
+        let range = &answer["data"]["output_range"];
+        let mut from = range["from"].as_u64().ok_or("range start")?;
+        let until = range["until"].as_u64().ok_or("range end")?;
+        assert!(until > from + 4096);
+        assert_eq!(range["next_request"]["operation"], "session.read");
+        let mut content = String::new();
+        while from < until {
+            let page = m.call(
+                "session.read",
+                Some(&host),
+                json!({"session":id,"since":from,"until":until,"max_bytes":4096}),
+            )?;
+            assert_eq!(page["ok"], true, "{page}");
+            assert_eq!(page["data"]["from"], from);
+            let next = page["data"]["next"].as_u64().ok_or("next")?;
+            assert!(next > from && next <= until);
+            content.push_str(text(&page, "/data/content")?);
+            from = next;
+        }
+        assert!(content.contains("BEGIN"));
+        assert!(content.contains("MIDDLE_FAILURE"));
+        assert!(content.contains("END"));
+        Ok(())
+    })();
+    let close = live.ok(&["session", "close", &host, &id, "--json"]);
+    let cleanup = live.cleanup_remote(&dir);
+    m.close()?;
+    result?;
+    close?;
+    cleanup?;
+    Ok(())
+}
