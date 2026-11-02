@@ -378,3 +378,40 @@ fn installer_rejects_wrong_binary_digest_before_replacing_a_working_image() {
         before
     );
 }
+
+#[test]
+fn watch_reports_counters_without_transferring_log_bodies() {
+    let s = Sandbox::new();
+    let g = s.prepare();
+    let (k, expiry) = key();
+    s.call(
+        2,
+        &start(
+            &g,
+            &k,
+            expiry,
+            "printf 'long retained stdout'; printf 'stderr' >&2; exit 7",
+            3000,
+            0,
+        ),
+    );
+    let mut body = Vec::new();
+    text(&mut body, &g);
+    text(&mut body, &k);
+    body.extend(3000u32.to_be_bytes());
+    let reply = s.call(9, &body);
+    let mut r = Reader(&reply);
+    assert_eq!(r.byte(), 0);
+    assert_eq!(r.text(), g);
+    assert_eq!(r.text(), k);
+    assert_eq!(r.byte(), 4);
+    assert_eq!(r.byte(), 1);
+    assert_eq!(r.int(), 7);
+    for expected in [20, 6] {
+        assert_eq!(r.long(), expected);
+        assert_eq!(r.long(), expected);
+        assert_eq!(r.byte(), 0);
+        assert_eq!(r.byte(), 0);
+    }
+    assert!(r.0.is_empty(), "watch contains an unexpected log body");
+}
