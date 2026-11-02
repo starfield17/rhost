@@ -462,13 +462,19 @@ fn watch_wait_is_bounded_and_observer_death_does_not_stop_work() {
     let started = std::time::Instant::now();
     let reply = s.call(9, &body(100));
     assert!(started.elapsed() >= std::time::Duration::from_millis(100));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "watch exceeded bounded wait"
+    );
     let mut r = Reader(&reply);
     assert_eq!(r.byte(), 0);
     assert_eq!(r.text(), g);
     assert_eq!(r.text(), k);
     assert!(matches!(r.byte(), 1..=3));
     assert_eq!(s.call(9, &body(300001))[0], 1);
+    let immediate = std::time::Instant::now();
     assert_eq!(s.call(9, &body(0))[0], 0);
+    assert!(immediate.elapsed() < std::time::Duration::from_secs(1));
     let helper = std::env::var("RHOST_HELPER_BIN").unwrap_or_else(|_| panic!("helper"));
     let mut child = Command::new(helper)
         .env("RHOST_REMOTE_STATE", &s.0)
@@ -488,6 +494,14 @@ fn watch_wait_is_bounded_and_observer_death_does_not_stop_work() {
         .unwrap_or_else(|| panic!("stdin"))
         .write_all(&frame)
         .unwrap_or_else(|e| panic!("send: {e}"));
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    assert!(
+        child
+            .try_wait()
+            .unwrap_or_else(|e| panic!("observer state: {e}"))
+            .is_none(),
+        "watch returned before completion"
+    );
     child
         .kill()
         .unwrap_or_else(|e| panic!("kill observer: {e}"));
