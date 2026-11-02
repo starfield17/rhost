@@ -234,3 +234,37 @@ fn changing_files_still_charge_the_actual_scan_read_budget() -> Result<(), Strin
     assert_eq!(answer["incomplete"], true);
     Ok(())
 }
+
+#[test]
+fn byte_pages_reconstruct_long_utf8_lines_and_pin_hash() -> Result<(), String> {
+    let h = Harness::open("byte-page-coverage")?;
+    let content = "界".repeat(4000);
+    let path = create(&h, "long-line", content.as_bytes())?;
+    let hash = sha256_hex(content.as_bytes());
+    let mut offset = 0;
+    let mut restored = String::new();
+    loop {
+        let page = ask(
+            &h,
+            json!({"op":"read","path":path,"offset_bytes":offset,"max_bytes":127,"if_hash":hash}),
+        )?;
+        assert_eq!(page["sha256"], hash, "{page}");
+        let next = page["coverage"]["next"]
+            .as_u64()
+            .ok_or("next byte missing")?;
+        assert!(next > offset, "non-progressing page: {page}");
+        restored.push_str(page["content"].as_str().ok_or("content")?);
+        offset = next;
+        if !page["coverage"]["more"].as_bool().ok_or("more")? {
+            break;
+        }
+    }
+    assert_eq!(restored, content);
+    std::fs::write(&path, b"changed").map_err(|e| e.to_string())?;
+    let refused = ask(
+        &h,
+        json!({"op":"read","path":path,"offset_bytes":0,"max_bytes":127,"if_hash":hash}),
+    )?;
+    assert_eq!(refused["error"], "FILE_CONFLICT");
+    Ok(())
+}

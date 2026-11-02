@@ -182,3 +182,14 @@ large-repository contract instead binds immutable discovered paths and observes
 content afresh per visited file. Schema 3 stays frozen; FS-010 and FS-012 define
 schema 4 with explicit expiry, corruption and incomplete-traversal evidence.
 Acceptance changed separately before implementation.
+
+### Per-file search truncation versus recoverable paging
+
+- Observation: FS-010 deliberately advances past truncated per-file matches.
+- Conflict: smaller context budgets require a recoverable pending-file position;
+  a path-only cursor cannot recover those omitted matches.
+- Cause: traversal coverage and within-file coverage shared one continuation.
+- Resolution: schema 5 separates pending-file and path progress, hash-pins the
+  pending file and retains fresh observations of later files (FS-012).
+- Evidence: acceptance changes must land separately under GateChange before
+  implementation; frozen schema-4 evidence remains unchanged.
