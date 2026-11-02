@@ -294,3 +294,24 @@ fn byte_pages_reject_split_character_offsets_and_report_empty_eof() -> Result<()
     assert_eq!(invalid["error"], "CONFIG_INVALID");
     Ok(())
 }
+
+#[test]
+fn byte_page_defaults_and_changed_shorter_sources_are_explicit() -> Result<(), String> {
+    let h = Harness::open("byte-page-source-changes")?;
+    let path = create(&h, "source", b"abcdefgh")?;
+    let hash = sha256_hex(b"abcdefgh");
+    let default = ask(&h, json!({"op":"read","path":path,"offset_bytes":0}))?;
+    assert_eq!(default["content"], "abcdefgh");
+    let line = ask(
+        &h,
+        json!({"op":"read","path":path,"if_hash":hash,"max_bytes":4}),
+    )?;
+    assert_eq!(line["error"], "CONFIG_INVALID");
+    std::fs::write(&path, b"x").map_err(|e| e.to_string())?;
+    let changed = ask(
+        &h,
+        json!({"op":"read","path":path,"offset_bytes":4,"max_bytes":4,"if_hash":hash}),
+    )?;
+    assert_eq!(changed["error"], "FILE_CONFLICT");
+    Ok(())
+}
