@@ -64,7 +64,7 @@ fn version_reports_the_binary_and_the_schema_independently() -> Result<(), Strin
     );
     assert_eq!(
         value.pointer("/data/schema_version"),
-        Some(&serde_json::Value::from(4)),
+        Some(&serde_json::Value::from(5)),
         "the data must agree with the envelope"
     );
     harness.assert_no_remote_tool("version")
