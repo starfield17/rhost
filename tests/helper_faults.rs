@@ -11,19 +11,21 @@ fn each_owned_allocation_may_fail_without_invalid_memory_access()
 -> Result<(), Box<dyn std::error::Error>> {
     let binary = std::env::var_os("RHOST_HELPER_FAULT_BIN")
         .ok_or("set RHOST_HELPER_FAULT_BIN to the local instrumented helper")?;
-    let root =
-        std::fs::canonicalize("target")?.join(format!("helper-alloc-fault-{}", std::process::id()));
+    let root = std::env::temp_dir()
+        .canonicalize()?
+        .join(format!("helper-alloc-fault-{}", std::process::id()));
     let hash = Sha256::digest(b"old\n")
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     let generation = "a".repeat(32);
     for op in ["search", "read_many", "changeset.apply"] {
-        for fail in 1..=600 {
+        for fail in 0..=600 {
             if root.exists() {
                 std::fs::remove_dir_all(&root)?;
             }
             std::fs::create_dir_all(root.join("files"))?;
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))?;
             let state = root.join("state");
             std::fs::create_dir(&state)?;
             std::fs::set_permissions(&state, std::fs::Permissions::from_mode(0o700))?;
@@ -74,7 +76,16 @@ fn each_owned_allocation_may_fail_without_invalid_memory_access()
                 !stderr.contains("Sanitizer") && !stderr.contains("runtime error"),
                 "{op} allocation {fail}: {stderr}"
             );
-            if !result.stdout.is_empty() {
+            if fail == 0 {
+                let response: serde_json::Value = serde_json::from_slice(&result.stdout)?;
+                assert!(
+                    response["error"].is_null(),
+                    "{op} control request: {response}"
+                );
+                if op == "changeset.apply" {
+                    assert_eq!(std::fs::read(&a)?, b"new\n");
+                }
+            } else if !result.stdout.is_empty() {
                 let _: serde_json::Value = serde_json::from_slice(&result.stdout)?;
             }
         }

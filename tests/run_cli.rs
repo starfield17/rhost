@@ -11,7 +11,9 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let parent = std::fs::canonicalize("target").unwrap_or_else(|e| panic!("target: {e}"));
+        let parent = std::env::temp_dir()
+            .canonicalize()
+            .unwrap_or_else(|e| panic!("temporary directory: {e}"));
         let root = parent.join(format!(
             "run-cli-{}-{}-{}",
             std::process::id(),

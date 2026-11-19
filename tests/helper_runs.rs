@@ -8,7 +8,9 @@ static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 struct Sandbox(PathBuf);
 impl Sandbox {
     fn new() -> Self {
-        let parent = std::fs::canonicalize("target").unwrap_or_else(|e| panic!("target: {e}"));
+        let parent = std::env::temp_dir()
+            .canonicalize()
+            .unwrap_or_else(|e| panic!("temporary directory: {e}"));
         Self(parent.join(format!(
             "run-test-{}-{}",
             std::process::id(),
