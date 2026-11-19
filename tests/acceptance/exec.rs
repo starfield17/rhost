@@ -159,17 +159,17 @@ fn a_lost_stdout_is_reported_on_stderr_and_never_resend() -> Result<(), String> 
         vec!["--json"],
     ] {
         let harness = Harness::open("lost-stdout")?;
+        let (reader, writer) = std::io::pipe().map_err(|e| fail("open stdout pipe", e))?;
+        // Close the only reader before the candidate can write anything.
+        drop(reader);
         let mut child = harness
             .command(&args)?
-            .stdout(Stdio::piped())
+            .stdout(Stdio::from(writer))
             .stderr(Stdio::from(
                 std::fs::File::create(harness.path("stderr")).map_err(|e| fail("open sink", e))?,
             ))
             .spawn()
             .map_err(|error| fail("spawn candidate", error))?;
-        // Closing the read end before the candidate writes turns stdout into a
-        // broken pipe.
-        drop(child.stdout.take());
         let status = child
             .wait()
             .map_err(|error| fail("wait for candidate", error))?;

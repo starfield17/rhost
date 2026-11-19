@@ -171,6 +171,8 @@ fn changing_files_still_charge_the_actual_scan_read_budget() -> Result<(), Strin
             .args(["-c", "\"$RHOST_ACCOUNT_HELPER\" --files-json < \"$RHOST_ACCOUNT_INPUT\"; status=$?; kill -STOP $$; exit \"$status\""])
             .env("RHOST_ACCOUNT_HELPER", std::env::var_os("RHOST_HELPER_BIN").ok_or("set RHOST_HELPER_BIN")?)
             .env("RHOST_ACCOUNT_INPUT", input_path)
+            .env("HOME", h.path("home"))
+            .env_remove("RHOST_REMOTE_STATE")
             .env_remove("RHOST_EXPECT_BOOT_ID")
             .stdin(Stdio::null())
             .stdout(std::fs::File::create(&output_path).map_err(|e| e.to_string())?)
@@ -225,7 +227,9 @@ fn changing_files_still_charge_the_actual_scan_read_budget() -> Result<(), Strin
                 .and_then(|v| v.trim().parse::<u64>().ok())
         })
         .ok_or("read accounting missing")?;
-    let scanned = answer["scanned_bytes"].as_u64().ok_or("scanned bytes")?;
+    let scanned = answer["scanned_bytes"]
+        .as_u64()
+        .ok_or_else(|| format!("missing scanned bytes: {answer}"))?;
     assert!(scanned <= 64 * 1024 * 1024, "{answer}");
     assert!(
         chars <= scanned + payload.len() as u64 + 1024 * 1024,

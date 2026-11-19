@@ -4,6 +4,8 @@ use crate::{
     support::Harness,
 };
 use serde_json::json;
+use std::os::unix::fs::DirBuilderExt;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn exclusions_precede_budgets_and_find_never_reads_file_contents() -> Result<(), String> {
@@ -53,8 +55,26 @@ fn cursor_boundaries_and_expired_collections_never_silently_restart() -> Result<
     let h = Harness::open("collection-expiry")?;
     create(&h, "tree/a", b"needle\n")?;
     create(&h, "tree/b", b"needle\n")?;
+    let state = h.path("home/.local/state/rhost/v5");
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(&state)
+        .map_err(|e| e.to_string())?;
+    let clock = state.join("clock");
+    // The helper uses the greater of wall time and the stored high-water mark.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs()
+        + 86400;
+    std::fs::write(&clock, now.to_be_bytes()).map_err(|e| e.to_string())?;
     let mut q = json!({"op":"search","root":h.path("tree"),"pattern":"needle","max_results":1,"collection_ttl_seconds":1});
     let first = ask(&h, q.clone())?;
+    let expiry = first["collection"]["expires_unix"]
+        .as_u64()
+        .ok_or("expiry")?;
+    assert_eq!(expiry, now + 1);
     let cursor = first["next_cursor"].as_str().ok_or("cursor")?;
     let (prefix, offset) = cursor.rsplit_once(':').ok_or("offset")?;
     q["cursor"] = format!(
@@ -63,14 +83,7 @@ fn cursor_boundaries_and_expired_collections_never_silently_restart() -> Result<
     )
     .into();
     assert_eq!(ask(&h, q.clone())?["error"], "CONFIG_INVALID");
-    let expiry = first["collection"]["expires_unix"]
-        .as_u64()
-        .ok_or("expiry")?;
-    std::fs::write(
-        h.path("home/.local/state/rhost/v5/clock"),
-        expiry.to_be_bytes(),
-    )
-    .map_err(|e| e.to_string())?;
+    std::fs::write(clock, expiry.to_be_bytes()).map_err(|e| e.to_string())?;
     q["cursor"] = cursor.into();
     assert_eq!(ask(&h, q)?["error"], "QUERY_EXPIRED");
     Ok(())

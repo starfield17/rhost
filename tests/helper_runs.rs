@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 static SEQUENCE: AtomicU64 = AtomicU64::new(1);
 struct Sandbox(PathBuf);
 impl Sandbox {
@@ -108,12 +108,15 @@ fn start(
     b
 }
 fn poll(g: &str, k: &str, wait: u32, out: u64) -> Vec<u8> {
+    poll_streams(g, k, wait, out, 0)
+}
+fn poll_streams(g: &str, k: &str, wait: u32, out: u64, err: u64) -> Vec<u8> {
     let mut b = Vec::new();
     text(&mut b, g);
     text(&mut b, k);
     b.extend(wait.to_be_bytes());
     b.extend(out.to_be_bytes());
-    b.extend(0u64.to_be_bytes());
+    b.extend(err.to_be_bytes());
     b.extend(4096u32.to_be_bytes());
     b
 }
@@ -149,6 +152,18 @@ impl Reader<'_> {
     fn text(&mut self) -> String {
         String::from_utf8(self.blob()).unwrap_or_else(|e| panic!("UTF8: {e}"))
     }
+    fn stream(&mut self) -> (u64, Vec<u8>, bool) {
+        let from = self.long();
+        let next = self.long();
+        let bytes = self.long();
+        let content = self.blob();
+        assert_eq!(next - from, content.len() as u64);
+        assert!(next <= bytes);
+        let open = self.byte();
+        assert!(open <= 1);
+        assert!(self.byte() <= 1);
+        (from, content, open == 1)
+    }
 }
 fn completed(reply: &[u8], g: &str, k: &str, code: u32) -> (Vec<u8>, Vec<u8>) {
     let mut r = Reader(reply);
@@ -158,20 +173,10 @@ fn completed(reply: &[u8], g: &str, k: &str, code: u32) -> (Vec<u8>, Vec<u8>) {
     assert_eq!(r.byte(), 4);
     assert_eq!(r.byte(), 1);
     assert_eq!(r.int(), code);
-    let mut streams = Vec::new();
-    for _ in 0..2 {
-        let from = r.long();
-        let next = r.long();
-        let bytes = r.long();
-        let content = r.blob();
-        assert_eq!(next - from, content.len() as u64);
-        assert!(next <= bytes);
-        assert!(r.byte() <= 1);
-        assert!(r.byte() <= 1);
-        streams.push(content);
-    }
+    let (_, out, _) = r.stream();
+    let (_, err, _) = r.stream();
     assert!(r.0.is_empty());
-    (streams.remove(0), streams.remove(0))
+    (out, err)
 }
 #[test]
 fn runs_persist_and_retry_wait_does_not_resubmit() {
@@ -199,11 +204,46 @@ fn independent_calls_observe_a_detached_run() {
     let s = Sandbox::new();
     let g = s.prepare();
     let (k, expiry) = key();
-    let reply = s.call(2, &start(&g, &k, expiry, "sleep 0.2; printf done", 0, 0));
+    let script = "sleep 0.2; printf done; printf error >&2";
+    let reply = s.call(2, &start(&g, &k, expiry, script, 0, 0));
     assert_eq!(reply[0], 0);
-    let result = s.call(3, &poll(&g, &k, 3000, 0));
-    let (out, _) = completed(&result, &g, &k, 0);
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let started = Instant::now();
+    // Poll can return on output before exit, and exit can precede stream EOF.
+    loop {
+        let result = s.call(
+            3,
+            &poll_streams(&g, &k, 100, out.len() as u64, err.len() as u64),
+        );
+        let mut r = Reader(&result);
+        assert_eq!(r.byte(), 0, "{result:?}");
+        assert_eq!(r.text(), g);
+        assert_eq!(r.text(), k);
+        let state = r.byte();
+        assert!(matches!(state, 1..=4), "unexpected Run state {state}");
+        if state == 4 {
+            assert_eq!(r.byte(), 1);
+            assert_eq!(r.int(), 0);
+        }
+        let (out_from, out_page, out_open) = r.stream();
+        let (err_from, err_page, err_open) = r.stream();
+        assert_eq!(out_from, out.len() as u64);
+        assert_eq!(err_from, err.len() as u64);
+        out.extend(out_page);
+        err.extend(err_page);
+        assert!(r.0.is_empty());
+        if state == 4 && !out_open && !err_open {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "Run did not exit and drain both streams: state {state}, stdout {out:?}, stderr {err:?}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert_eq!(out, b"done");
+    assert_eq!(err, b"error");
 }
 
 #[test]
