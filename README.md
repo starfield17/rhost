@@ -11,7 +11,7 @@ Codex / Claude / CLI / JSON (schema v5)
 ## Why it's built this way
 
 - **OpenSSH instead of a custom SSH stack**: Reuses `~/.ssh/config`, `ssh-agent`, host-key verification, and `ControlMaster` (`ControlPersist=15m`). `rhost` never prompts for credentials, stores keys, or weakens host-key checks.
-- **C99 helper instead of remote Python**: File operations and recoverable Runs run through a standalone C99 binary (`helper/`) cached privately on the host (`~/.cache/rhost/helper/`), with durable Run/changeset state under `~/.local/state/rhost/v5` (`RHOST_REMOTE_STATE`). Preparation reuses a valid cache, compiles with an existing remote C99 `cc`, or uploads a SHA-256-pinned static Linux musl binary (`linux-x86_64`, `linux-aarch64`), with no remote daemon and no automatic package installs.
+- **C99 helper instead of remote Python**: File operations and recoverable Runs run through a standalone C99 binary (`helper/`) cached privately on the host (`~/.cache/rhost/helper/`), with durable Run/changeset state under `~/.local/state/rhost/v5` (`RHOST_REMOTE_STATE`). Preparation reuses a valid cache, compiles with an existing remote C99 `cc`, or uploads a static Linux musl release binary verified against its HTTPS SHA-256 sidecar (`linux-x86_64`, `linux-aarch64`), with no remote daemon and no automatic package installs.
 - **Bounded observation and recoverable Runs instead of blind SSH retries**: In `v5.3.0` (schema 5), file reads default to **8 KiB** (`8192` bytes) and Run/session log previews default to **4 KiB** (`4096` bytes) with source-byte cursors (`run.watch` omits log bodies). Timeouts and client cancellations only end local observation; uncertain `run.start` submissions deduplicate via namespace `generation` and caller-retained expiring keys, and file replacements require a whole-file SHA-256 match.
 
 ## Install
@@ -103,4 +103,4 @@ RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-sess
 RHOST_TEST_HOST=<user>@<host> RHOST_BIN=./target/debug/rhost make test-live-all
 ```
 
-`make test-smoke` and `make check` run offline; CI also verifies locally built helpers against disposable strict-host-key `sshd` fixtures without compiling replacement helpers. Real-host `test-live*` and `test-live-helper` (with explicit `RHOST_HELPER_BIN`) runs are manual pre-release verification bound to immutable release artifacts; see [Maintenance policy](docs/MAINTENANCE.md).
+`make test-smoke` and `make check` run offline; CI builds the shipping Linux helpers and verifies them against disposable strict-host-key `sshd` fixtures. Real-host `test-live*` and `test-live-helper` runs are optional manual pre-release verification; see [Maintenance policy](docs/MAINTENANCE.md).

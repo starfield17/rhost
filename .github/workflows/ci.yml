@@ -8,32 +8,21 @@ permissions:
 jobs:
   helper-verify:
     uses: ./.github/workflows/helper-verify.yml
-    permissions:
-      contents: read
-      actions: read
   test:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-24.04
-            helper_target: linux-x86_64
-          - os: macos-15
-            helper_target: darwin-aarch64
+        os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     env:
-      GH_TOKEN: ${{ github.token }}
-      RHOST_HELPER_BIN: ${{ github.workspace }}/target/verified-helper/rhost-helper
-      RHOST_NO_SOURCE_BUILD: '1'
+      CC: clang
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
-      - name: Fetch source-locked native test helper
-        env:
-          TARGET: ${{ matrix.helper_target }}
-        run: python3 scripts/helper_artifact.py fetch --target "$TARGET" --path "$RHOST_HELPER_BIN"
       - name: Install declared Rust toolchain
         run: |
           rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)

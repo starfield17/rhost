@@ -1,7 +1,6 @@
 # Context-bounded observation (v5.3.0)
 
-Status: implemented. Exact candidate publication evidence is recorded by the
-release and operator-attestation workflows, separately from this source document.
+Status: implemented. See the [release procedure](../MAINTENANCE.md#v5-publication-procedure) for current publication checks.
 Public JSON advances to schema 5. Published schema 4 validators and fixtures
 remain frozen. Existing Run and changeset records remain usable.
 

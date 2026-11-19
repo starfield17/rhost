@@ -17,9 +17,7 @@ jobs:
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     env:
-      GH_TOKEN: ${{ github.token }}
-      RHOST_HELPER_BIN: ${{ github.workspace }}/target/verified-helper/rhost-helper
-      RHOST_NO_SOURCE_BUILD: '1'
+      CC: clang
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -29,10 +27,6 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.11'
-      - name: Fetch source-locked native test helper
-        run: |
-          case "$RUNNER_OS" in Linux) target=linux-x86_64;; macOS) target=darwin-aarch64;; *) exit 2;; esac
-          python3 scripts/helper_artifact.py fetch --target "$target" --path "$RHOST_HELPER_BIN"
       - name: Install declared Rust toolchain
         run: |
           rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
@@ -61,8 +55,6 @@ jobs:
           - runner: ubuntu-24.04-arm
             platform: linux_arm64
     runs-on: ${{ matrix.runner }}
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -87,14 +79,9 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = push ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi
           mkdir -p dist
           artifact="dist/rhost_${version}_${PLATFORM}"
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            test "$GITHUB_RUN_ATTEMPT" = 1
-            RHOST_BUILD_COMMIT="$commit" RHOST_BUILD_DATE="$build_date" \
-              cargo build --locked --release --bin rhost
-            cp target/release/rhost "$artifact"
-          else
-            python3 scripts/release_state.py promote --platform "$PLATFORM" --output dist
-          fi
+          RHOST_BUILD_COMMIT="$commit" RHOST_BUILD_DATE="$build_date" \
+            cargo build --locked --release --bin rhost
+          cp target/release/rhost "$artifact"
           reported=$("$artifact" version --json)
           printf '%s\n' "$reported"
           printf '%s' "$reported" |
@@ -105,33 +92,29 @@ jobs:
           asset_name=${artifact##*/}
           (cd dist && shasum -a 256 "$asset_name" > "$asset_name.sha256")
           (cd dist && shasum -a 256 -c "$asset_name.sha256")
-          python3 - "$artifact" "$commit" "$version" "$PLATFORM" <<'PY'
-          import hashlib,json,pathlib,sys
-          path=pathlib.Path(sys.argv[1])
-          value=dict(format=1,commit=sys.argv[2],version=sys.argv[3],platform=sys.argv[4],sha256=hashlib.sha256(path.read_bytes()).hexdigest())
-          path.with_name(f"candidate-{sys.argv[4]}.json").write_text(json.dumps(value,indent=2)+"\n")
-          PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: rhost-${{ matrix.platform }}
           path: dist/*
+          if-no-files-found: error
+          overwrite: true
           retention-days: 30
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [native, helper-verify]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [verify, native, helper-verify]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        with:
-          python-version: '3.11'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
+          pattern: rhost-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: helper-linux-*
           path: dist
           merge-multiple: true
       - name: Publish the verified native artifacts
@@ -139,8 +122,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          python3 scripts/release_state.py promote --output dist
-          cp helper/artifacts.json dist/helper-artifacts.json
-          python3 scripts/release_state.py verify-dist --output dist
-          test "$(find dist -maxdepth 1 -type f -name 'rhost_*' | wc -l | tr -d ' ')" = 8
+          sh scripts/verify-release-assets.sh "$version" dist
           gh release create "v${version}" dist/* --verify-tag --title "rhost v${version}" --generate-notes

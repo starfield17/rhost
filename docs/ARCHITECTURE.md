@@ -99,9 +99,9 @@ requirements; the migration record is frozen history.
   acceptance cover bounded reads, whole-file hashes, conflicts and dependency
   refusal; the native file suite exercises remote filesystem operations.
 
-Native suites provide manual pre-release evidence. CI checks the local contract
-and release artifacts, including disposable real-sshd helper tests. Real-host
-manual verification is separately bound through an operator attestation.
+Native suites let operators verify against a real host before release. CI
+checks the local contract and release artifacts, including disposable
+strict-host-key SSH tests for the shipping Linux helpers.
 
 ## Frames for contested paths
 

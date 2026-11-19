@@ -96,7 +96,7 @@ profile. An explicit `RHOST_HELPER_BIN` selects its full binary SHA. Explicit
 LLVM configuration selects the hash of actual compiler/linker/builtins/sysroot
 inputs and fixed flags; a configured failure refuses rather than silently
 choosing another build. In automatic mode, reuse a compatible cache, try an
-existing remote C99 `cc`, then download the matching pinned release artifact.
+existing remote C99 `cc`, then download the versioned release helper and verify its HTTPS SHA-256 sidecar.
 No compiler, SDK or package is automatically installed.
 
 `RHOST_NO_UPLOAD` allows matching cache reuse only. `RHOST_NO_SOURCE_BUILD`
@@ -116,7 +116,9 @@ claimed. A native macOS helper is only a local verification fixture.
 Private no-follow directories, ownership/mode checks, locks and atomic
 fsync/rename protect preparation. A candidate's copied bytes are hashed and its
 handshake binds source, target, capabilities, limits and image SHA before
-promotion. Cached supplied/release helpers must report their selected full SHA.
+promotion. Cached supplied/release helpers must match their full SHA before dispatch.
+The release cache profile carries the verified digest under its source and
+target, so a warm cache can be used offline.
 Linux reads its loaded image through `/proc/self/exe`; other platforms observe
 the checked executable path. This trusts the builder and remote account, not
 cryptographic source attestation or protection from the same account replacing
@@ -149,21 +151,16 @@ schema-v3 structured envelope.
 
 ## Verification and publication
 
-Helper binaries are compiled locally using `scripts/build-helper-release.py`.
-The tracked source-bound lock contains target, ABI, normalized configuration,
-compiler/linker/library/sysroot identities and exact binary SHA/size. CI only
-fetches and executes those bytes; Rust clients and test harnesses compile in CI.
-Native Linux x86_64/aarch64 jobs run direct and temporary-sshd acceptance using
-fresh keys and strict known_hosts. Local sanitizers/allocation faults complement
-those shipping-byte tests and never replace their artifacts.
+CI builds helpers for Linux x86_64 and aarch64 and for a macOS arm64 test
+fixture. Linux jobs execute the shipping binaries directly and through a
+disposable strict-host-key SSH server. The Linux x86_64 job also runs separate
+sanitizer and allocation-failure builds.
 
-The independently reviewed publication design uses a stable non-production
-candidate tag, first-attempt Actions artifacts, manual same-commit exact-client
-and helper verification, and an annotated production tag binding immutable
-artifact IDs. Tag jobs rerun Linux/macOS source gates, all four native client
-executions and both native helper jobs without rebuilding the client candidates.
-Missing/expired/substituted inputs refuse promotion. The published manual record
-is explicitly a trusted operator attestation, not CI-observed real-host evidence.
+A Cargo-version tag push runs `make check` on Linux and macOS, checks
+measurement integrity, and builds and runs all four native clients. Publication
+requires these checks and the helper jobs to succeed. It verifies the named
+SHA-256 sidecars of all six shipping binaries from the same workflow run.
+Manual dispatch rehearses the build and verification.
 See [maintenance](../MAINTENANCE.md#v5-publication-procedure).
 
 ## Core structured adapters (v5.1.0)

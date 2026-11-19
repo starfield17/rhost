@@ -96,6 +96,13 @@
     "gap": "The release workflow executes each native artifact and asserts its checkout commit and UTC build date; the local contract test prevents that evidence from leaving the workflow."
   },
   {
+    "id": "HIST-RS-RELEASE-002",
+    "origin": "355e537",
+    "contract": "RELEASE-002",
+    "mechanism_test": "tests/release_assets.rs:incomplete_or_substituted_release_assets_fail_closed",
+    "conformance_test": "tests/release_assets.rs:all_six_native_assets_and_their_sidecars_pass_publication_verification"
+  },
+  {
     "id": "HIST-RS-SESSION-001",
     "origin": "2611324",
     "contract": "SESSION-010",

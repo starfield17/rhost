@@ -2,22 +2,8 @@ name: helper-verify
 on:
   workflow_call:
   workflow_dispatch:
-    inputs:
-      source_commit:
-        description: Full source commit at the dispatch ref
-        required: true
-        type: string
-      manifest_sha256:
-        description: SHA-256 of helper/artifacts.json
-        required: true
-        type: string
-      asset_ids:
-        description: JSON mapping Linux target names to candidate release asset IDs
-        required: true
-        type: string
 permissions:
   contents: read
-  actions: read
 jobs:
   helper:
     strategy:
@@ -28,49 +14,71 @@ jobs:
             target: linux-x86_64
           - runner: ubuntu-24.04-arm
             target: linux-aarch64
+          - runner: macos-15
+            target: darwin-aarch64
     runs-on: ${{ matrix.runner }}
     env:
-      GH_TOKEN: ${{ github.token }}
-      HELPER_SOURCE_COMMIT: ${{ inputs.source_commit || github.sha }}
-      HELPER_MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
-      HELPER_ASSET_IDS: ${{ inputs.asset_ids }}
       RHOST_NO_SOURCE_BUILD: '1'
-      RHOST_HELPER_BIN: ${{ github.workspace }}/target/verified-helper/rhost-helper
+      RHOST_NO_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        with:
-          python-version: '3.11'
-      - name: Fetch and verify exact locally built helper
-        env:
-          TARGET: ${{ matrix.target }}
-        run: python3 scripts/helper_artifact.py fetch --target "$TARGET" --path "$RHOST_HELPER_BIN"
-      - name: Install declared Rust toolchain and disposable SSH fixture tools
+      - name: Install declared Rust toolchain
         run: |
           rust_version=$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)
           rustup toolchain install "$rust_version" --profile minimal
           rustup override set "$rust_version"
+      - name: Install Linux build and disposable SSH fixture tools
+        if: runner.os == 'Linux'
+        run: |
           sudo apt-get update -qq
-          sudo apt-get install -y openssh-server
+          sudo apt-get install -y musl-tools openssh-server
           sudo mkdir -p /run/sshd
+      - name: Build and checksum the native helper
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml)
+          asset="rhost-helper_${version}_${TARGET}"
+          helper="$GITHUB_WORKSPACE/target/verified-helper/$asset"
+          if [ "$RUNNER_OS" = Linux ]; then
+            CC=musl-gcc RHOST_HELPER_STATIC=1 sh scripts/build-helper.sh "$helper"
+          else
+            CC=clang sh scripts/build-helper.sh "$helper"
+          fi
+          (cd "$(dirname "$helper")" && shasum -a 256 "$asset" > "$asset.sha256")
+          printf 'RHOST_HELPER_BIN=%s\n' "$helper" >> "$GITHUB_ENV"
       - name: Execute exact native helper acceptance
         run: |
           cargo test --locked --test acceptance
           cargo test --locked --features helper-tests --test helper_protocol --test helper_runs --test run_cli
           cargo build --locked --bin rhost
       - name: Execute real SSH acceptance against disposable sshd
+        if: runner.os == 'Linux'
         env:
           RHOST_BIN: ${{ github.workspace }}/target/debug/rhost
         run: sh scripts/test-helper-ssh.sh
-      - name: Retain the tested bytes and bound observation
-        env:
-          TARGET: ${{ matrix.target }}
+      - name: Verify the tested helper bytes
         run: |
-          python3 scripts/helper_artifact.py verify --target "$TARGET" --path "$RHOST_HELPER_BIN"
-          asset=$(python3 -c 'import json,os; m=json.load(open("helper/artifacts.json")); print(next(a["asset"] for a in m["artifacts"] if a["target"]==os.environ["TARGET"]))')
-          mv "$RHOST_HELPER_BIN" "target/verified-helper/$asset"
+          cd "$(dirname "$RHOST_HELPER_BIN")"
+          shasum -a 256 -c "${RHOST_HELPER_BIN##*/}.sha256"
+      - name: Run the sanitizer and allocation-failure suites
+        if: matrix.target == 'linux-x86_64'
+        env:
+          CC: clang
+          RHOST_HELPER_SANITIZE: '1'
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: |
+          export RHOST_HELPER_BIN="$GITHUB_WORKSPACE/target/helper/rhost-helper-sanitized"
+          sh scripts/build-helper.sh "$RHOST_HELPER_BIN"
+          export RHOST_HELPER_FAULT_BIN="$GITHUB_WORKSPACE/target/helper/rhost-helper-fault"
+          sh scripts/build-helper-fault.sh "$RHOST_HELPER_FAULT_BIN"
+          cargo test --locked --features helper-tests,helper-fault-tests --test helper_faults
+          cargo test --locked --features helper-tests --test helper_protocol --test helper_runs --test run_cli --test acceptance
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: helper-${{ matrix.target }}
           path: target/verified-helper/*
+          if-no-files-found: error
+          overwrite: true
           retention-days: 30

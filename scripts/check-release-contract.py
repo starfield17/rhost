@@ -84,7 +84,6 @@ def main() -> int:
     require_job_once(workflow, "verify", "      - run: make check")
     require_once(workflow, "complete source gate", "      - run: make check")
     require_job_once(workflow, "native", "    needs: verify")
-    require_job_once(workflow, "publish", "    needs: [native, helper-verify]")
     require_job_once(workflow, "verify", 'rustup component add --toolchain "$rust_version" rustfmt clippy')
     refuse(workflow, "a redundant smoke suite", r"make test-smoke")
     refuse(workflow, "a live suite the release workflow cannot actually reach", r"test-live|RHOST_TEST_HOST")
@@ -151,12 +150,11 @@ def main() -> int:
             report("install.sh does not verify SHA-256")
     for label, fragment in (
         ("version-tag trigger", '      - "v*"'),
-        ("publication tag guard", "    if: startsWith(github.ref, 'refs/tags/v')"),
-        ("publication waits for native artifacts", "    needs: [native, helper-verify]"),
+        ("publication tag guard", "    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"),
+        ("publication waits for every verification job", "    needs: [verify, native, helper-verify]"),
         ("release write permission", "      contents: write"),
-        ("all artifacts downloaded together", "          merge-multiple: true"),
         ("tag matches Cargo version", '          if [ "$GITHUB_EVENT_NAME" = push ]; then test "$GITHUB_REF_NAME" = "v${version}"; fi'),
-        ("eight release files present", '          test "$(find dist -maxdepth 1 -type f -name \'rhost_*\' | wc -l | tr -d \' \')" = 8'),
+        ("publication verifies exact inventory and SHA-256", 'sh scripts/verify-release-assets.sh "$version" dist'),
         ("GitHub release publication", '          gh release create "v${version}" dist/* --verify-tag --title "rhost v${version}" --generate-notes'),
     ):
         require_once(workflow, label, fragment)

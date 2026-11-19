@@ -203,3 +203,12 @@ Acceptance changed separately before implementation.
 - Resolution: validate Boolean stream evidence without requiring EOF, retaining
   exact completion, byte counters and the no-body assertion.
 - Evidence: acceptance-only correction under GateChange, independent of source.
+
+### Release provenance after native CI builds
+
+The candidate-ID and operator-attestation checks measured the retired
+promotion workflow. Publication now takes native outputs from the tagged
+workflow run and requires every verification job to pass. The replacement
+checks cover checkout provenance, exact asset names, and checksum refusal on
+missing, extra or substituted assets. The measurement change lands separately
+with a `GateChange:` trailer.

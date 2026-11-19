@@ -115,16 +115,13 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   semantics are Risk A: name affected consumers and get architecture review before
   implementation. See `docs/MAINTENANCE.md#change-risk` for the complete map.
 - Cargo.toml is the sole active binary version authority. Client implementation
-  and acceptance tests must be Rust; the standalone v5 remote helper is C99.
-  Its sources obey the same reading budget, and local sanitizer builds complement
-  verification of the exact prebuilt artifacts. CI must not compile a replacement
-  helper. The removed Go implementation, modules, metadata,
-  installers and workflows live only in the read-only `rhost-go-old` repository;
-  nothing here builds or reads them. `docs/RUST_MIGRATION.md` is frozen history.
-- Real-host live suites are required manual pre-release verification. Release
-  CI runs `make check` on Linux/macOS, executes all four stored native clients,
-  and tests exact locally built helpers on both Linux architectures through a
-  disposable strict-host-key sshd. Publication requires an annotated tag bound
-  to immutable first-attempt candidates and a same-commit exact-byte operator
-  attestation for `test-live-all` and `test-live-helper`. CI validates that
-  binding; it does not claim to observe the manual host. See maintenance policy.
+  and acceptance tests must be Rust. The standalone v5 remote helper is C99 and
+  obeys the same reading budget. CI builds and tests the shipping helpers.
+  Separate sanitizer builds complement that verification. The removed Go
+  implementation, modules, metadata, installers and workflows live only in the
+  read-only `rhost-go-old` repository. `docs/RUST_MIGRATION.md` is frozen history.
+- Real-host live suites are optional manual pre-release verification. Release
+  CI runs `make check` on Linux/macOS, checks measurement integrity, executes the
+  four native clients and verifies both Linux helpers through disposable
+  strict-host-key SSH. A version tag push publishes the tested binaries with
+  SHA-256 sidecars after all verification jobs pass. See maintenance policy.
