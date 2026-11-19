@@ -244,3 +244,93 @@ fn same_source_cached_image_must_match_the_supplied_bytes() -> Result<(), String
     assert_eq!(repaired["data"]["helper"]["binary_sha256"], hash);
     Ok(())
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn release_helper_checks_the_sidecar_and_reuses_only_matching_cached_bytes() -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+
+    let h = Harness::open("release-helper")?;
+    local_host(&h)?;
+    let cache = h.path("helper-cache");
+    let state = h.path("remote-state");
+    let helper = std::env::var("RHOST_HELPER_BIN").map_err(|error| error.to_string())?;
+    let version = env!("CARGO_PKG_VERSION");
+    let target = format!("linux-{}", std::env::consts::ARCH);
+    let asset = format!("rhost-helper_{version}_{target}");
+    let url = format!("https://github.com/starfield17/rhost/releases/download/v{version}/{asset}");
+    h.stub(
+        "curl",
+        &format!(
+            "for argument do last=$argument; done\ncase \"$last\" in\n{url}.sha256) exec cat sidecar;;\n{url}) exec cat {};;\n*) exit 2;;\nesac",
+            crate::support::shell_quote(&helper)
+        ),
+    )?;
+    let h = h
+        .env("RHOST_NO_SOURCE_BUILD", "1")
+        .env("RHOST_HELPER_CACHE_DIR", &cache.to_string_lossy())
+        .env("RHOST_REMOTE_STATE", &state.to_string_lossy());
+    let invoke = |subcommand: &str, offline: bool| -> Result<Value, String> {
+        let mut child = h.command(&["helper", subcommand, "gpu", "--json"])?;
+        child
+            .env_remove("RHOST_HELPER_BIN")
+            .env_remove("RHOST_HELPER_CC");
+        if offline {
+            child.env("RHOST_NO_DOWNLOAD", "1");
+        } else {
+            child.env_remove("RHOST_NO_DOWNLOAD");
+        }
+        let output = child.output().map_err(|error| error.to_string())?;
+        serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())
+    };
+    let calls = || {
+        h.calls()
+            .into_iter()
+            .filter(|call| call.program == "curl")
+            .collect::<Vec<_>>()
+    };
+    want_code(&invoke("prepare", true)?, "HELPER_PREPARATION_FAILED")?;
+    assert!(calls().is_empty());
+    h.write("sidecar", &format!("{}  {asset}\n", "0".repeat(64)), None)?;
+    want_code(&invoke("prepare", false)?, "HELPER_INCOMPATIBLE")?;
+    assert!(!cache.exists());
+    let downloaded = calls();
+    assert_eq!(downloaded.len(), 2);
+    assert_eq!(downloaded[0].args.last(), Some(&format!("{url}.sha256")));
+    assert_eq!(downloaded[1].args.last(), Some(&url));
+    for call in downloaded {
+        for flag in ["--proto", "--proto-redir"] {
+            assert!(call.args.windows(2).any(|args| args == [flag, "=https"]));
+        }
+    }
+
+    let bytes = std::fs::read(helper).map_err(|error| error.to_string())?;
+    let digest: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    h.write("sidecar", &format!("{digest}  {asset}\n"), None)?;
+    let prepared = invoke("prepare", false)?;
+    assert_eq!(prepared["ok"], true, "{prepared}");
+    let identity = &prepared["data"]["helper"];
+    assert_eq!(identity["binary_sha256"], digest);
+    let source = identity["source_digest"].as_str().ok_or("source digest")?;
+    let path = cache.join(format!(
+        "p1/{source}/{target}/release-v{version}-{digest}/rhost-helper"
+    ));
+    assert_eq!(calls().len(), 4);
+    let cached = invoke("status", true)?;
+    assert_eq!(
+        cached["data"]["helper"]["binary_sha256"], digest,
+        "{cached}"
+    );
+    assert_eq!(calls().len(), 4);
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(path)
+        .and_then(|mut image| image.write_all(b"mismatched cached image"))
+        .map_err(|error| error.to_string())?;
+    want_code(&invoke("status", true)?, "HELPER_INCOMPATIBLE")?;
+    assert_eq!(calls().len(), 4);
+    Ok(())
+}
