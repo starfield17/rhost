@@ -51,7 +51,9 @@ int ch_prepare(ch_set *s){
         if(ok && (old.size>F_EDIT_LIMIT-originals || next.size>F_EDIT_LIMIT-replacements)){f_fail(s->error,"FILE_TOO_LARGE","aggregate changeset bytes exceed 8388608");ok=0;}
         if(ok){
             originals+=old.size;replacements+=next.size;rh_sha256(next.data,next.size,digest);rh_hex(digest,32,after);
-            j_value *parent=j_new(J_ARRAY);ok=parent && j_integer(parent,NULL,(uint64_t)p->parent.st_dev) && j_integer(parent,NULL,(uint64_t)p->parent.st_ino) && ch_put(p->meta,"parent",parent);
+            j_value *parent=j_new(J_ARRAY);
+            if(parent && j_integer(parent,NULL,(uint64_t)p->parent.st_dev) && j_integer(parent,NULL,(uint64_t)p->parent.st_ino))ok=ch_put(p->meta,"parent",parent);
+            else{j_free(parent);ok=0;}
             if(ok)ok=ch_bool(p->meta,"existed",exists) && ch_put(p->meta,"before",exists?ch_version(&st):j_new(J_NULL)) && ch_string(p->meta,"before_hash",before) && ch_string(p->meta,"after_hash",after) && ch_integer(p->meta,"mode",mode) && ch_archive(s,i,"before",&old) && ch_archive(s,i,"after",&next);
         }
         free(old.data);free(next.data);if(!ok)return 0;

@@ -60,12 +60,17 @@ int ch_open(ch_set *s,const j_value *q,int apply){
     const char *capacity=rg_capacity(&s->space,1);if(capacity){f_fail(s->error,capacity,"changeset registration exceeds namespace capacity");return 0;}
     char pending[96];snprintf(pending,sizeof pending,".pending-%s",s->id);
     if(mkdirat(s->base,pending,0700)<0)return 0;s->dir=openat(s->base,pending,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);if(!private_dir(s->dir))return 0;
-    s->manifest=j_new(J_OBJECT);j_value *files=j_new(J_ARRAY);if(!s->manifest || !files)return 0;
-    if(!j_integer(s->manifest,"version",1) || !j_text(s->manifest,"generation",s->space.generation,32) || !j_text(s->manifest,"id",s->id,strlen(s->id)) || !j_integer(s->manifest,"expires_unix",s->expiry) || !j_text(s->manifest,"status","registered",10) || !j_boolean(s->manifest,"cleanup_pending",0) || !j_add(s->manifest,"files",files))return 0;
+    s->manifest=j_new(J_OBJECT);
+    if(!s->manifest || !j_integer(s->manifest,"version",1) || !j_text(s->manifest,"generation",s->space.generation,32) || !j_text(s->manifest,"id",s->id,strlen(s->id)) || !j_integer(s->manifest,"expires_unix",s->expiry) || !j_text(s->manifest,"status","registered",10) || !j_boolean(s->manifest,"cleanup_pending",0))return 0;
+    j_value *files=j_new(J_ARRAY);if(!j_add(s->manifest,"files",files))return 0;
     j_buf raw={0};raw.limit=J_INPUT_LIMIT;if(!j_dump(s->request,&raw)){free(raw.data);return 0;}
     unsigned char digest[32];char hash[65];rh_sha256(raw.data,raw.size,digest);rh_hex(digest,32,hash);
     int ok=j_text(s->manifest,"fingerprint",hash,64) && rh_atomic(s->dir,"request.json",raw.data,raw.size);free(raw.data);if(!ok)return 0;
-    for(j_value *p=j_get(s->request,"changes")->first;p;p=p->next){j_value *entry=j_new(J_OBJECT);if(!entry || !j_text(entry,"path",ch_text(p,"path"),strlen(ch_text(p,"path"))) || !j_text(entry,"state","pending",7) || !j_boolean(entry,"ever_applied",0) || !j_add(files,NULL,entry))return 0;}
+    for(j_value *p=j_get(s->request,"changes")->first;p;p=p->next){
+        j_value *entry=j_new(J_OBJECT);
+        if(!entry || !j_text(entry,"path",ch_text(p,"path"),strlen(ch_text(p,"path"))) || !j_text(entry,"state","pending",7) || !j_boolean(entry,"ever_applied",0)){j_free(entry);return 0;}
+        if(!j_add(files,NULL,entry))return 0;
+    }
     int fd=openat(s->dir,"owner.lock",O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);if(fd<0)return 0;ok=fsync(fd)==0;close(fd);
     if(!ok || !ch_save(s) || renameat(s->base,pending,s->base,s->id)<0 || fsync(s->base)<0)return 0;
     return ch_load(s)?2:0;
@@ -77,7 +82,7 @@ j_value *ch_result(ch_set *s,int active){
     size_t applied=0;int unknown=active || !strcmp(ch_text(s->manifest,"status"),"unknown");
     for(size_t i=0;i<s->count;i++){j_value *m=s->entries[i].meta,*v=j_new(J_OBJECT);int ever=j_get(m,"ever_applied") && j_get(m,"ever_applied")->number;applied+=ever?1:0;
         const char *phase=ch_text(m,"state");if(!strcmp(phase,"installing") || !strcmp(phase,"restoring"))unknown=1;
-        if(!v || !j_text(v,"path",ch_text(m,"path"),strlen(ch_text(m,"path"))) || !j_text(v,"state",ch_text(m,"state"),strlen(ch_text(m,"state"))) || !j_boolean(v,"ever_applied",ever))goto fail;
+        if(!v || !j_text(v,"path",ch_text(m,"path"),strlen(ch_text(m,"path"))) || !j_text(v,"state",ch_text(m,"state"),strlen(ch_text(m,"state"))) || !j_boolean(v,"ever_applied",ever)){j_free(v);goto fail;}
         const char *keys[]={"before_hash","after_hash"};for(size_t k=0;k<2;k++){j_value *h=j_get(m,keys[k]);if(!j_add(v,keys[k],h?j_clone(h):j_new(J_NULL))){j_free(v);goto fail;}}
         if(!j_add(files,NULL,v))goto fail;
     }

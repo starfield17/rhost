@@ -43,7 +43,9 @@ static void failure(ch_set *s,int preparing){
     int ambiguous=0,applied=0;for(size_t i=0;i<s->count;i++){const char *state=ch_text(s->entries[i].meta,"state");if(!strcmp(state,"installing") || !strcmp(state,"restoring"))ambiguous=1;j_value *ever=j_get(s->entries[i].meta,"ever_applied");if(ever && ever->number)applied=1;}
     if(!s->error->code)f_fail(s->error,"STATE_UNAVAILABLE","changeset evidence is incomplete");
     if(!ch_string(s->manifest,"status",ambiguous?"unknown":preparing && !applied?"refused":"partial"))return;
-    j_value *err=j_new(J_OBJECT);if(err && j_text(err,"code",s->error->code,strlen(s->error->code)) && j_text(err,"message",s->error->message,strlen(s->error->message)) && ch_put(s->manifest,"failure",err))(void)ch_save(s);
+    j_value *err=j_new(J_OBJECT);
+    if(!err || !j_text(err,"code",s->error->code,strlen(s->error->code)) || !j_text(err,"message",s->error->message,strlen(s->error->message))){j_free(err);return;}
+    if(ch_put(s->manifest,"failure",err))(void)ch_save(s);
 }
 j_value *f_changes(const j_value *q,const char *op,f_error *e){
     int applying=!strcmp(op,"changeset.apply"),query=!strcmp(op,"changeset.query"),recover=!strcmp(op,"changeset.recover"),prune=!strcmp(op,"changeset.prune");
