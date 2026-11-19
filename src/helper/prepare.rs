@@ -7,7 +7,7 @@ use super::{
 };
 use crate::remote::Error;
 use std::time::Duration;
-fn recoverable(error: &Error) -> bool {
+pub(super) fn recoverable(error: &Error) -> bool {
     matches!(
         error.code,
         "HELPER_PREPARATION_FAILED" | "HELPER_INCOMPATIBLE"
@@ -19,17 +19,8 @@ impl Helper<'_> {
         match self.probe_current() {
             Ok(value) => Ok(value),
             Err(error) if self.automatic() && recoverable(&error) => {
-                let target = self
-                    .target
-                    .get()
-                    .ok_or_else(|| Error::new("INTERNAL", "target observation missing"))?;
-                if let Some((_, pinned)) = artifact::pinned(target)? {
-                    self.select_profile(&format!("release-{}", pinned.sha256))?;
-                    match self.probe_current() {
-                        Ok(value) => return Ok(value),
-                        Err(e) if recoverable(&e) => (),
-                        Err(e) => return Err(e),
-                    }
+                if let Some(value) = self.probe_release()? {
+                    return Ok(value);
                 }
                 Err(error)
             }
@@ -126,11 +117,11 @@ impl Helper<'_> {
                         .target
                         .get()
                         .ok_or_else(|| Error::new("INTERNAL", "target missing"))?;
-                    let Some((release, pinned)) = artifact::pinned(target)? else {
+                    if !artifact::supported(target) {
                         return Err(error);
-                    };
-                    let binary = artifact::fetch(&release, &pinned, self.cancelled)?;
-                    self.select_profile(&format!("release-{}", pinned.sha256))?;
+                    }
+                    let binary = artifact::fetch(target, self.cancelled)?;
+                    self.select_profile(&format!("{}{}", artifact::PROFILE_PREFIX, binary.sha256))?;
                     self.upload(&binary, &marker)?;
                 }
             }

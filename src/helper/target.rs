@@ -169,7 +169,7 @@ impl Helper<'_> {
         }
         if let Some(cache) = self.selected_cache.borrow().as_ref()
             && let Some(profile) = cache.trim_end_matches('/').rsplit('/').next()
-            && let Some(digest) = profile.strip_prefix("release-")
+            && let Some(digest) = profile.strip_prefix(artifact::PROFILE_PREFIX)
         {
             crate::domain::Sha256::new(digest.into())
                 .map_err(|_| Error::new("INTERNAL", "invalid release profile"))?;

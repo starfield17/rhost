@@ -27,10 +27,6 @@ impl Helper<'_> {
         let mut profiles = Vec::new();
         for os in ["linux", "darwin", "freebsd", "openbsd", "netbsd"] {
             for arch in ["aarch64", "x86_64"] {
-                let target = Target {
-                    os: os.into(),
-                    arch: arch.into(),
-                };
                 let name = format!("{os}-{arch}");
                 if let Some(binary) = &supplied {
                     profiles.push((
@@ -47,17 +43,18 @@ impl Helper<'_> {
                         ));
                     }
                 } else {
-                    profiles.push((name.clone(), "native-c99-o2-v1".into(), String::new()));
-                    if let Some((_, pinned)) = artifact::pinned(&target)? {
-                        profiles.push((name, format!("release-{}", pinned.sha256), pinned.sha256));
-                    }
+                    profiles.push((name, "native-c99-o2-v1".into(), String::new()));
                 }
             }
         }
         Ok(profiles)
     }
-    fn verified_command(&self, marker: &str, files: bool) -> Result<String, Error> {
-        let profiles = self.profiles()?;
+    fn verified_command(
+        &self,
+        marker: &str,
+        files: bool,
+        release_probe: bool,
+    ) -> Result<String, Error> {
         let base = crate::shell::path_quote(&self.cache_base()?);
         let state = crate::shell::path_quote(
             &std::env::var("RHOST_REMOTE_STATE")
@@ -67,10 +64,32 @@ impl Helper<'_> {
             "printf '%s' {}; rh_os=$(command uname -s) && rh_arch=$(command uname -m) || {{ printf 'RHOST_FAST_DEPENDENCY\\n'; exit 127; }};\ncase \"$rh_os\" in Linux) rh_os=linux;; Darwin) rh_os=darwin;; FreeBSD) rh_os=freebsd;; OpenBSD) rh_os=openbsd;; NetBSD) rh_os=netbsd;; *) printf 'RHOST_FAST_UNSUPPORTED\\n'; exit 126;; esac;\ncase \"$rh_arch\" in aarch64|arm64) rh_arch=aarch64;; x86_64|amd64) rh_arch=x86_64;; *) printf 'RHOST_FAST_UNSUPPORTED\\n'; exit 126;; esac;\nrh_target=\"$rh_os-$rh_arch\"; rh_base={base}; rh_cache=; rh_image=;\n",
             crate::shell::quote(marker)
         );
-        for (target, profile, image) in profiles {
+        if !release_probe {
+            for (target, profile, image) in self.profiles()? {
+                script.push_str(&format!(
+                    "if [ -z \"$rh_cache\" ] && [ \"$rh_target\" = {} ] && {{ [ -e \"${{rh_base}}{target}/{profile}/rhost-helper\" ] || [ -L \"${{rh_base}}{target}/{profile}/rhost-helper\" ]; }}; then rh_cache=\"${{rh_base}}{target}/{profile}\"; rh_image={}; fi;\n",
+                    crate::shell::quote(&target), crate::shell::quote(&image)
+                ));
+            }
+        }
+        if std::env::var_os("RHOST_HELPER_BIN").is_none()
+            && std::env::var_os("RHOST_HELPER_CC").is_none()
+        {
+            // The private cache keeps the digest verified at install time in the
+            // profile name. The loaded image must match it before dispatch.
             script.push_str(&format!(
-                "if [ -z \"$rh_cache\" ] && [ \"$rh_target\" = {} ] && {{ [ -e \"${{rh_base}}{target}/{profile}/rhost-helper\" ] || [ -L \"${{rh_base}}{target}/{profile}/rhost-helper\" ]; }}; then rh_cache=\"${{rh_base}}{target}/{profile}\"; rh_image={}; fi;\n",
-                crate::shell::quote(&target), crate::shell::quote(&image)
+                r#"if [ -z "$rh_cache" ] && [ "$rh_os" = linux ]; then
+  rh_prefix="$rh_base$rh_target/"{}
+  for rh_candidate in "$rh_prefix"*; do
+    rh_digest=${{rh_candidate#"$rh_prefix"}}
+    case "$rh_digest" in *[!0123456789abcdef]*) continue;; esac
+    [ "${{#rh_digest}}" = 64 ] || continue
+    [ -e "$rh_candidate/rhost-helper" ] || [ -L "$rh_candidate/rhost-helper" ] || continue
+    rh_cache=$rh_candidate; rh_image=$rh_digest; break
+  done
+fi
+"#,
+                crate::shell::quote(artifact::PROFILE_PREFIX)
             ));
         }
         script.push_str(
@@ -100,7 +119,7 @@ impl Helper<'_> {
             format!("RHOST_FRAME_{kind}_{nonce}\n")
         };
         let command = self
-            .verified_command(&marker, files)
+            .verified_command(&marker, files, kind == 1 && !files)
             .map_err(|e| e.with_recovery(Recovery::preparation()))?;
         let (run, stdout, stderr) =
             self.transport(&command, input, budget, cap.saturating_add(65536))?;
@@ -151,7 +170,7 @@ impl Helper<'_> {
                         error
                     }
                 })?;
-                let identity = self.decode_probe(&handshake)?;
+                let identity = self.decode_probe(&handshake, None)?;
                 let reply = bytes[split..].to_vec();
                 if files {
                     if serde_json::from_slice::<Value>(&reply).is_err() {
@@ -202,6 +221,18 @@ impl Helper<'_> {
             },
             "verified native answer is unavailable; do not submit a new identity",
         ))
+    }
+    pub(super) fn probe_release(&self) -> Result<Option<Value>, Error> {
+        if !self.target.get().is_some_and(artifact::supported) {
+            return Ok(None);
+        }
+        let request = Writer::default().frame(1)?;
+        match self.attempt(1, &request, Duration::from_secs(15), 65536, false) {
+            Ok(Attempt::Answer(identity, _)) => Ok(Some(identity)),
+            Ok(Attempt::Missing) => Ok(None),
+            Err(error) if super::prepare::recoverable(&error) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
     fn verified(
         &self,

@@ -167,9 +167,13 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
     }
     pub(super) fn probe_current(&self) -> Result<serde_json::Value, Error> {
         let bytes = self.raw(1, Writer::default().frame(1)?, Duration::from_secs(15))?;
-        self.decode_probe(&bytes)
+        self.decode_probe(&bytes, self.expected_image()?.as_deref())
     }
-    fn decode_probe(&self, bytes: &[u8]) -> Result<serde_json::Value, Error> {
+    fn decode_probe(
+        &self,
+        bytes: &[u8],
+        expected_image: Option<&str>,
+    ) -> Result<serde_json::Value, Error> {
         let mut r = Reader::new(bytes);
         let digest = r.text()?;
         let os = r.text()?;
@@ -183,7 +187,7 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
         let image = r.text()?;
         crate::domain::Sha256::new(image.clone())
             .map_err(|_| codec::protocol("invalid helper image digest"))?;
-        if let Some(expected) = self.expected_image()?
+        if let Some(expected) = expected_image
             && expected != image
         {
             return Err(Error::new(
