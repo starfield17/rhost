@@ -52,7 +52,7 @@ supplies a tool: ask the host with `command -V <tool>` and the host's own packag
 manager (`dpkg -S`, `rpm -qf`, `brew --prefix`, ...), run through `exec`.
 
 Do not rely on a `sudo` timestamp surviving across rhost calls. Each invocation is
-its own submission under `setsid bash -lc`, so a cache granted to an earlier call
+its own submission in a new session under `bash -lc`, so a cache granted to an earlier call
 does not survive when the remote sudo configuration uses `tty_tickets`. Remote `secure_path` in `/etc/sudoers` also resets
 `PATH` to minimal system directories, stripping user `PATH` additions like Homebrew,
 Conda, or Cargo; invoke privileged commands with full binary paths or configure

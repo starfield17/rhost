@@ -16,10 +16,11 @@ does not terminate already accepted channels. `--fresh` on exec and doctor uses
 `ControlMaster=no`, `ControlPersist=no`, and `ControlPath=none`, and does not
 initialize the shared socket directory. Tunnel masters use a separate namespace.
 
-The remote wrapper requires `bash`, `setsid` and a base64 decoder. The command
-payload crosses the login shell as base64, then runs under `bash -lc` in its own
-process group. This keeps arbitrary shell syntax intact and makes cleanup
-addressable.
+The remote wrapper passes the base64 payload through the account's login shell
+to `/bin/sh`. The bootstrap creates a session with `setsid` when available or
+uses Perl's `POSIX::setsid`. The wrapper then runs under `bash -lc` as the
+session and process-group leader. Cleanup checks the recorded start time, process
+group ID, and the session-leader flag from `ps` before signaling the group.
 
 ## Primary command
 

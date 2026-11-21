@@ -53,6 +53,13 @@
     "gap": "Ran by make test-live-all: completion is real, and the caller's own deadline ends the run. A wall-clock-timed signal would be the racy test the friction log refuses."
   },
   {
+    "id": "HIST-PROC-004",
+    "origin": "4c36a08",
+    "contract": "EXEC-007",
+    "mechanism_test": "tests/acceptance/transport.rs:exec_uses_perl_when_the_setsid_executable_is_absent",
+    "conformance_test": "tests/live/exec.rs:timeout_escalates_when_a_group_member_ignores_term"
+  },
+  {
     "id": "HIST-SSH-001",
     "origin": "20e547a",
     "contract": "SSH-002",

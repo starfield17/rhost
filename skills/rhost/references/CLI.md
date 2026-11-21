@@ -33,9 +33,11 @@ There is no default exec deadline. JSON capture defaults to 1 MiB per stream;
 captured text is incomplete even though `bytes` reports all observed source
 bytes.
 
-The SSH command crosses the target account's configured shell and starts the
-wrapper under `setsid bash -lc`. The program inherits that bash login startup
-environment; it is not an interactive shell. `--fresh` selects a new SSH
+The SSH command crosses the target account's configured shell. A `/bin/sh`
+bootstrap starts `bash -lc` in a new session using `setsid` or Perl's
+`POSIX::setsid`. `doctor` reports whether the `setsid` executable is
+available on the Bash login PATH. The program inherits that login environment
+and runs non-interactively. `--fresh` selects a new SSH
 connection, not a clean `PATH`. rhost does not infer which package a tool belongs to: ask the host with
 `command -V <tool>` and the host's own package manager, run through `exec`.
 
@@ -93,7 +95,7 @@ envelope alone does not turn captured text into multiple readable lines.
 
 ### Privileged execution (`sudo`) and environment
 
-Exec runs in a non-interactive login shell under `setsid bash -lc`.
+Exec runs in its own session under non-interactive `bash -lc`.
 Executing commands with `sudo` across rhost calls has specific constraints:
 
 - Sudo timestamp caching (`timestamp_timeout`) does not survive across separate

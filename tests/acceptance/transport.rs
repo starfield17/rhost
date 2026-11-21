@@ -101,6 +101,43 @@ fn an_absent_master_is_reported_without_error_and_an_unknown_one_fails_reset() -
 }
 
 #[test]
+fn exec_uses_perl_when_the_setsid_executable_is_absent() -> Result<(), String> {
+    let harness = Harness::open("exec-perl-bootstrap")?.stubs_only_path();
+    harness.stub(
+        "ssh",
+        r#"for argument in "$@"; do remote="$argument"; done
+exec /bin/sh -c "$remote""#,
+    )?;
+    harness.stub("bash", r#"exec /bin/bash --noprofile "$@""#)?;
+    harness.stub("base64", r#"exec /usr/bin/base64 "$@""#)?;
+    harness.stub(
+        "perl",
+        r#"[ "$1" = '-MPOSIX=setsid' ] && [ "$2" = '-e' ] && [ "$4" = '--' ] || exit 97
+shift 4
+exec "$@""#,
+    )?;
+    let (outcome, value) = envelope(
+        &harness,
+        &[
+            "exec",
+            "gpu",
+            "--json",
+            "--fresh",
+            "--command",
+            "printf '%s\\n' 'quoted payload'; exit 7",
+        ],
+    )?;
+    assert_eq!(outcome.status, 7, "{value}");
+    assert_eq!(value["data"]["execution"]["exit_code"], 7);
+    assert_eq!(
+        value["data"]["output"]["stdout"]["content"],
+        "quoted payload\n"
+    );
+    assert!(harness.calls().iter().any(|call| call.program == "perl"));
+    Ok(())
+}
+
+#[test]
 fn fresh_mode_never_initializes_shared_state() -> Result<(), String> {
     let harness = Harness::open("fresh")?;
     harness.stub("ssh", "exit 255")?;

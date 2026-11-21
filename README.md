@@ -81,7 +81,7 @@ EOF
 ```
 
 - **Diagnosis vs. preparation**: `rhost doctor` probes shell tools and resolved `command -v` paths (`ok:true` means the probe completed; inspect `capabilities`). Native `fs.*` ops prepare the C99 helper automatically; `rhost helper prepare` returns `generation`, `remote_time_unix`, and helper identity before `run start` (`rhost helper status` reads an existing namespace without creating one).
-- **Remote tool requirements**: `exec` requires `bash`, `setsid`, `ps`, `base64`; `session` requires `bash`, `tmux`, `flock` (`session attach` is refused with `USAGE_ERROR`); resumable/checksum transfers require `rsync`; native `fs.*` and `run.*` require the C99 helper (bootstrapped via POSIX `sh` utilities, no remote Python or `tmux`).
+- **Remote tool requirements**: `exec` and `doctor` require `/bin/sh`, `bash`, `ps`, `base64`, and either `setsid` or Perl with `POSIX::setsid`. `session` requires `bash`, `tmux`, `flock` (`session attach` is refused with `USAGE_ERROR`); resumable/checksum transfers require `rsync`; native `fs.*` and `run.*` require the C99 helper (bootstrapped via POSIX `sh` utilities, no remote Python or `tmux`).
 - **Schema, state, and boundaries**: Public JSON uses schema v5 (`v5.3.0`; schema-4 validators must update, while existing Run/changeset records remain compatible). Branch on `error.code` and `error.recovery`, not prose. See [state discovery and retention](skills/rhost/references/FILES.md#state-discovery-and-retention) for `run.list`, `fs.changeset.list`, `state.list`, `state.usage`, and `state.prune`. `rhost` does not manage SSH credentials, system packages, Git branches/worktrees, or job scheduling.
 
 ## Docs, schemas, and verification

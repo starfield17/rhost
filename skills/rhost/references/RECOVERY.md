@@ -75,8 +75,9 @@ disagree, so a new code cannot ship undocumented.
 
 ## Dependencies and sessions
 
-- `REMOTE_DEPENDENCY_MISSING` names a feature dependency. Exec needs remote bash,
-  setsid, ps, and a base64 decoder; sessions need tmux and flock; sync/mirror and
+- `REMOTE_DEPENDENCY_MISSING` names a feature dependency. Exec needs remote
+  `/bin/sh`, Bash, `ps`, a base64 decoder, and either `setsid` or Perl with
+  `POSIX::setsid`. Sessions need tmux and flock; sync/mirror and
   verified transfers need rsync; native file and Run operations need a compatible C99 helper in their private cache.
   Remote Python is not required. `doctor` checks command presence only; the
   helper checks readiness on the target before running. rhost never installs

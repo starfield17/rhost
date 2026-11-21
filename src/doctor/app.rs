@@ -1,6 +1,6 @@
 //! Capability probing. The probe is read-only and runs through the same
 //! execution path as real work, so a successful probe also proves batch
-//! authentication, a usable bash, `setsid`, and completion evidence all work.
+//! authentication, a usable bash, session creation, and completion evidence.
 use crate::domain::{ExecOutcome, Execution};
 use crate::remote::exec::{self, Request};
 use crate::transport::{Client, MasterStatus};
@@ -31,12 +31,20 @@ pub const CAPABILITIES: [&str; 11] = [
 fn probe_script() -> String {
     format!(
         r#"em() {{ printf '%s=%s\n' "$1" "$2"; }}
-em os "$( (. /etc/os-release 2>/dev/null; printf '%s' "${{PRETTY_NAME:-unknown}}") )"
+os="$( [ ! -r /etc/os-release ] || (. /etc/os-release 2>/dev/null; printf '%s' "${{PRETTY_NAME:-}}") )"
+if [ -z "$os" ] && [ "$(uname -s)" = Darwin ]; then
+  os="$(/usr/bin/sw_vers -productName 2>/dev/null)"
+fi
+em os "${{os:-unknown}}"
 em kernel "$(uname -r 2>/dev/null)"
 em arch "$(uname -m 2>/dev/null)"
-em user "$(id -un 2>/dev/null)"
+user="$(id -un 2>/dev/null)"
+em user "$user"
 em home "$HOME"
-ls="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)"
+ls="$(getent passwd "$user" 2>/dev/null | cut -d: -f7)"
+if [ -z "$ls" ] && [ -x /usr/bin/dscacheutil ]; then
+  ls="$(/usr/bin/dscacheutil -q user -a name "$user" 2>/dev/null | awk '/^shell: / {{ print $2; exit }}')"
+fi
 [ -n "$ls" ] || ls="${{SHELL:-unknown}}"
 em login_shell "$ls"
 for c in bash tmux setsid ps rsync sha256sum base64 stty flock python3 realpath; do

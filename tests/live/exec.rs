@@ -68,6 +68,7 @@ fn completed_foreground_survives_an_inherited_background_pipe() -> Result<(), St
 fn deadline_after_completion_keeps_the_foreground_exit_code() -> Result<(), String> {
     let live = Live::new("exec-after-completion")?;
     let host = live.host().to_string();
+    live.exec("true")?;
     let command = format!("sh -c \"echo done; sleep {HOLD_SECONDS} & exit 0\"");
     let answer = live.error(
         "REMOTE_COMMAND_TIMEOUT",
@@ -130,6 +131,38 @@ fn timeout_and_sigint_stop_the_owned_remote_process_group() -> Result<(), String
         Ok(number(&probe.value, "/data/execution/exit_code")? != 0)
     })?;
     live.cleanup_remote(&remote)
+}
+
+#[test]
+fn timeout_escalates_when_a_group_member_ignores_term() -> Result<(), String> {
+    let live = Live::new("exec-kill")?;
+    // Give the deadline to the remote command by establishing the master first.
+    live.exec("true")?;
+    let answer = live.error(
+        "REMOTE_COMMAND_TIMEOUT",
+        &[
+            "--timeout",
+            "3s",
+            "--json",
+            "exec",
+            live.host(),
+            "--command",
+            r#"sh -c 'trap "" TERM; printf "%s\n" "$$"; exec sleep 30'"#,
+        ],
+    )?;
+    assert_eq!(answer.output.status.code(), Some(124));
+    assert_eq!(answer.value["error"]["retryable"], false);
+    let pid = text(&answer.value, "/data/output/stdout/content")?
+        .trim()
+        .parse::<u32>()
+        .map_err(|error| format!("missing remote child PID: {error}"))?;
+    assert_eq!(
+        answer.value["data"]["cleanup"]["status"],
+        "confirmed_stopped"
+    );
+    let probe = live.exec(&format!("ps -p {pid} -o pid="))?;
+    assert_eq!(text(&probe.value, "/data/output/stdout/content")?, "");
+    Ok(())
 }
 
 #[test]

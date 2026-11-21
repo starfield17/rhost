@@ -98,7 +98,7 @@ pub fn new_nonce() -> Result<InvocationToken, std::io::Error> {
 
 /// The bash script executed on the remote host.
 ///
-/// It runs under a login shell (`bash -lc`) inside a new session (`setsid`), so
+/// It runs under a login shell (`bash -lc`) inside a new session, so
 /// `$$` is the session and process-group leader and the whole command can be
 /// stopped with `kill -TERM -$$`. The script always exits 0: the command's real
 /// status rides in the completion marker, which keeps the ssh-level exit status
@@ -157,13 +157,25 @@ pub fn build_script(spec: &ExecSpec<'_>, separator: Separator) -> String {
 
 /// The command string handed to `ssh`.
 ///
-/// Only ASCII base64 crosses the remote account's login-shell parser: fish and
-/// POSIX shells disagree about backslashes inside single quotes, and this outer
-/// string is parsed by whichever shell the account uses.
+/// The account's login shell sees a fixed POSIX bootstrap and a base64-encoded
+/// payload. Neither argument contains backslashes or single quotes that fish
+/// and POSIX shells would parse differently.
 pub fn wrap_script(script: &str) -> String {
     let encoded = crate::base64::encode(script.as_bytes());
     let inner = format!("eval \"$(printf %s {encoded} | base64 -d)\"");
-    format!("exec setsid bash -lc {}", crate::shell::quote(&inner))
+    // Keep the bootstrap alive while Perl runs. The child can create a new
+    // session even when the bootstrap itself is already a process-group leader.
+    let bootstrap = "if command -v setsid >/dev/null 2>&1; then exec setsid bash -lc \"$1\"; fi; \
+        if command -v perl >/dev/null 2>&1; then \
+            perl -MPOSIX=setsid -e \"defined(setsid()) or die; exec @ARGV or die\" -- bash -lc \"$1\"; \
+            exit $?; \
+        fi; \
+        echo \"rhost: setsid and perl: command not found\" >&2; exit 127";
+    format!(
+        "exec /bin/sh -c {} rhost {}",
+        crate::shell::quote(bootstrap),
+        crate::shell::quote(&inner)
+    )
 }
 
 /// Splits captured stdout into the command's own output and its completion code.
@@ -216,19 +228,26 @@ fn find_last(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 pub fn kill_command(nonce: &InvocationToken) -> String {
     let name = nonce.as_str();
     let state = DEFAULT_REMOTE_STATE_DIR;
+    // Both BSD and procps ps mark a session leader with a lowercase s in stat.
     format!(
         "f1=\"${{RHOST_REMOTE_STATE:-{state}}}/run/rhost-{name}.pid\"; \
          f2=\"${{TMPDIR:-/tmp}}/rhost-{name}.pid\"; \
          pf=\"$f1\"; [ -f \"$pf\" ] || pf=\"$f2\"; \
          {{ IFS= read -r p; IFS= read -r started; }} < \"$pf\" 2>/dev/null || {{ echo cleanup-unknown; exit 0; }}; \
-         case \"$p\" in ''|*[!0-9]*) echo cleanup-unknown; exit 0;; esac; \
-         now=$(ps -o lstart= -p \"$p\" 2>/dev/null); pg=$(ps -o pgid= -p \"$p\" 2>/dev/null | tr -d ' '); sid=$(ps -o sid= -p \"$p\" 2>/dev/null | tr -d ' '); \
-         [ -n \"$started\" ] && [ \"$now\" = \"$started\" ] && [ \"$pg\" = \"$p\" ] && [ \"$sid\" = \"$p\" ] || {{ echo cleanup-unknown; exit 0; }}; \
-         kill -TERM -\"$p\" 2>/dev/null || {{ echo cleanup-unknown; exit 0; }}; \
-         i=0; while [ \"$i\" -lt 10 ] && ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx \"$p\"; do sleep 0.1; i=$((i+1)); done; \
-         if ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx \"$p\"; then kill -KILL -\"$p\" 2>/dev/null || {{ echo cleanup-unknown; exit 0; }}; fi; \
-         i=0; while [ \"$i\" -lt 10 ] && ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx \"$p\"; do sleep 0.1; i=$((i+1)); done; \
-         if ps -eo pgid= 2>/dev/null | tr -d ' ' | grep -qx \"$p\"; then echo cleanup-unknown; else rm -f \"$f1\" \"$f2\"; echo cleanup-confirmed; fi"
+         case \"$p\" in ''|0|*[!0-9]*) echo cleanup-unknown; exit 0;; esac; \
+         now=$(ps -o lstart= -p \"$p\" 2>/dev/null); pg=$(ps -o pgid= -p \"$p\" 2>/dev/null | tr -d ' '); \
+         stat=$(ps -o stat= -p \"$p\" 2>/dev/null); \
+         [ -n \"$started\" ] && [ \"$now\" = \"$started\" ] && [ \"$pg\" = \"$p\" ] || {{ echo cleanup-unknown; exit 0; }}; \
+         case \"$stat\" in *s*) ;; *) echo cleanup-unknown; exit 0;; esac; \
+         group_alive() {{ \
+             groups=$(ps -A -o pgid= 2>/dev/null) || {{ echo cleanup-unknown; exit 0; }}; \
+             printf '%s\\n' \"$groups\" | tr -d ' ' | grep -qx \"$p\"; \
+         }}; \
+         kill -TERM -- \"-$p\" 2>/dev/null || {{ echo cleanup-unknown; exit 0; }}; \
+         i=0; while [ \"$i\" -lt 10 ] && group_alive; do sleep 0.1; i=$((i+1)); done; \
+         if group_alive; then kill -KILL -- \"-$p\" 2>/dev/null || {{ echo cleanup-unknown; exit 0; }}; fi; \
+         i=0; while [ \"$i\" -lt 10 ] && group_alive; do sleep 0.1; i=$((i+1)); done; \
+         if group_alive; then echo cleanup-unknown; else rm -f \"$f1\" \"$f2\"; echo cleanup-confirmed; fi"
     )
 }
 
@@ -332,7 +351,8 @@ mod tests {
     #[test]
     fn only_ascii_base64_crosses_the_login_shell() {
         let wrapped = wrap_script("echo 'quoted'\n");
-        assert!(wrapped.starts_with("exec setsid bash -lc 'eval \"$(printf %s "));
+        assert!(wrapped.starts_with("exec /bin/sh -c '"));
+        assert!(wrapped.contains(" rhost 'eval \"$(printf %s "));
         assert!(wrapped.contains(" | base64 -d)\"'"));
         assert!(wrapped.bytes().all(|byte| byte.is_ascii()));
     }
