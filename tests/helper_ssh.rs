@@ -169,6 +169,26 @@ impl Drop for Host {
     }
 }
 
+fn poll_until_exited(h: &Host, g: &Value, key: &str) -> Result<Value, String> {
+    let mut done = h.ok(
+        "run.poll",
+        json!({"generation":g,"run_id":key,"wait_ms":5000}),
+    )?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while done["run"]["status"] == "running" && Instant::now() < deadline {
+        let out_at = done["stdout"]["next_offset"].as_u64().unwrap_or(0);
+        let err_at = done["stderr"]["next_offset"].as_u64().unwrap_or(0);
+        done = h.ok(
+            "run.poll",
+            json!({"generation":g,"run_id":key,"wait_ms":5000,"stdout_since":out_at,"stderr_since":err_at}),
+        )?;
+        if done["run"]["status"] == "exited" {
+            return h.ok("run.poll", json!({"generation":g,"run_id":key,"wait_ms":0}));
+        }
+    }
+    Ok(done)
+}
+
 #[test]
 fn exact_image_readonly_metadata_and_reconnect() -> Result<(), String> {
     let h = Host::new()?;
@@ -204,10 +224,7 @@ fn concurrent_retries_reconnect_without_duplicate_effects() -> Result<(), String
         let v = h.decode(wait(child)?)?;
         assert_eq!(v["ok"], true, "{v}");
     }
-    let done = h.ok(
-        "run.poll",
-        json!({"generation":g,"run_id":key,"wait_ms":5000}),
-    )?;
+    let done = poll_until_exited(&h, &g, &key)?;
     assert_eq!(done["run"]["status"], "exited");
     assert_eq!(done["run"]["completion"]["exit_code"], 7);
     assert_eq!(done["stdout"]["content"], "stdout");
@@ -275,10 +292,7 @@ fn observer_cancellation_preserves_work_and_signals_are_explicit() -> Result<(),
         "run.signal",
         json!({"generation":g,"run_id":key,"signal":"TERM"}),
     )?;
-    let done = h.ok(
-        "run.poll",
-        json!({"generation":g,"run_id":key,"wait_ms":5000}),
-    )?;
+    let done = poll_until_exited(&h, &g, &key)?;
     assert_eq!(done["run"]["status"], "exited");
     assert_eq!(done["run"]["completion"]["signal"], 15);
     Ok(())
@@ -307,10 +321,7 @@ fn deadlines_and_inherited_pipes_have_bounded_observation() -> Result<(), String
             10000,
         ),
     )?;
-    let done = h.ok(
-        "run.poll",
-        json!({"generation":g,"run_id":key,"wait_ms":5000}),
-    )?;
+    let done = poll_until_exited(&h, &g, &key)?;
     assert_eq!(done["run"]["completion"]["exit_code"], 0);
     assert_eq!(done["stdout"]["content"], "leader");
     // The descendant still holds the pipes: completion cannot depend on EOF.

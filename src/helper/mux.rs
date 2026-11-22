@@ -134,7 +134,8 @@ impl Routing {
                 continue;
             };
             let last = frame.kind == *kind;
-            if !last && !(*kind == FOLLOW && matches!(frame.kind, DATA | COMPLETION)) {
+            let expected = last || (*kind == FOLLOW && matches!(frame.kind, DATA | COMPLETION));
+            if !expected {
                 break;
             }
             if reply.try_send(frame).is_err() || last {

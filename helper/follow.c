@@ -53,7 +53,7 @@ static int await_update(int *fd,uint64_t until) {
     struct pollfd ready={*fd,POLLIN,0};
     int result=poll(&ready,1,(int)(until-now));
     if(result<0)return errno==EINTR;
-    if(result==0)return 0;
+    if(result==0)return rh_millis()<until;
     unsigned char byte;
     if(read(*fd,&byte,1)!=1 || byte!=1 || write(*fd,&byte,1)!=1) {
         close(*fd);*fd=-1;
@@ -110,7 +110,7 @@ done:
 }
 static int observe(uint32_t kind,rh_state *state,const char *key,int directory,uint32_t wait,
                    uint64_t out,uint64_t err,size_t cap) {
-    uint64_t until=rh_millis()+wait;
+    uint64_t until=wait?rh_millis()+wait+1:rh_millis();
     rh_status status;int fd=-1,completed=0,result=255;
     size_t out_left=cap,err_left=cap;
     if(!snapshot(directory,&fd,&status,until))goto unavailable;
