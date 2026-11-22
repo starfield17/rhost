@@ -1,5 +1,6 @@
 //! One verified SSH channel with bounded, independently routed observations.
 mod bootstrap;
+mod tcp;
 use super::{Helper, Writer, codec};
 use crate::{domain::Recovery, remote::Error};
 use std::collections::HashMap;
@@ -11,12 +12,16 @@ use std::sync::{
     mpsc::{self, RecvTimeoutError, SyncSender},
 };
 use std::time::{Duration, Instant};
+pub(crate) use tcp::{TcpEvent, TcpOpenError, TcpStream};
 
 pub const FOLLOW: u32 = 11;
 pub const DATA: u32 = 12;
 pub const COMPLETION: u32 = 13;
 const CANCEL: u32 = 14;
 pub(super) const FILES: u32 = 15;
+pub const TCP_OPEN: u32 = 16;
+pub const TCP_DATA: u32 = 17;
+pub const TCP_CLOSE: u32 = 18;
 const REPLY: u32 = 0x80000000;
 const IN_FLIGHT: usize = 24;
 const HOSTS: usize = 8;
@@ -56,9 +61,12 @@ impl Frame {
         let kind = reply & !REPLY;
         if id == 0
             || reply & REPLY == 0
-            || (!(2..=COMPLETION).contains(&kind) && kind != FILES)
+            || (!(2..=COMPLETION).contains(&kind)
+                && kind != FILES
+                && !(TCP_OPEN..=TCP_CLOSE).contains(&kind))
             || size > codec::LIMIT
             || (kind == DATA && size > 13 + 16384)
+            || (kind == TCP_DATA && size > 16384)
         {
             return Err(codec::protocol("invalid RH02 reply binding or size"));
         }
@@ -88,6 +96,7 @@ fn before(error: Error) -> Error {
 
 struct Routing {
     pending: Mutex<HashMap<u64, (u32, SyncSender<Frame>)>>,
+    streams: Mutex<HashMap<u64, mpsc::Sender<Frame>>>,
     alive: AtomicBool,
 }
 
@@ -97,14 +106,30 @@ impl Routing {
         if let Ok(mut pending) = self.pending.lock() {
             pending.clear();
         }
+        if let Ok(mut streams) = self.streams.lock() {
+            streams.clear();
+        }
     }
 
     fn read(&self, mut input: impl Read) {
         while let Ok(frame) = Frame::read(&mut input) {
+            let id = frame.id;
+            if (TCP_OPEN..=TCP_CLOSE).contains(&frame.kind) {
+                let Ok(mut streams) = self.streams.lock() else {
+                    break;
+                };
+                let Some(stream) = streams.get(&id) else {
+                    continue;
+                };
+                let close = frame.kind == TCP_CLOSE && frame.body.first().copied() != Some(1);
+                if stream.send(frame).is_err() || close {
+                    streams.remove(&id);
+                }
+                continue;
+            }
             let Ok(mut pending) = self.pending.lock() else {
                 break;
             };
-            let id = frame.id;
             let Some((kind, reply)) = pending.get(&id) else {
                 continue;
             };
@@ -125,7 +150,7 @@ struct Bootstrap {
     stderr: mpsc::Receiver<Vec<u8>>,
 }
 
-struct Channel {
+pub(crate) struct Channel {
     child: Mutex<Child>,
     writer: SyncSender<Vec<u8>>,
     routing: Arc<Routing>,
@@ -154,6 +179,7 @@ impl Channel {
         let mut stderr = child.stderr.take().ok_or_else(missing_pipe)?;
         let routing = Arc::new(Routing {
             pending: Mutex::new(HashMap::new()),
+            streams: Mutex::new(HashMap::new()),
             alive: AtomicBool::new(true),
         });
         let (send, receive) = mpsc::sync_channel::<Vec<u8>>(IN_FLIGHT);
@@ -394,6 +420,15 @@ mod tests {
         bytes[16..20].copy_from_slice(&((codec::LIMIT as u32) + 1).to_be_bytes());
         assert!(Frame::read(&mut &bytes[..]).is_err());
         assert!(Frame::encode(0, FOLLOW, vec![]).is_err());
+
+        let tcp_reply = Frame::encode(9, TCP_DATA | REPLY, vec![1, 2, 3])?;
+        let parsed = Frame::read(&mut &tcp_reply[..])?;
+        assert_eq!(
+            (parsed.id, parsed.kind, parsed.body),
+            (9, TCP_DATA, vec![1, 2, 3])
+        );
+        let too_big = Frame::encode(9, TCP_DATA | REPLY, vec![0; 16385])?;
+        assert!(Frame::read(&mut &too_big[..]).is_err());
         Ok(())
     }
 }

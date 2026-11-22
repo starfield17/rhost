@@ -14,6 +14,7 @@ pub enum Command {
         kind: String,
         listen: String,
         destination: String,
+        mode: String,
         expose: bool,
     },
     List,
@@ -30,6 +31,7 @@ static TUNNEL_FLAGS: &[FlagSpec] = &[
     FlagSpec::value("kind", false, "forward kind (local, reverse or socks)"),
     FlagSpec::value("listen", false, "address to listen on"),
     FlagSpec::value("destination", false, "forward destination host:port"),
+    FlagSpec::value("mode", false, "forward transport mode (ssh or helper)"),
     FlagSpec::long("allow-exposure", "permit binding a non-loopback address"),
 ];
 
@@ -47,6 +49,7 @@ pub fn leaf_flags(leaf: &str) -> &'static [FlagSpec] {
 /// loopback, and a caller who wants something else says so.
 const DEFAULT_KIND: &str = "local";
 const DEFAULT_LISTEN: &str = "localhost:8080";
+const DEFAULT_MODE: &str = "ssh";
 
 pub fn command(argv: &[String], json: bool) -> ParsedCommand<Command> {
     let scanned = match parse(argv, TUNNEL_FLAGS) {
@@ -83,6 +86,7 @@ pub fn command(argv: &[String], json: bool) -> ParsedCommand<Command> {
                 kind: flag("kind", DEFAULT_KIND),
                 listen: flag("listen", DEFAULT_LISTEN),
                 destination: flag("destination", ""),
+                mode: flag("mode", DEFAULT_MODE),
                 expose: parsed.bool_flag("allow-exposure"),
             })
         }

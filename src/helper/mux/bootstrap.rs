@@ -108,7 +108,7 @@ impl Helper<'_> {
         }
     }
 
-    pub(super) fn open_mux(&self, prepare: bool) -> Result<Channel, Error> {
+    pub(crate) fn open_mux(&self, prepare: bool) -> Result<Channel, Error> {
         match self.connect_mux() {
             Err(error) if prepare && !self.fixed() && error.code == "HELPER_PREPARATION_FAILED" => {
                 self.ensure()

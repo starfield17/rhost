@@ -16,18 +16,22 @@ pub mod command;
 mod dto;
 mod master;
 mod record;
+mod relay;
 mod render;
 mod run;
+mod worker;
 
 pub use command::{Command, command};
 pub use dto::{tunnel, tunnel_closed, tunnels};
-pub use record::{Fault, Kind, Status, Tunnel};
+pub use record::{DestinationEvidence, Fault, Kind, Mode, Status, Tunnel};
 pub use run::run;
+pub use worker::serve_worker;
 
 use crate::config;
 use crate::transport::Client;
 use master::{Control, Master};
 use std::net::IpAddr;
+use worker::WorkerControl;
 
 /// One forward, as the caller asked for it and as rhost agreed to build it.
 pub struct Request<'a> {
@@ -36,6 +40,7 @@ pub struct Request<'a> {
     pub listen: String,
     /// `None` for a socks forward, which has no destination to forward to.
     pub destination: Option<String>,
+    pub mode: Mode,
 }
 
 impl<'a> Request<'a> {
@@ -100,7 +105,30 @@ impl<'a> Request<'a> {
             kind,
             listen: listen.to_string(),
             destination,
+            mode: Mode::Ssh,
         })
+    }
+
+    pub fn with_mode(mut self, mode: &str) -> Result<Self, Fault> {
+        let mode = Mode::parse(mode)
+            .ok_or_else(|| Fault::Invalid(format!("mode must be ssh or helper, not {mode:?}")))?;
+        if mode == Mode::Helper {
+            if self.kind == Kind::Reverse {
+                return Err(Fault::Invalid(
+                    "--mode helper currently supports local and socks forwards, not reverse"
+                        .to_string(),
+                ));
+            }
+            if let Some(dest) = &self.destination
+                && split_host_port(dest).is_none_or(|(_, port)| port == 0)
+            {
+                return Err(Fault::Invalid(
+                    "--destination port must be 1..=65535".to_string(),
+                ));
+            }
+        }
+        self.mode = mode;
+        Ok(self)
     }
 
     /// The argument ssh's own forward flag takes: `listen:destination` for a
@@ -113,58 +141,71 @@ impl<'a> Request<'a> {
     }
 }
 
-/// Opens one forward on its own master and returns the record it created.
+/// Opens one forward on its own master or helper worker and returns the record it created.
 pub fn open(client: &Client, request: &Request<'_>) -> Result<Tunnel, Fault> {
     let id = record::new_id()?;
-    // The socket directory has to exist before ssh can create its socket in it.
+    // The socket directory has to exist before ssh or the worker can create its socket in it.
     config::ensure_control_dir().map_err(|error| Fault::Transport(error.to_string()))?;
     record::ensure_root()?;
     let socket = record::socket(&id);
-    let options = client.options(false);
-    let master = Master {
-        ssh_bin: client.ssh_bin(),
-        options: &options,
-    };
     let tunnel = Tunnel {
         id,
         host: request.host.to_string(),
         kind: request.kind,
         listen: request.listen.clone(),
         destination: request.destination.clone(),
+        mode: request.mode,
         status: Status::Alive,
+        destination_evidence: DestinationEvidence::Unknown,
     };
     record::write(&tunnel.record())?;
-    match master.start(
-        &socket,
-        request.kind.flag(),
-        &request.forward(),
-        request.host,
-    ) {
-        Ok(()) => Ok(tunnel),
-        Err(start_error) => match master.stop(&socket, request.host) {
-            Ok(()) if !matches!(&start_error, Fault::Uncertain(_)) => {
-                record::remove(&tunnel.id).map_err(|error| {
-                    Fault::Uncertain(format!(
-                        "tunnel {} did not start, but its record could not be removed: {error:?}",
-                        tunnel.id
-                    ))
-                })?;
-                Err(start_error)
+    match request.mode {
+        Mode::Ssh => {
+            let options = client.options(false);
+            let master = Master {
+                ssh_bin: client.ssh_bin(),
+                options: &options,
+            };
+            match master.start(
+                &socket,
+                request.kind.flag(),
+                &request.forward(),
+                request.host,
+            ) {
+                Ok(()) => Ok(tunnel),
+                Err(start_error) => {
+                    cleanup_open(&tunnel.id, start_error, master.stop(&socket, request.host))
+                }
             }
-            Ok(()) => Err(Fault::Uncertain(format!(
-                "tunnel {} startup was uncertain; its record remains for inspection",
-                tunnel.id
-            ))),
-            Err(reason) => Err(Fault::Uncertain(format!(
-                "tunnel {} may still be running after startup failed: {reason}",
-                tunnel.id
-            ))),
+        }
+        Mode::Helper => match worker::start(client, &socket, request) {
+            Ok(()) => Ok(tunnel),
+            Err(start_error) => cleanup_open(&tunnel.id, start_error, worker::stop(&socket)),
         },
     }
 }
 
+fn cleanup_open(id: &str, start_error: Fault, stop: Result<(), String>) -> Result<Tunnel, Fault> {
+    match stop {
+        Ok(()) if !matches!(&start_error, Fault::Uncertain(_)) => {
+            record::remove(id).map_err(|error| {
+                Fault::Uncertain(format!(
+                    "tunnel {id} did not start, but its record could not be removed: {error:?}"
+                ))
+            })?;
+            Err(start_error)
+        }
+        Ok(()) => Err(Fault::Uncertain(format!(
+            "tunnel {id} startup was uncertain; its record remains for inspection"
+        ))),
+        Err(reason) => Err(Fault::Uncertain(format!(
+            "tunnel {id} may still be running after startup failed: {reason}"
+        ))),
+    }
+}
+
 /// Every tunnel this machine has a record for, each one with the answer its own
-/// master just gave.
+/// master or worker just gave.
 ///
 /// A record whose socket is gone is reported as `stale` and left in place: it is
 /// evidence, and something else may still be using the forward's slot.
@@ -177,37 +218,54 @@ pub fn list(client: &Client) -> Result<Vec<Tunnel>, Fault> {
     let mut tunnels: Vec<Tunnel> = Vec::new();
     for id in record::ids()? {
         let stored = record::read(&id)?;
-        let status = match master.check(&record::socket(&stored.tunnel_id), &stored.host) {
-            Control::Answered => Status::Alive,
-            Control::SocketAbsent => Status::Stale,
-            // An unresponsive socket leaves the master's state unknown, and
-            // "unknown" is not a status this list is allowed to invent.
-            Control::Uncertain(reason) => return Err(Fault::Transport(reason)),
+        let socket = record::socket(&stored.tunnel_id);
+        let (status, evidence) = match stored.mode {
+            Mode::Ssh => match master.check(&socket, &stored.host) {
+                Control::Answered => (Status::Alive, DestinationEvidence::Unknown),
+                Control::SocketAbsent => (Status::Stale, DestinationEvidence::Unknown),
+                // An unresponsive socket leaves the master's state unknown, and
+                // "unknown" is not a status this list is allowed to invent.
+                Control::Uncertain(reason) => return Err(Fault::Transport(reason)),
+            },
+            Mode::Helper => match worker::check(&socket) {
+                WorkerControl::Alive(ev) => (Status::Alive, ev),
+                WorkerControl::SocketAbsent => (Status::Stale, DestinationEvidence::Unknown),
+                WorkerControl::Uncertain(reason) => return Err(Fault::Transport(reason)),
+            },
         };
-        tunnels.push(Tunnel::from_record(stored, status));
+        tunnels.push(Tunnel::from_record(stored, status, evidence));
     }
     Ok(tunnels)
 }
 
-/// Stops exactly one tunnel — its master and its record — and returns the id it
+/// Stops exactly one tunnel — its master or worker and its record — and returns the id it
 /// closed. A record whose master is already gone is still closed: the point is
 /// to leave nothing half-remembered behind.
 pub fn close(client: &Client, id: &str) -> Result<String, Fault> {
     let stored = record::read(id)?;
-    let options = client.options(false);
-    let master = Master {
-        ssh_bin: client.ssh_bin(),
-        options: &options,
-    };
     let socket = record::socket(&stored.tunnel_id);
-    match master.check(&socket, &stored.host) {
-        Control::Answered => {
-            master
-                .stop(&socket, &stored.host)
-                .map_err(Fault::Uncertain)?;
+    match stored.mode {
+        Mode::Ssh => {
+            let options = client.options(false);
+            let master = Master {
+                ssh_bin: client.ssh_bin(),
+                options: &options,
+            };
+            match master.check(&socket, &stored.host) {
+                Control::Answered => {
+                    master
+                        .stop(&socket, &stored.host)
+                        .map_err(Fault::Uncertain)?;
+                }
+                Control::SocketAbsent => {}
+                Control::Uncertain(reason) => return Err(Fault::Transport(reason)),
+            }
         }
-        Control::SocketAbsent => {}
-        Control::Uncertain(reason) => return Err(Fault::Transport(reason)),
+        Mode::Helper => match worker::check(&socket) {
+            WorkerControl::Alive(_) => worker::stop(&socket).map_err(Fault::Uncertain)?,
+            WorkerControl::SocketAbsent => {}
+            WorkerControl::Uncertain(reason) => return Err(Fault::Transport(reason)),
+        },
     }
     record::remove(&stored.tunnel_id)?;
     Ok(stored.tunnel_id)
@@ -291,5 +349,30 @@ mod tests {
             );
         }
         assert!(Request::new("gpu", "unknown", "localhost:80", "localhost:80", false).is_err());
+    }
+
+    #[test]
+    fn helper_mode_accepts_local_and_socks_and_refuses_reverse() {
+        let local = Request::new("gpu", "local", "localhost:8080", "localhost:80", false)
+            .and_then(|r| r.with_mode("helper"));
+        assert!(local.is_ok());
+        let socks = Request::new("gpu", "socks", "localhost:1080", "", false)
+            .and_then(|r| r.with_mode("helper"));
+        assert!(socks.is_ok());
+        assert!(
+            Request::new("gpu", "reverse", "localhost:9000", "localhost:80", false)
+                .and_then(|r| r.with_mode("helper"))
+                .is_err()
+        );
+        assert!(
+            Request::new("gpu", "local", "localhost:8080", "localhost:0", false)
+                .and_then(|r| r.with_mode("helper"))
+                .is_err()
+        );
+        assert!(
+            Request::new("gpu", "local", "localhost:8080", "localhost:80", false)
+                .and_then(|r| r.with_mode("bogus"))
+                .is_err()
+        );
     }
 }

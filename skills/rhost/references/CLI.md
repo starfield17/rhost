@@ -246,13 +246,17 @@ make the process exit 255. Inspect destinations before replaying any entries.
 
 ```bash
 rhost tunnel open <host> --kind local --listen localhost:8080 --destination localhost:8000 --json
+rhost tunnel open <host> --kind socks --listen localhost:1080 --mode helper --json
 rhost tunnel list --json
 rhost tunnel close <tunnel-id> --json
 rhost audit --json --limit 20 --host <host>
 ```
 
-Tunnels bind loopback unless `--allow-exposure` is explicit. Keep
-`data.tunnel_id`; list entries use `data.tunnels[].tunnel_id`. `master_alive`
-records whether the dedicated master answered its control check. OpenSSH tunnel
-results report `destination_evidence: "unknown"`. Audit is local, bounded, and
-fail-open. Set `RHOST_AUDIT=0` to disable it.
+Tunnels bind loopback unless `--allow-exposure` is explicit. `--mode` selects
+`ssh` (default) or `helper` (`local` and `socks` over the RH02 helper multiplex
+channel). Keep `data.tunnel_id`; list entries use `data.tunnels[].tunnel_id`.
+`master_alive` records whether the dedicated master or helper worker answered
+its control check. OpenSSH tunnel results report
+`destination_evidence: "unknown"`; helper tunnels update `destination_evidence`
+from observed destination connects (`unknown`, `reachable`, or `refused`). Audit
+is local, bounded, and fail-open. Set `RHOST_AUDIT=0` to disable it.

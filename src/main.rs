@@ -12,6 +12,9 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(code) = rhost::dispatch::internal_worker(&argv) {
+        return code;
+    }
     // Handlers go up before anything can block: a CLI that starts a remote
     // command it cannot be asked to stop is not one an agent can trust.
     let interrupt = match Interrupt::install() {

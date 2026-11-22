@@ -1,6 +1,7 @@
 //! Runs only an explicitly supplied helper; CI must not compile a substitute.
 use sha2::{Digest, Sha256};
-use std::io::Write;
+use std::io::{Read, Write};
+use std::net::TcpListener;
 use std::process::{Command, Stdio};
 
 fn call(input: &[u8]) -> Vec<u8> {
@@ -170,4 +171,147 @@ fn malformed_frames_are_explicit_refusals() {
         assert!(!text(&mut body).is_empty());
         assert_eq!(body, [0]);
     }
+}
+
+fn mux_frame(id: u64, kind: u32, body: &[u8]) -> Vec<u8> {
+    let mut bytes = b"RH02".to_vec();
+    bytes.extend(id.to_be_bytes());
+    bytes.extend(kind.to_be_bytes());
+    bytes.extend((body.len() as u32).to_be_bytes());
+    bytes.extend(body);
+    bytes
+}
+
+fn read_mux_frame(out: &mut impl Read) -> (u64, u32, Vec<u8>) {
+    let mut header = [0u8; 20];
+    out.read_exact(&mut header)
+        .unwrap_or_else(|e| panic!("read RH02 header: {e}"));
+    assert_eq!(&header[..4], b"RH02");
+    let id = u64::from_be_bytes(header[4..12].try_into().unwrap_or_else(|_| panic!("id")));
+    let kind = u32::from_be_bytes(header[12..16].try_into().unwrap_or_else(|_| panic!("kind")));
+    let len =
+        u32::from_be_bytes(header[16..20].try_into().unwrap_or_else(|_| panic!("len"))) as usize;
+    let mut body = vec![0u8; len];
+    if len > 0 {
+        out.read_exact(&mut body)
+            .unwrap_or_else(|e| panic!("read RH02 body: {e}"));
+    }
+    (id, kind, body)
+}
+
+#[test]
+fn verified_mux_relays_tcp_and_reports_refused_connect() {
+    let reply = call(&frame(1, &[]));
+    let mut body = payload(&reply, 1);
+    assert_eq!(body[0], 0);
+    body = &body[1..];
+    let digest = text(&mut body).to_string();
+    let os = text(&mut body).to_string();
+    let arch = text(&mut body).to_string();
+    body = &body[4..];
+    let _boot = text(&mut body);
+    let image = text(&mut body).to_string();
+    let abi = format!("{os}-{arch}");
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap_or_else(|e| panic!("bind echo: {e}"));
+    let open_port = listener
+        .local_addr()
+        .unwrap_or_else(|e| panic!("addr: {e}"))
+        .port();
+    let closed_listener =
+        TcpListener::bind("127.0.0.1:0").unwrap_or_else(|e| panic!("bind closed: {e}"));
+    let closed_port = closed_listener
+        .local_addr()
+        .unwrap_or_else(|e| panic!("closed addr: {e}"))
+        .port();
+    drop(closed_listener);
+
+    let echo = std::thread::spawn(move || {
+        if let Ok((mut conn, _)) = listener.accept() {
+            let mut buf = [0u8; 64];
+            while let Ok(n) = conn.read(&mut buf) {
+                if n == 0 || conn.write_all(&buf[..n]).is_err() {
+                    break;
+                }
+            }
+        }
+    });
+
+    let binary = std::env::var("RHOST_HELPER_BIN")
+        .unwrap_or_else(|_| panic!("set RHOST_HELPER_BIN explicitly"));
+    let mut child = Command::new(binary)
+        .args(["--verified-mux", &digest, &image, &abi])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| panic!("spawn mux: {e}"));
+    let mut stdin = child.stdin.take().unwrap_or_else(|| panic!("stdin"));
+    let mut stdout = child.stdout.take().unwrap_or_else(|| panic!("stdout"));
+
+    let mut probe_header = [0u8; 16];
+    stdout
+        .read_exact(&mut probe_header)
+        .unwrap_or_else(|e| panic!("handshake header: {e}"));
+    assert_eq!(&probe_header[..4], b"RH01");
+    let probe_len = u64::from_be_bytes(
+        probe_header[8..16]
+            .try_into()
+            .unwrap_or_else(|_| panic!("probe len")),
+    ) as usize;
+    let mut probe_body = vec![0u8; probe_len];
+    stdout
+        .read_exact(&mut probe_body)
+        .unwrap_or_else(|e| panic!("handshake body: {e}"));
+
+    let mut open_body = Vec::new();
+    let host = b"127.0.0.1";
+    open_body.extend((host.len() as u32).to_be_bytes());
+    open_body.extend(host);
+    open_body.extend(u32::from(open_port).to_be_bytes());
+    stdin
+        .write_all(&mux_frame(1, 16, &open_body))
+        .unwrap_or_else(|e| panic!("write open: {e}"));
+    let (id, kind, body) = read_mux_frame(&mut stdout);
+    assert_eq!(
+        (id, kind, body.as_slice()),
+        (1, 16 | 0x80000000, [0].as_slice())
+    );
+
+    stdin
+        .write_all(&mux_frame(1, 17, b"ping"))
+        .unwrap_or_else(|e| panic!("write data: {e}"));
+    let (id, kind, body) = read_mux_frame(&mut stdout);
+    assert_eq!(
+        (id, kind, body.as_slice()),
+        (1, 17 | 0x80000000, b"ping".as_slice())
+    );
+
+    stdin
+        .write_all(&mux_frame(1, 18, &[1]))
+        .unwrap_or_else(|e| panic!("write half-close: {e}"));
+    let (id, kind, body) = read_mux_frame(&mut stdout);
+    assert_eq!(
+        (id, kind, body.as_slice()),
+        (1, 18 | 0x80000000, [0].as_slice())
+    );
+
+    let mut closed_body = Vec::new();
+    closed_body.extend((host.len() as u32).to_be_bytes());
+    closed_body.extend(host);
+    closed_body.extend(u32::from(closed_port).to_be_bytes());
+    stdin
+        .write_all(&mux_frame(2, 16, &closed_body))
+        .unwrap_or_else(|e| panic!("write closed open: {e}"));
+    let (id, kind, body) = read_mux_frame(&mut stdout);
+    assert_eq!((id, kind), (2, 16 | 0x80000000));
+    assert_eq!(body[0], 1);
+    let mut rest = &body[1..];
+    assert!(!text(&mut rest).is_empty());
+    assert_eq!(rest, [1]);
+
+    drop(stdin);
+    let status = child.wait().unwrap_or_else(|e| panic!("wait mux: {e}"));
+    assert!(status.success(), "mux exited with {status}");
+    let _ = echo.join();
 }

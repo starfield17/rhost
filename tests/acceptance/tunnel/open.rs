@@ -380,3 +380,46 @@ fn tunnel_open_only_leaves_loopback_when_it_is_asked_to() -> Result<(), String> 
     );
     Ok(())
 }
+
+#[test]
+fn helper_mode_refuses_reverse_and_invalid_modes_before_starting() -> Result<(), String> {
+    let harness = tunnel_master("tunnel-helper-refuse", "present")?;
+    for args in [
+        vec![
+            "tunnel",
+            "open",
+            "gpu",
+            "--json",
+            "--kind",
+            "reverse",
+            "--listen",
+            "localhost:9000",
+            "--destination",
+            "localhost:3000",
+            "--mode",
+            "helper",
+        ],
+        vec![
+            "tunnel",
+            "open",
+            "gpu",
+            "--json",
+            "--kind",
+            "local",
+            "--listen",
+            "localhost:9001",
+            "--destination",
+            "localhost:3000",
+            "--mode",
+            "invalid",
+        ],
+    ] {
+        let (outcome, value) = envelope(&harness, &args)?;
+        assert_eq!(outcome.status, 255, "{value}");
+        assert_eq!(operation(&value), "tunnel.open");
+        want_code(&value, "CONFIG_INVALID")?;
+        assert!(state_files(&harness)?.is_empty());
+        assert!(harness.calls_text().is_empty());
+    }
+    Ok(())
+}

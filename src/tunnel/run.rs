@@ -15,10 +15,13 @@ pub fn run(sink: &mut Sink, client: &Client, command: TunnelCommand, json: bool)
             kind,
             listen,
             destination,
+            mode,
             expose,
         } => {
             let timer = Timer::start("tunnel.open", &host);
-            let request = match super::Request::new(&host, &kind, &listen, &destination, expose) {
+            let request = match super::Request::new(&host, &kind, &listen, &destination, expose)
+                .and_then(|request| request.with_mode(&mode))
+            {
                 Ok(request) => request,
                 Err(fault) => {
                     let failure = fault_failure("tunnel.open", &host, fault);

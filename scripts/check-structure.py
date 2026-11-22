@@ -119,7 +119,7 @@ ALLOWED = {
              "wire"},
     "session": {"audit", "base64", "cli", "domain", "random", "remote", "shell",
                 "transport", "wire"},
-    "tunnel": {"audit", "cli", "config", "transport", "wire"},
+    "tunnel": {"audit", "cli", "config", "helper", "remote", "transport", "wire"},
 
     # The composition root may depend on every capability; it holds no behavior.
     "dispatch": {"audit", "cli", "connection", "doctor", "exec", "files", "hosts",

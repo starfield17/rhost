@@ -28,7 +28,7 @@ impl<'a> From<&'a TunnelData> for TunnelDto<'a> {
             // second way to say the same thing.
             destination: value.destination.as_deref(),
             master_alive: value.status.master_alive(),
-            destination_evidence: super::record::DESTINATION_EVIDENCE,
+            destination_evidence: value.destination_evidence.as_str(),
         }
     }
 }

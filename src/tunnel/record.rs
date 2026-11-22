@@ -72,6 +72,57 @@ impl Status {
 /// Destination evidence provided by an OpenSSH control-socket check.
 pub const DESTINATION_EVIDENCE: &str = "unknown";
 
+/// How a tunnel forwards TCP connections across the host link.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    #[default]
+    Ssh,
+    Helper,
+}
+
+impl Mode {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "ssh" => Some(Self::Ssh),
+            "helper" => Some(Self::Helper),
+            _ => None,
+        }
+    }
+
+    pub fn is_ssh(&self) -> bool {
+        *self == Self::Ssh
+    }
+}
+
+/// Destination reachability evidence reported on tunnel queries.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum DestinationEvidence {
+    #[default]
+    Unknown,
+    Reachable,
+    Refused,
+}
+
+impl DestinationEvidence {
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "unknown" => Some(Self::Unknown),
+            "reachable" => Some(Self::Reachable),
+            "refused" => Some(Self::Refused),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown => DESTINATION_EVIDENCE,
+            Self::Reachable => "reachable",
+            Self::Refused => "refused",
+        }
+    }
+}
+
 /// What a later process reads back from disk. v2 dropped the reference's
 /// duplicate `id` field, so the record names the tunnel exactly once.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,6 +133,8 @@ pub struct Record {
     pub listen: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub destination: Option<String>,
+    #[serde(default, skip_serializing_if = "Mode::is_ssh")]
+    pub mode: Mode,
 }
 
 /// One tunnel with the status this invocation observed.
@@ -92,18 +145,26 @@ pub struct Tunnel {
     pub kind: Kind,
     pub listen: String,
     pub destination: Option<String>,
+    pub mode: Mode,
     pub status: Status,
+    pub destination_evidence: DestinationEvidence,
 }
 
 impl Tunnel {
-    pub fn from_record(record: Record, status: Status) -> Self {
+    pub fn from_record(
+        record: Record,
+        status: Status,
+        destination_evidence: DestinationEvidence,
+    ) -> Self {
         Self {
             id: record.tunnel_id,
             host: record.host,
             kind: record.kind,
             listen: record.listen,
             destination: record.destination,
+            mode: record.mode,
             status,
+            destination_evidence,
         }
     }
 
@@ -116,6 +177,7 @@ impl Tunnel {
             kind: self.kind,
             listen: self.listen.clone(),
             destination: self.destination.clone(),
+            mode: self.mode,
         }
     }
 }

@@ -108,6 +108,14 @@ pub(crate) fn deliver_usage(sink: &mut Sink, scope: Scope, message: &str, json: 
     255
 }
 
+/// Executes internal detached worker entrypoints outside normal CLI help/grammar.
+pub fn internal_worker(argv: &[String]) -> Option<std::process::ExitCode> {
+    if argv.first().map(String::as_str) == Some("--internal-tunnel-worker") {
+        return Some(crate::tunnel::serve_worker());
+    }
+    None
+}
+
 /// A refusal with no operation data, delivered by an operation that recognised
 /// its own command but refused it (`session attach`).
 pub(crate) fn deliver_refused(

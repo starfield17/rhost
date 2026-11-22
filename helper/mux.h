@@ -6,6 +6,9 @@
 #define RH_COMPLETION 13u
 #define RH_CANCEL 14u
 #define RH_FILES 15u
+#define RH_TCP_OPEN 16u
+#define RH_TCP_DATA 17u
+#define RH_TCP_CLOSE 18u
 #define RH_MUX_HEADER 20u
 #define RH_REPLY UINT32_C(0x80000000)
 void rh_mux_header(unsigned char header[RH_MUX_HEADER],uint64_t id,uint32_t kind,size_t size);

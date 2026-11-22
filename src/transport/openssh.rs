@@ -55,6 +55,10 @@ impl Client {
         Self { cfg }
     }
 
+    pub fn config(&self) -> &Config {
+        &self.cfg
+    }
+
     pub fn control_path(&self) -> &str {
         &self.cfg.control_path
     }

@@ -76,6 +76,8 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("start.c", include_str!("../../helper/start.c")),
     ("state.c", include_str!("../../helper/state.c")),
     ("state.h", include_str!("../../helper/state.h")),
+    ("tunnel.c", include_str!("../../helper/tunnel.c")),
+    ("tunnel.h", include_str!("../../helper/tunnel.h")),
 ];
 
 pub fn digest() -> String {

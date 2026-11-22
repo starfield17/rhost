@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
@@ -168,5 +168,186 @@ fn live_master_keeps_destination_unknown_when_a_connect_fails() -> Result<(), St
     let closed = live.ok(&["tunnel", "close", id, "--json"]);
     observed?;
     closed?;
+    Ok(())
+}
+
+fn start_remote_echo(live: &Live) -> Result<u16, String> {
+    let py = [
+        "import os,socket",
+        "s=socket.socket();s.bind(('127.0.0.1',0));s.listen(2);s.settimeout(15)",
+        "p=s.getsockname()[1];pid=os.fork()",
+        "if pid==0:",
+        " fd=os.open('/dev/null',os.O_RDWR)",
+        " [os.dup2(fd,i) for i in (0,1,2)]",
+        " if fd>2: os.close(fd)",
+        " try:",
+        "  c,_=s.accept();c.settimeout(5);d=c.recv(64);c.sendall(d);c.close()",
+        " finally: s.close()",
+        " os._exit(0)",
+        "s.close();print(p)",
+    ]
+    .join("\n");
+    let answer = live.exec(&format!("python3 -c {}", shell_quote(&py)))?;
+    assert_eq!(number(&answer.value, "/data/execution/exit_code")?, 0);
+    text(&answer.value, "/data/output/stdout/content")?
+        .trim()
+        .parse()
+        .map_err(|e| format!("parse remote echo port: {e}"))
+}
+
+#[test]
+fn live_helper_local_tunnel_reports_reachable_and_refused_evidence() -> Result<(), String> {
+    let live = Live::new("tunnel-helper-local")?;
+    let echo_port = start_remote_echo(&live)?;
+    let local_open = format!("127.0.0.1:{}", free_local_port()?);
+    let dest_open = format!("127.0.0.1:{echo_port}");
+    let opened = live.ok(&[
+        "tunnel",
+        "open",
+        live.host(),
+        "--kind",
+        "local",
+        "--listen",
+        &local_open,
+        "--destination",
+        &dest_open,
+        "--mode",
+        "helper",
+        "--json",
+    ])?;
+    let open_id = text(&opened.value, "/data/tunnel_id")?.to_string();
+    let check_open: Result<(), String> = (|| {
+        assert_eq!(opened.value["data"]["master_alive"], true);
+        assert_eq!(opened.value["data"]["destination_evidence"], "unknown");
+        let mut client = TcpStream::connect(&local_open).map_err(|e| e.to_string())?;
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| e.to_string())?;
+        client
+            .write_all(b"rhost-helper-local")
+            .map_err(|e| e.to_string())?;
+        let mut echoed = [0u8; 18];
+        client.read_exact(&mut echoed).map_err(|e| e.to_string())?;
+        assert_eq!(&echoed, b"rhost-helper-local");
+
+        let listed = live.ok(&["tunnel", "list", "--json"])?;
+        let row = listed.value["data"]["tunnels"]
+            .as_array()
+            .ok_or("tunnel records")?
+            .iter()
+            .find(|row| row["tunnel_id"] == open_id)
+            .ok_or("open helper tunnel missing")?;
+        assert_eq!(row["master_alive"], true);
+        assert_eq!(row["destination_evidence"], "reachable");
+        Ok(())
+    })();
+    let closed_open = live.ok(&["tunnel", "close", &open_id, "--json"]);
+    check_open?;
+    closed_open?;
+
+    let port_answer = live.exec(
+        "python3 -c \"import socket; s=socket.socket(); s.bind(('127.0.0.1',0)); print(s.getsockname()[1]); s.close()\"",
+    )?;
+    let closed_remote_port = text(&port_answer.value, "/data/output/stdout/content")?.trim();
+    let local_closed = format!("127.0.0.1:{}", free_local_port()?);
+    let dest_closed = format!("127.0.0.1:{closed_remote_port}");
+    let refused_open = live.ok(&[
+        "tunnel",
+        "open",
+        live.host(),
+        "--kind",
+        "local",
+        "--listen",
+        &local_closed,
+        "--destination",
+        &dest_closed,
+        "--mode",
+        "helper",
+        "--json",
+    ])?;
+    let refused_id = text(&refused_open.value, "/data/tunnel_id")?.to_string();
+    let check_refused: Result<(), String> = (|| {
+        let mut client = TcpStream::connect(&local_closed).map_err(|e| e.to_string())?;
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| e.to_string())?;
+        let mut byte = [0];
+        let _ = client.read(&mut byte);
+        let listed = live.ok(&["tunnel", "list", "--json"])?;
+        let row = listed.value["data"]["tunnels"]
+            .as_array()
+            .ok_or("tunnel records")?
+            .iter()
+            .find(|row| row["tunnel_id"] == refused_id)
+            .ok_or("refused helper tunnel missing")?;
+        assert_eq!(row["master_alive"], true);
+        assert_eq!(row["destination_evidence"], "refused");
+        Ok(())
+    })();
+    let closed_refused = live.ok(&["tunnel", "close", &refused_id, "--json"]);
+    check_refused?;
+    closed_refused?;
+    Ok(())
+}
+
+#[test]
+fn live_helper_socks5_tunnel_persists_and_relays_traffic() -> Result<(), String> {
+    let live = Live::new("tunnel-helper-socks")?;
+    let echo_port = start_remote_echo(&live)?;
+    let socks_listen = format!("127.0.0.1:{}", free_local_port()?);
+    let opened = live.ok(&[
+        "tunnel",
+        "open",
+        live.host(),
+        "--kind",
+        "socks",
+        "--listen",
+        &socks_listen,
+        "--mode",
+        "helper",
+        "--json",
+    ])?;
+    let id = text(&opened.value, "/data/tunnel_id")?.to_string();
+    let result: Result<(), String> = (|| {
+        let mut client = TcpStream::connect(&socks_listen).map_err(|e| e.to_string())?;
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| e.to_string())?;
+        client
+            .write_all(&[0x05, 0x01, 0x00])
+            .map_err(|e| e.to_string())?;
+        let mut auth = [0u8; 2];
+        client.read_exact(&mut auth).map_err(|e| e.to_string())?;
+        assert_eq!(auth, [0x05, 0x00]);
+
+        let mut req = vec![0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1];
+        req.extend(echo_port.to_be_bytes());
+        client.write_all(&req).map_err(|e| e.to_string())?;
+        let mut rep = [0u8; 10];
+        client.read_exact(&mut rep).map_err(|e| e.to_string())?;
+        assert_eq!(rep[..2], [0x05, 0x00]);
+
+        client
+            .write_all(b"rhost-helper-socks")
+            .map_err(|e| e.to_string())?;
+        let mut echoed = [0u8; 18];
+        client.read_exact(&mut echoed).map_err(|e| e.to_string())?;
+        assert_eq!(&echoed, b"rhost-helper-socks");
+
+        let listed = live.ok(&["tunnel", "list", "--json"])?;
+        let row = listed.value["data"]["tunnels"]
+            .as_array()
+            .ok_or("tunnel records")?
+            .iter()
+            .find(|row| row["tunnel_id"] == id)
+            .ok_or("socks helper tunnel missing")?;
+        assert_eq!(row["master_alive"], true);
+        assert_eq!(row["destination_evidence"], "reachable");
+        Ok(())
+    })();
+    let closed = live.ok(&["tunnel", "close", &id, "--json"]);
+    result?;
+    closed?;
+    assert!(TcpStream::connect(&socks_listen).is_err());
     Ok(())
 }

@@ -1,6 +1,7 @@
 /* RH02 owns session workers. Detached Run monitors own their own lifetimes. */
 #include "mux.h"
 #include "state.h"
+#include "tunnel.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -13,8 +14,9 @@
 
 #define WORKERS 24
 #define ORDINARY 22
-#define OVERFLOW WORKERS
-#define SLOTS (WORKERS+1)
+#define TUNNEL WORKERS
+#define OVERFLOW (WORKERS+1)
+#define SLOTS (WORKERS+2)
 typedef struct {
     unsigned char header[RH_MUX_HEADER], *body;
     size_t at, size;
@@ -121,23 +123,52 @@ static int dispatch(frame *input,worker workers[SLOTS],unsigned slot) {
 }
 /* Only the session parent writes SSH stdout. A partially written frame owns it
  * until complete, while stdin and other worker pipes remain observable. */
-static int flush_frame(frame *f,size_t *sent) {
+static int write_frame(int fd,const frame *f,size_t *sent) {
     const unsigned char *next=*sent<RH_MUX_HEADER?f->header+*sent:f->body+*sent-RH_MUX_HEADER;
     size_t left=(*sent<RH_MUX_HEADER?RH_MUX_HEADER:RH_MUX_HEADER+f->size)-*sent;
-    ssize_t n=write(STDOUT_FILENO,next,left);
+    ssize_t n=write(fd,next,left);
     if(n<0)return errno==EINTR || errno==EAGAIN?0:-1;
     if(!n)return -1;
     *sent+=(size_t)n;
     return *sent==RH_MUX_HEADER+f->size;
 }
+static int is_tunnel(uint32_t kind) {
+    return kind>=RH_TCP_OPEN && kind<=RH_TCP_CLOSE;
+}
+static int spawn_tunnel(int *tun_in,worker workers[SLOTS]) {
+    int to_tun[2],from_tun[2];
+    if(pipe(to_tun)<0)return 0;
+    if(pipe(from_tun)<0){close(to_tun[0]);close(to_tun[1]);return 0;}
+    pid_t pid=fork();
+    if(pid==0) {
+        close(to_tun[1]);close(from_tun[0]);
+        for(unsigned i=0;i<SLOTS;i++)if(workers[i].fd>=0)close(workers[i].fd);
+        int devnull=open("/dev/null",O_RDWR);
+        if(devnull>=0){
+            (void)dup2(devnull,STDIN_FILENO);
+            (void)dup2(devnull,STDOUT_FILENO);
+            if(devnull>STDERR_FILENO)close(devnull);
+        }
+        _exit(rh_tunnel_run(to_tun[0],from_tun[1]));
+    }
+    close(to_tun[0]);close(from_tun[1]);
+    if(pid<0 || !nonblocking(to_tun[1])) {
+        close(to_tun[1]);close(from_tun[0]);
+        if(pid>0){(void)kill(pid,SIGKILL);while(waitpid(pid,NULL,0)<0 && errno==EINTR){}}
+        return 0;
+    }
+    *tun_in=to_tun[1];
+    workers[TUNNEL].fd=from_tun[0];workers[TUNNEL].pid=pid;workers[TUNNEL].id=0;workers[TUNNEL].answered=1;
+    return 1;
+}
 int rh_mux(void) {
-    frame input={0};worker workers[SLOTS]={0};
+    frame input={0},tun_tx={0};worker workers[SLOTS]={0};
     for(unsigned i=0;i<SLOTS;i++)workers[i].fd=-1;
     if(!nonblocking(STDOUT_FILENO))return 255;
     signal(SIGPIPE,SIG_IGN);
-    int code=0;
+    int code=0,tun_in=-1;
     unsigned sending=SLOTS,after=0;
-    size_t sent=0;
+    size_t sent=0,tun_sent=0;
     for(;;) {
         if(input.complete && rh_u32(input.header+12)==RH_CANCEL) {
             if(input.size || !rh_u64(input.header+4)){code=255;break;}
@@ -155,7 +186,17 @@ int rh_mux(void) {
             }
             reset(&input);
         }
-        if(input.complete) {
+        if(input.complete && is_tunnel(rh_u32(input.header+12))) {
+            if(!tun_tx.complete) {
+                uint32_t kind=rh_u32(input.header+12);
+                if(!rh_u64(input.header+4) || (kind==RH_TCP_DATA && input.size>16384)) {
+                    code=255;break;
+                }
+                if(tun_in<0 && !spawn_tunnel(&tun_in,workers)){code=255;break;}
+                tun_tx=input;tun_sent=0;memset(&input,0,sizeof input);
+            }
+        }
+        if(input.complete && !is_tunnel(rh_u32(input.header+12))) {
             int control=rh_u32(input.header+12)==5;
             unsigned slot=control?ORDINARY:0,limit=control?WORKERS:ORDINARY;
             while(slot<limit && unfinished(&workers[slot]))slot++;
@@ -171,13 +212,15 @@ int rh_mux(void) {
                 if(workers[index].reply.complete){sending=index;break;}
             }
         }
-        struct pollfd fds[WORKERS+2]={
+        struct pollfd fds[WORKERS+4]={
             {STDIN_FILENO,input.complete?0:POLLIN,0},
             {STDOUT_FILENO,sending==SLOTS?0:POLLOUT,0}
         };
         for(unsigned i=0;i<WORKERS;i++)
             fds[i+2]=(struct pollfd){workers[i].reply.complete?-1:workers[i].fd,POLLIN,0};
-        if(poll(fds,WORKERS+2,-1)<0){if(errno==EINTR)continue;code=255;break;}
+        fds[WORKERS+2]=(struct pollfd){workers[TUNNEL].reply.complete?-1:workers[TUNNEL].fd,POLLIN,0};
+        fds[WORKERS+3]=(struct pollfd){(tun_in>=0 && tun_tx.complete)?tun_in:-1,POLLOUT,0};
+        if(poll(fds,WORKERS+4,-1)<0){if(errno==EINTR)continue;code=255;break;}
         if(fds[0].revents&POLLIN && !input.complete) {
             int result=receive(STDIN_FILENO,&input);
             if(result<=0){code=result<0?255:0;break;}
@@ -185,13 +228,31 @@ int rh_mux(void) {
         if(fds[0].revents&(POLLHUP|POLLERR|POLLNVAL))break;
         if(fds[1].revents&(POLLHUP|POLLERR|POLLNVAL))break;
         if(sending!=SLOTS && (fds[1].revents&POLLOUT)) {
-            int result=flush_frame(&workers[sending].reply,&sent);
+            int result=write_frame(STDOUT_FILENO,&workers[sending].reply,&sent);
             if(result<0)break;
             if(result) {
-                if(rh_u32(workers[sending].reply.header+12)==(workers[sending].kind|RH_REPLY))
+                if(sending<WORKERS && rh_u32(workers[sending].reply.header+12)==(workers[sending].kind|RH_REPLY))
                     workers[sending].answered=1;
                 reset(&workers[sending].reply);
                 after=(sending+1)%SLOTS;sending=SLOTS;sent=0;
+            }
+        }
+        if(fds[WORKERS+3].revents) {
+            int result=(fds[WORKERS+3].revents&(POLLHUP|POLLERR|POLLNVAL))?-1:write_frame(tun_in,&tun_tx,&tun_sent);
+            if(result<0) {
+                close(tun_in);tun_in=-1;reset(&tun_tx);tun_sent=0;
+                if(workers[TUNNEL].fd>=0){retire(&workers[TUNNEL],1);if(sending==TUNNEL)sending=SLOTS;}
+            }else if(result) {
+                reset(&tun_tx);tun_sent=0;
+            }
+        }
+        if(fds[WORKERS+2].revents) {
+            int result=receive(workers[TUNNEL].fd,&workers[TUNNEL].reply);
+            if(result<=0) {
+                retire(&workers[TUNNEL],result<0);
+                if(sending==TUNNEL)sending=SLOTS;
+                if(tun_in>=0){close(tun_in);tun_in=-1;}
+                reset(&tun_tx);tun_sent=0;
             }
         }
         for(unsigned i=0;i<WORKERS;i++)if(fds[i+2].revents) {
@@ -206,6 +267,8 @@ int rh_mux(void) {
         if(code)break;
     }
     reset(&input);
+    reset(&tun_tx);
+    if(tun_in>=0)close(tun_in);
     for(unsigned i=0;i<SLOTS;i++) {
         if(workers[i].fd>=0)retire(&workers[i],1);
         else reset(&workers[i].reply);

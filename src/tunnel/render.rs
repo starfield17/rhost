@@ -8,7 +8,7 @@ pub(crate) fn tunnel(sink: &mut Sink, result: &super::Tunnel) {
         "{}  master_alive={}  destination_evidence={}  {}  {}  {}",
         result.id,
         result.status.master_alive(),
-        super::record::DESTINATION_EVIDENCE,
+        result.destination_evidence.as_str(),
         result.kind.as_str(),
         result.listen,
         dash(result.destination.as_deref().unwrap_or(""))
@@ -29,7 +29,7 @@ pub(crate) fn tunnels(sink: &mut Sink, rows: &[super::Tunnel]) {
             "{}  {}  {}  {}  {}  {}  {}",
             row.id,
             row.status.master_alive(),
-            super::record::DESTINATION_EVIDENCE,
+            row.destination_evidence.as_str(),
             row.kind.as_str(),
             row.listen,
             dash(row.destination.as_deref().unwrap_or("")),
