@@ -142,7 +142,7 @@ static int signal_run(uint32_t kind,int directory,unsigned tag,const char *key) 
     unsigned char message=(unsigned char)tag;
     if(write(fd,&message,1)!=1 || read(fd,&delivered,1)!=1)delivered=0;
 done:
-    if(cwd>=0){(void)fchdir(cwd);close(cwd);}if(fd>=0)close(fd);
+    if(cwd>=0){int restored=fchdir(cwd);(void)restored;close(cwd);}if(fd>=0)close(fd);
     if(!delivered)return rh_refuse(kind,"RUN_CONTROL_UNAVAILABLE","monitor did not confirm signal delivery");
     rh_buf b={0};rh_byte(&b,0);rh_text(&b,key);rh_byte(&b,1);int result=rh_emit(kind,&b);free(b.data);return result;
 }

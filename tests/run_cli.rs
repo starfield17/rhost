@@ -24,6 +24,8 @@ impl Fixture {
                 .as_nanos()
         ));
         std::fs::create_dir_all(root.join("bin")).unwrap_or_else(|e| panic!("fixture: {e}"));
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|e| panic!("fixture root mode: {e}"));
         let ssh = root.join("bin/ssh");
         std::fs::write(
             &ssh,

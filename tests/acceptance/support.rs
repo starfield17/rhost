@@ -60,6 +60,15 @@ impl Harness {
             std::fs::create_dir_all(root.join(directory))
                 .map_err(|error| fail("prepare scratch root", error))?;
         }
+        for directory in ["", "home", "home/.ssh", "cache", "state", "stubs", "tmp"] {
+            let target = if directory.is_empty() {
+                root.clone()
+            } else {
+                root.join(directory)
+            };
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o700))
+                .map_err(|error| fail("secure scratch root", error))?;
+        }
         // The remote filesystem helper names exact directory components. Resolve
         // the scratch root first so the harness itself is not a symlink (macOS'
         // temporary directories often are), which lets editing cases exercise

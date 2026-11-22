@@ -47,6 +47,9 @@ const MAX_SOCKET_PATH: usize = 104;
 /// Length OpenSSH substitutes for `%C`.
 const HASH_TOKEN_LEN: usize = 40;
 
+/// Length of the temporary bind suffix OpenSSH adds (a dot and 16 characters).
+const SOCKET_TEMP_SUFFIX_LEN: usize = 17;
+
 /// rhost's local cache root; `RHOST_CACHE_DIR` overrides it.
 pub fn cache_dir() -> PathBuf {
     if let Some(dir) = environment("RHOST_CACHE_DIR") {
@@ -94,11 +97,10 @@ pub fn v4_state_dir() -> PathBuf {
 /// The socket home for an explicit cache root.
 ///
 /// Two shapes of cache root cannot host the sockets, and both move to a short
-/// per-cache root: a deep one, because OpenSSH's fixed 40-byte `%C` expansion
-/// overflows `sun_path` (ssh then refuses every command with "ControlPath too
-/// long", SSH-003); and one containing whitespace, because it cannot ride
-/// rsync's `-e` string, which would silently cost a multiplexed transfer its
-/// connection reuse.
+/// per-cache root: a deep one, because the 40-byte `%C` expansion plus OpenSSH's
+/// temporary bind suffix can overflow `sun_path` (SSH-003); and one containing
+/// whitespace, because rsync's `-e` string would split the path and silently
+/// cost a multiplexed transfer its connection reuse.
 fn control_dir_in(root: &Path) -> PathBuf {
     let candidate = root.join("ssh");
     if socket_fits(&candidate) && rsh_safe(&candidate) {
@@ -134,7 +136,7 @@ fn rsh_safe(dir: &Path) -> bool {
 
 fn socket_fits(dir: &Path) -> bool {
     let expanded = dir.join("0".repeat(HASH_TOKEN_LEN));
-    expanded.to_string_lossy().len() < MAX_SOCKET_PATH
+    expanded.to_string_lossy().len() + SOCKET_TEMP_SUFFIX_LEN < MAX_SOCKET_PATH
 }
 
 pub fn control_dir() -> PathBuf {
@@ -209,6 +211,15 @@ mod tests {
         assert!(!control_dir_in(&spaced).starts_with(&spaced));
         let shallow = PathBuf::from("/tmp/ok-cache");
         assert_eq!(control_dir_in(&shallow), shallow.join("ssh"));
+    }
+
+    #[test]
+    fn cache_root_without_room_for_temporary_suffix_moves_to_fallback() {
+        // The expanded ControlPath is 101 bytes before the temporary suffix.
+        let root = Path::new(SOCKET_FALLBACK_ROOT).join("a".repeat(51));
+        let moved = control_dir_in(&root);
+        assert_ne!(moved, root.join("ssh"));
+        assert!(socket_fits(&moved));
     }
 
     #[test]

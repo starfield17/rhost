@@ -149,7 +149,8 @@ void rh_monitor(int directory,int lock,rh_start *q) {
                     int signal_number=tag==1?SIGINT:(tag==2?SIGTERM:SIGKILL);
                     if(kill(-child,signal_number)==0)answer=1;
                 }
-                (void)write(clients[i],&answer,1);close(clients[i]);clients[i]=-1;
+                ssize_t replied=write(clients[i],&answer,1);
+                (void)replied;close(clients[i]);clients[i]=-1;
             }
         }
         if(exited && rh_millis()-exited>=2000 && (status.out_open || status.err_open)) {
