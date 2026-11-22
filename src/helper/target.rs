@@ -1,18 +1,132 @@
 //! Ephemeral target discovery and deliberately distinct preparation profiles.
 use super::{Helper, artifact, build};
-use crate::remote::Error;
-use std::time::Duration;
-#[derive(Clone)]
+use crate::{domain::Sha256, remote::Error};
+use std::{path::Path, time::Duration};
+
 pub(super) struct Target {
     pub os: String,
     pub arch: String,
 }
+impl Target {
+    pub fn abi(&self) -> String {
+        format!("{}-{}", self.os, self.arch)
+    }
+    pub fn explicit(value: &str) -> Result<Self, Error> {
+        match value.split_once('-') {
+            Some((
+                os @ ("linux" | "darwin" | "freebsd" | "openbsd" | "netbsd"),
+                arch @ ("aarch64" | "x86_64"),
+            ))
+            | Some((os @ "linux", arch @ "armv7-eabihf")) => Ok(Self {
+                os: os.into(),
+                arch: arch.into(),
+            }),
+            _ => Err(Error::new("CONFIG_INVALID", "unsupported RHOST_TARGET_ABI")),
+        }
+    }
+    pub fn observed(text: &str, explicit: Option<Self>) -> Result<Self, Error> {
+        let mut lines = text.lines();
+        let os = match lines.next() {
+            Some("Linux") => "linux",
+            Some("Darwin") => "darwin",
+            Some("FreeBSD") => "freebsd",
+            Some("OpenBSD") => "openbsd",
+            Some("NetBSD") => "netbsd",
+            _ => {
+                return Err(Error::new(
+                    "UNSUPPORTED_REMOTE_OS",
+                    "unsupported helper target",
+                ));
+            }
+        };
+        let target = if let Some(target) = explicit {
+            if target.os != os {
+                return Err(Error::new(
+                    "HELPER_INCOMPATIBLE",
+                    "RHOST_TARGET_ABI does not match the remote OS",
+                ));
+            }
+            target
+        } else {
+            let arch = match lines.next() {
+                Some("aarch64" | "arm64") => "aarch64",
+                Some("x86_64" | "amd64") => "x86_64",
+                _ => {
+                    return Err(Error::new(
+                        "UNSUPPORTED_REMOTE_OS",
+                        "unsupported helper architecture; set RHOST_TARGET_ABI for an explicit ABI",
+                    ));
+                }
+            };
+            Self {
+                os: os.into(),
+                arch: arch.into(),
+            }
+        };
+        if lines.next().is_some() {
+            return Err(Error::new(
+                "PROTOCOL_ERROR",
+                "unexpected target observation fields",
+            ));
+        }
+        Ok(target)
+    }
+}
+
+pub(super) struct Fixed {
+    pub path: String,
+    pub pin: Option<Sha256>,
+}
+impl Fixed {
+    pub fn new(path: String, pin: Option<String>) -> Result<Self, Error> {
+        crate::domain::RemotePath::new(path.clone())
+            .map_err(|e| Error::new("CONFIG_INVALID", e.to_string()))?;
+        if !(path.starts_with('/') || path.starts_with("~/"))
+            || path.ends_with('/')
+            || path.contains("//")
+            || path.split('/').any(|p| p == "." || p == "..")
+        {
+            return Err(Error::new(
+                "CONFIG_INVALID",
+                "RHOST_REMOTE_HELPER_PATH must be absolute or home-relative without dot components",
+            ));
+        }
+        let pin = pin
+            .map(Sha256::new)
+            .transpose()
+            .map_err(|e| Error::new("CONFIG_INVALID", format!("RHOST_HELPER_SHA256: {e}")))?;
+        Ok(Self { path, pin })
+    }
+}
+
 pub(super) enum Preparation {
+    Fixed(Fixed),
     Supplied(artifact::Binary),
     Local(build::Configuration),
     Automatic,
 }
+
+fn utf8_env(name: &str) -> Result<Option<String>, Error> {
+    std::env::var_os(name)
+        .map(|value| {
+            value
+                .into_string()
+                .map_err(|_| Error::new("CONFIG_INVALID", format!("{name} must be UTF-8")))
+        })
+        .transpose()
+}
+
 impl Helper<'_> {
+    pub(super) fn explicit_selection() -> bool {
+        [
+            "RHOST_TARGET_ABI",
+            "RHOST_HELPER_PACK_DIR",
+            "RHOST_REMOTE_HELPER_PATH",
+            "RHOST_HELPER_SHA256",
+        ]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+    }
     pub(super) fn cache_path(&self) -> String {
         self.selected_cache
             .borrow()
@@ -26,7 +140,7 @@ impl Helper<'_> {
             .get()
             .ok_or_else(|| Error::new("INTERNAL", "target was not observed"))?;
         let base = self.cache_base()?;
-        *self.selected_cache.borrow_mut() = Some(format!("{}{}-{}/{profile}/", base, t.os, t.arch));
+        *self.selected_cache.borrow_mut() = Some(format!("{}{}/{profile}/", base, t.abi()));
         Ok(())
     }
     pub(super) fn cache_base(&self) -> Result<String, Error> {
@@ -56,14 +170,81 @@ impl Helper<'_> {
         if self.preparation.borrow().is_some() {
             return Ok(());
         }
-        self.cache_base()?;
+        let explicit = utf8_env("RHOST_TARGET_ABI")?
+            .as_deref()
+            .map(Target::explicit)
+            .transpose()?;
+        let path = utf8_env("RHOST_REMOTE_HELPER_PATH")?;
+        let pin = utf8_env("RHOST_HELPER_SHA256")?;
+        if pin.is_some() && path.is_none() {
+            return Err(Error::new(
+                "CONFIG_INVALID",
+                "RHOST_HELPER_SHA256 requires RHOST_REMOTE_HELPER_PATH",
+            ));
+        }
+        let fixed = path.map(|path| Fixed::new(path, pin)).transpose()?;
+        if fixed.is_none() {
+            self.cache_base()?;
+        }
+        let t = self.observe_target(explicit)?;
+        let pack = std::env::var_os("RHOST_HELPER_PACK_DIR")
+            .map(|root| artifact::from_pack(Path::new(&root), &t))
+            .transpose()?;
+        let _ = self.target.set(t);
+        let preparation = if let Some(mut fixed) = fixed {
+            if let Some(binary) = pack {
+                if fixed
+                    .pin
+                    .as_ref()
+                    .is_some_and(|pin| pin.as_str() != binary.sha256)
+                {
+                    return Err(Error::new(
+                        "HELPER_INCOMPATIBLE",
+                        "helper pin and pack SHA-256 disagree",
+                    ));
+                }
+                fixed.pin = Some(
+                    Sha256::new(binary.sha256)
+                        .map_err(|e| Error::new("INTERNAL", e.to_string()))?,
+                );
+            }
+            Preparation::Fixed(fixed)
+        } else if let Some(binary) = pack {
+            self.select_profile(&format!("supplied-{}", binary.sha256))?;
+            Preparation::Supplied(binary)
+        } else if let Some(path) = std::env::var_os("RHOST_HELPER_BIN") {
+            let binary = artifact::Binary::read(&path)?;
+            self.select_profile(&format!("supplied-{}", binary.sha256))?;
+            Preparation::Supplied(binary)
+        } else if std::env::var_os("RHOST_HELPER_CC").is_some() {
+            let c = build::Configuration::load(
+                self.target
+                    .get()
+                    .ok_or_else(|| Error::new("INTERNAL", "target missing"))?,
+                self.cancelled,
+            )?;
+            self.select_profile(&format!("local-{}", c.identity))?;
+            Preparation::Local(c)
+        } else {
+            self.select_profile("native-c99-o2-v1")?;
+            Preparation::Automatic
+        };
+        *self.preparation.borrow_mut() = Some(preparation);
+        Ok(())
+    }
+    fn observe_target(&self, explicit: Option<Target>) -> Result<Target, Error> {
         let marker = format!(
             "RHOST_TARGET_{}\n",
             crate::random::hex(16).map_err(|e| Error::new("INTERNAL", e.to_string()))?
         );
         let script = format!(
-            "printf '%s' {}; command uname -s; command uname -m",
-            crate::shell::quote(&marker)
+            "printf '%s' {}; command uname -s{}",
+            crate::shell::quote(&marker),
+            if explicit.is_some() {
+                ""
+            } else {
+                " && command uname -m"
+            }
         );
         let (run, stdout, stderr) = self.transport(
             &format!("sh -c {}", crate::shell::quote(&script)),
@@ -113,59 +294,15 @@ impl Helper<'_> {
             + marker.len();
         let text = std::str::from_utf8(&stdout[start..])
             .map_err(|_| Error::new("PROTOCOL_ERROR", "target observation is not UTF-8"))?;
-        let mut lines = text.lines();
-        let os = match lines.next() {
-            Some("Linux") => "linux",
-            Some("Darwin") => "darwin",
-            Some("FreeBSD") => "freebsd",
-            Some("OpenBSD") => "openbsd",
-            Some("NetBSD") => "netbsd",
-            _ => {
-                return Err(Error::new(
-                    "UNSUPPORTED_REMOTE_OS",
-                    "unsupported helper target",
-                ));
-            }
-        };
-        let arch = match lines.next() {
-            Some("aarch64" | "arm64") => "aarch64",
-            Some("x86_64" | "amd64") => "x86_64",
-            _ => {
-                return Err(Error::new(
-                    "UNSUPPORTED_REMOTE_OS",
-                    "unsupported helper architecture",
-                ));
-            }
-        };
-        if lines.next().is_some() {
-            return Err(Error::new(
-                "PROTOCOL_ERROR",
-                "unexpected target observation fields",
-            ));
-        }
-        let t = Target {
-            os: os.into(),
-            arch: arch.into(),
-        };
-        let _ = self.target.set(t.clone());
-        let preparation = if let Some(path) = std::env::var_os("RHOST_HELPER_BIN") {
-            let binary = artifact::Binary::read(&path)?;
-            self.select_profile(&format!("supplied-{}", binary.sha256))?;
-            Preparation::Supplied(binary)
-        } else if std::env::var_os("RHOST_HELPER_CC").is_some() {
-            let c = build::Configuration::load(&t, self.cancelled)?;
-            self.select_profile(&format!("local-{}", c.identity))?;
-            Preparation::Local(c)
-        } else {
-            self.select_profile("native-c99-o2-v1")?;
-            Preparation::Automatic
-        };
-        *self.preparation.borrow_mut() = Some(preparation);
-        Ok(())
+        Target::observed(text, explicit)
     }
     pub(super) fn expected_image(&self) -> Result<Option<String>, Error> {
-        if let Some(Preparation::Supplied(binary)) = self.preparation.borrow().as_ref() {
-            return Ok(Some(binary.sha256.clone()));
+        match self.preparation.borrow().as_ref() {
+            Some(Preparation::Supplied(binary)) => return Ok(Some(binary.sha256.clone())),
+            Some(Preparation::Fixed(fixed)) => {
+                return Ok(fixed.pin.as_ref().map(|pin| pin.as_str().to_owned()));
+            }
+            _ => (),
         }
         if let Some(cache) = self.selected_cache.borrow().as_ref()
             && let Some(profile) = cache.trim_end_matches('/').rsplit('/').next()
@@ -176,6 +313,12 @@ impl Helper<'_> {
             return Ok(Some(digest.into()));
         }
         Ok(None)
+    }
+    pub(super) fn fixed(&self) -> bool {
+        matches!(
+            self.preparation.borrow().as_ref(),
+            Some(Preparation::Fixed(_))
+        )
     }
     pub(super) fn automatic(&self) -> bool {
         matches!(

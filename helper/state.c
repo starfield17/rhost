@@ -26,8 +26,12 @@ int rh_directory(const char *path,int create) {
     if(directory<0 || !copy) {if(directory>=0)close(directory);free(copy);return -1;}
     for(char *p=strtok_r(copy,"/",&save);p;p=strtok_r(NULL,"/",&save)) {
         if(!strcmp(p,".") || !strcmp(p,"..")) {close(directory);free(copy);return -1;}
-        if(create && mkdirat(directory,p,0700)<0 && errno!=EEXIST) {close(directory);free(copy);return -1;}
         int next=openat(directory,p,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+        /* An existing ancestor may be on a read-only mount above writable state. */
+        if(next<0 && errno==ENOENT && create) {
+            if(mkdirat(directory,p,0700)<0 && errno!=EEXIST) {close(directory);free(copy);return -1;}
+            next=openat(directory,p,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+        }
         close(directory); directory=next;if(next<0)break;
         struct stat info;
         if(fstat(directory,&info)<0 || (info.st_uid!=0 && info.st_uid!=geteuid()) ||

@@ -99,7 +99,21 @@ choosing another build. In automatic mode, reuse a compatible cache, try an
 existing remote C99 `cc`, then download the versioned release helper and verify its HTTPS SHA-256 sidecar.
 No compiler, SDK or package is automatically installed.
 
-`RHOST_NO_UPLOAD` allows matching cache reuse only. `RHOST_NO_SOURCE_BUILD`
+An explicit `RHOST_TARGET_ABI` uses the observed OS and a configured userspace
+ABI. RH01 checks the compiled ABI before dispatch. The v5 public `arch` enum
+represents `linux-armv7-eabihf` as `other`. An offline pack in
+`RHOST_HELPER_PACK_DIR` selects one image by ABI and source digest and checks
+its SHA-256 against the manifest and sidecar before using it. See the
+[native preparation guide](../../skills/rhost/references/NATIVE.md) for the pack layout.
+
+`RHOST_REMOTE_HELPER_PATH` bypasses installation and cache access. The launcher
+checks the executable's ancestry, file type, ownership and mode. When
+`RHOST_HELPER_SHA256` or a pack supplies a pin, the launcher verifies it before
+starting the executable. The verified handshake checks the source, target and
+loaded image before capability dispatch. Explicit selection failures refuse
+the operation.
+
+`RHOST_NO_UPLOAD` permits reuse of an existing helper. `RHOST_NO_SOURCE_BUILD`
 disables remote source compilation; an explicitly configured local compiler
 remains an explicit choice. `RHOST_NO_DOWNLOAD` disables release downloads.
 `RHOST_HELPER_CACHE_DIR` overrides only the private helper cache. Native state

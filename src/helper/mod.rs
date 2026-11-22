@@ -105,21 +105,10 @@ impl<'a> Helper<'a> {
         Self::guard(&cache)
     }
     fn guard(cache: &str) -> String {
-        // A same-account writer is trusted. Other accounts cannot change the
-        // checked private leaf; reject symlinks and writable ancestry on reuse.
+        let ancestry = Self::ancestry_guard();
         format!(
-            r#"set -f; rh_cache={cache}; rh_p=; rh_uid=$(id -u) || exit 126;
-rh_oldifs=$IFS; IFS=/; set -- $rh_cache; IFS=$rh_oldifs;
-for rh_component do
-  [ -n "$rh_component" ] || continue;
-  rh_p="$rh_p/$rh_component";
-  [ ! -L "$rh_p" ] && [ -d "$rh_p" ] || exit 126;
-  rh_info=$(stat -c '%u %a' "$rh_p" 2>/dev/null) || rh_info=$(stat -f '%u %Lp' "$rh_p" 2>/dev/null) || exit 126;
-  set -- $rh_info; [ "$#" = 2 ] || exit 126;
-  [ "$1" = 0 ] || [ "$1" = "$rh_uid" ] || exit 126;
-  case "$2" in ''|*[!0-7]*) exit 126;; esac;
-  [ $((0$2 & 022)) = 0 ] || [ $((0$2 & 01000)) != 0 ] || exit 126;
-done;
+            r#"{ancestry}
+rh_cache={cache}; rh_safe_ancestry "$rh_cache" || exit 126;
 rh_info=$(stat -c '%u %a' "$rh_cache" 2>/dev/null) || rh_info=$(stat -f '%u %Lp' "$rh_cache" 2>/dev/null) || exit 126;
 set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
 [ ! -L "$rh_cache/rhost-helper" ] && [ -f "$rh_cache/rhost-helper" ] || exit 126;
@@ -127,6 +116,24 @@ rh_info=$(stat -c '%u %a' "$rh_cache/rhost-helper" 2>/dev/null) || rh_info=$(sta
 set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
 "#
         )
+    }
+    fn ancestry_guard() -> &'static str {
+        // Root and the SSH account are trusted to maintain these paths.
+        r#"rh_safe_ancestry() {
+set -f; rh_p=; rh_uid=$(id -u) || return 1;
+rh_oldifs=$IFS; IFS=/; set -- $1; IFS=$rh_oldifs;
+for rh_component do
+  [ -n "$rh_component" ] || continue;
+  rh_p="$rh_p/$rh_component";
+  [ ! -L "$rh_p" ] && [ -d "$rh_p" ] || return 1;
+  rh_info=$(stat -c '%u %a' "$rh_p" 2>/dev/null) || rh_info=$(stat -f '%u %Lp' "$rh_p" 2>/dev/null) || return 1;
+  set -- $rh_info; [ "$#" = 2 ] || return 1;
+  [ "$1" = 0 ] || [ "$1" = "$rh_uid" ] || return 1;
+  case "$2" in ''|*[!0-7]*) return 1;; esac;
+  [ $((0$2 & 022)) = 0 ] || [ $((0$2 & 01000)) != 0 ] || return 1;
+done;
+}
+"#
     }
     fn raw(&self, kind: u32, request: Vec<u8>, budget: Duration) -> Result<Vec<u8>, Error> {
         self.initialize()?;
@@ -192,7 +199,7 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
         {
             return Err(Error::new(
                 "HELPER_INCOMPATIBLE",
-                "cached helper bytes do not match selected image",
+                "helper bytes do not match selected image",
             ));
         }
         for bound in [8388608, 12582912, 8388608, 67108864, 1048576] {
@@ -235,6 +242,12 @@ set -- $rh_info; [ "$1" = "$rh_uid" ] && [ $((0$2 & 077)) = 0 ] || exit 126;
                 ));
             }
         }
+        // RH01 validates the full ABI. The v5 result uses its existing arch enum.
+        let arch = if arch == "armv7-eabihf" {
+            "other"
+        } else {
+            &arch
+        };
         Ok(
             serde_json::json!({"protocol":1,"source_digest":digest,"os":os,"arch":arch,"capabilities":capabilities,"binary_sha256":image,"boot_id":if boot.is_empty(){None}else{Some(boot)},"limits":{"run_frame_bytes":8388608,"file_request_bytes":12582912,"file_edit_bytes":8388608,"run_stream_bytes":67108864,"run_page_bytes":1048576}}),
         )

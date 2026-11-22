@@ -143,7 +143,11 @@ impl Configuration {
             sysroot,
             builtins,
             linker,
-            target: format!("{}-linux-musl", target.arch),
+            target: if target.arch == "armv7-eabihf" {
+                "armv7-linux-musleabihf".into()
+            } else {
+                format!("{}-linux-musl", target.arch)
+            },
         };
         configuration.identity = configuration.identity_for(&target.arch);
         Ok(configuration)

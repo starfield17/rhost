@@ -334,3 +334,123 @@ fn release_helper_checks_the_sidecar_and_reuses_only_matching_cached_bytes() -> 
     assert_eq!(calls().len(), 4);
     Ok(())
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn offline_pack_prepares_and_corrupt_pack_cannot_fall_back_to_cached_or_supplied_bytes()
+-> Result<(), String> {
+    let h = Harness::open("offline-pack")?;
+    local_host(&h)?;
+    h.stub("cc", "exit 99")?;
+    h.stub("curl", "exit 99")?;
+    let abi = format!("linux-{}", std::env::consts::ARCH);
+    let source = rhost::helper::source_digest();
+    let helper = std::env::var_os("RHOST_HELPER_BIN").ok_or("set RHOST_HELPER_BIN")?;
+    let bytes = std::fs::read(helper).map_err(|e| e.to_string())?;
+    let sha = crate::remote_fs_support::sha256_hex(&bytes);
+    let directory = h.path(&format!("pack/{abi}/{source}/{sha}"));
+    std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    let image = directory.join("rhost-helper");
+    std::fs::write(&image, bytes).map_err(|e| e.to_string())?;
+    std::fs::write(
+        directory.join("rhost-helper.sha256"),
+        format!("{sha}  rhost-helper\n"),
+    )
+    .map_err(|e| e.to_string())?;
+    h.write(
+        "pack/manifest.json",
+        &json!({"helpers":[{"target":abi,"source_digest":source,"binary_sha256":sha}]}).to_string(),
+        None,
+    )?;
+    let pack = h.path("pack");
+    let state = h.path("remote-state");
+    let h = h
+        .env("RHOST_HELPER_BIN", "missing-supplied-image")
+        .env("RHOST_HELPER_PACK_DIR", &pack.to_string_lossy())
+        .env("RHOST_REMOTE_STATE", &state.to_string_lossy())
+        .env("RHOST_NO_DOWNLOAD", "1")
+        .env("RHOST_NO_SOURCE_BUILD", "1");
+    let prepared = request(&h, "helper.prepare")?;
+    assert_eq!(
+        prepared["data"]["helper"]["binary_sha256"], sha,
+        "{prepared}"
+    );
+    assert_eq!(
+        request(&h, "metadata")?["data"]["helper"]["binary_sha256"],
+        sha
+    );
+    std::fs::write(image, b"corrupt").map_err(|e| e.to_string())?;
+    want_code(&request(&h, "helper.prepare")?, "HELPER_INCOMPATIBLE")?;
+    assert!(h.tool_calls("cc").is_empty());
+    assert!(h.tool_calls("curl").is_empty());
+    Ok(())
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn fixed_helper_verifies_abi_and_pin_without_writing_a_helper_cache() -> Result<(), String> {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let h = Harness::open("fixed-helper")?;
+    local_host(&h)?;
+    h.stub("uname", "case $1 in -s) echo Linux;; *) exit 99;; esac")?;
+    let abi = format!("linux-{}", std::env::consts::ARCH);
+    let helper = std::env::var_os("RHOST_HELPER_BIN").ok_or("set RHOST_HELPER_BIN")?;
+    let bytes = std::fs::read(helper).map_err(|e| e.to_string())?;
+    let sha = crate::remote_fs_support::sha256_hex(&bytes);
+    let image = h.path("home/fixed helper");
+    std::fs::write(&image, bytes).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o555))
+        .map_err(|e| e.to_string())?;
+    let state = h.path("writable-state");
+    let h = h
+        .env("RHOST_REMOTE_HELPER_PATH", "~/fixed helper")
+        .env("RHOST_HELPER_SHA256", &sha)
+        .env("RHOST_TARGET_ABI", &abi)
+        .env("RHOST_REMOTE_STATE", &state.to_string_lossy())
+        .env("RHOST_HELPER_CACHE_DIR", "invalid-cache-root")
+        .env("RHOST_NO_UPLOAD", "1");
+    let prepared = request(&h, "helper.prepare")?;
+    assert_eq!(
+        prepared["data"]["helper"]["binary_sha256"], sha,
+        "{prepared}"
+    );
+    assert!(state.is_dir());
+    let content = h.path("content");
+    h.write("content", "fixed helper read\n", None)?;
+    let payload =
+        json!({"schema_version":5,"operation":"fs.read","host":"gpu","params":{"path":content}});
+    let (_, read) = envelope_with_stdin(
+        &h,
+        &["request", "--from", "-"],
+        payload.to_string().as_bytes(),
+    )?;
+    assert_eq!(read["data"]["content"], "fixed helper read\n", "{read}");
+    let link = h.path("home/helper-link");
+    symlink(&image, &link).map_err(|e| e.to_string())?;
+    let h = h.env("RHOST_REMOTE_HELPER_PATH", "~/helper-link");
+    want_code(&request(&h, "helper.prepare")?, "HELPER_INCOMPATIBLE")?;
+    let h = h.env("RHOST_REMOTE_HELPER_PATH", "~/fixed helper");
+    std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o775))
+        .map_err(|e| e.to_string())?;
+    want_code(&request(&h, "helper.prepare")?, "HELPER_INCOMPATIBLE")?;
+    std::fs::set_permissions(&image, std::fs::Permissions::from_mode(0o555))
+        .map_err(|e| e.to_string())?;
+    let h = h.env("RHOST_TARGET_ABI", "linux-armv7-eabihf");
+    want_code(&request(&h, "helper.prepare")?, "HELPER_INCOMPATIBLE")?;
+    h.write(
+        "home/wrong-image",
+        "#!/bin/sh\ntouch executed\n",
+        Some(0o755),
+    )?;
+    let h = h
+        .env("RHOST_REMOTE_HELPER_PATH", "~/wrong-image")
+        .env("RHOST_TARGET_ABI", &abi);
+    want_code(&request(&h, "helper.prepare")?, "HELPER_INCOMPATIBLE")?;
+    assert!(!h.path("executed").exists());
+    assert!(!h.path("home/.cache/rhost").exists());
+    let uname = h.tool_calls("uname");
+    assert!(!uname.is_empty());
+    assert!(uname.iter().all(|c| c.args == ["-s"]));
+    Ok(())
+}

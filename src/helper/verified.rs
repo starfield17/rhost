@@ -1,5 +1,8 @@
 //! A single SSH channel verifies the loaded image before capability dispatch.
-use super::{Helper, Writer, artifact, build, codec, target::Target};
+use super::{
+    Helper, Writer, artifact, build, codec,
+    target::{Fixed, Preparation, Target},
+};
 use crate::{domain::Recovery, remote::Error};
 use serde_json::Value;
 use std::time::Duration;
@@ -55,26 +58,56 @@ impl Helper<'_> {
         files: bool,
         release_probe: bool,
     ) -> Result<String, Error> {
-        let base = crate::shell::path_quote(&self.cache_base()?);
-        let state = crate::shell::path_quote(
-            &std::env::var("RHOST_REMOTE_STATE")
-                .unwrap_or_else(|_| "~/.local/state/rhost/v5".into()),
-        );
-        let mut script = format!(
-            "printf '%s' {}; rh_os=$(command uname -s) && rh_arch=$(command uname -m) || {{ printf 'RHOST_FAST_DEPENDENCY\\n'; exit 127; }};\ncase \"$rh_os\" in Linux) rh_os=linux;; Darwin) rh_os=darwin;; FreeBSD) rh_os=freebsd;; OpenBSD) rh_os=openbsd;; NetBSD) rh_os=netbsd;; *) printf 'RHOST_FAST_UNSUPPORTED\\n'; exit 126;; esac;\ncase \"$rh_arch\" in aarch64|arm64) rh_arch=aarch64;; x86_64|amd64) rh_arch=x86_64;; *) printf 'RHOST_FAST_UNSUPPORTED\\n'; exit 126;; esac;\nrh_target=\"$rh_os-$rh_arch\"; rh_base={base}; rh_cache=; rh_image=;\n",
-            crate::shell::quote(marker)
-        );
-        if !release_probe {
-            for (target, profile, image) in self.profiles()? {
-                script.push_str(&format!(
-                    "if [ -z \"$rh_cache\" ] && [ \"$rh_target\" = {} ] && {{ [ -e \"${{rh_base}}{target}/{profile}/rhost-helper\" ] || [ -L \"${{rh_base}}{target}/{profile}/rhost-helper\" ]; }}; then rh_cache=\"${{rh_base}}{target}/{profile}\"; rh_image={}; fi;\n",
-                    crate::shell::quote(&target), crate::shell::quote(&image)
-                ));
+        let explicit = Self::explicit_selection();
+        if explicit {
+            self.initialize()?;
+            if let Some(Preparation::Fixed(fixed)) = self.preparation.borrow().as_ref() {
+                return self.fixed_command(marker, files, fixed);
             }
         }
-        if std::env::var_os("RHOST_HELPER_BIN").is_none()
-            && std::env::var_os("RHOST_HELPER_CC").is_none()
-        {
+        let base = crate::shell::path_quote(&self.cache_base()?);
+        let mut script = if explicit {
+            let target = self
+                .target
+                .get()
+                .ok_or_else(|| Error::new("INTERNAL", "target missing"))?;
+            format!(
+                "printf '%s' {}; rh_os={}; rh_target={}; rh_base={base}; rh_cache=; rh_image=;\n",
+                crate::shell::quote(marker),
+                crate::shell::quote(&target.os),
+                crate::shell::quote(&target.abi()),
+            )
+        } else {
+            format!(
+                "printf '%s' {}; rh_os=$(command uname -s) && rh_arch=$(command uname -m) || {{ printf 'RHOST_FAST_DEPENDENCY\\n'; exit 127; }};\ncase \"$rh_os\" in Linux) rh_os=linux;; Darwin) rh_os=darwin;; FreeBSD) rh_os=freebsd;; OpenBSD) rh_os=openbsd;; NetBSD) rh_os=netbsd;; *) printf 'RHOST_FAST_UNSUPPORTED\\n'; exit 126;; esac;\ncase \"$rh_arch\" in aarch64|arm64) rh_arch=aarch64;; x86_64|amd64) rh_arch=x86_64;; *) printf 'RHOST_FAST_UNSUPPORTED\\n'; exit 126;; esac;\nrh_target=\"$rh_os-$rh_arch\"; rh_base={base}; rh_cache=; rh_image=;\n",
+                crate::shell::quote(marker)
+            )
+        };
+        if !release_probe {
+            if explicit {
+                let cache = crate::shell::path_quote(self.cache_path().trim_end_matches('/'));
+                let image = crate::shell::quote(&self.expected_image()?.unwrap_or_default());
+                script.push_str(&format!(
+                    "rh_selected={cache}; if [ -e \"$rh_selected/rhost-helper\" ] || [ -L \"$rh_selected/rhost-helper\" ]; then rh_cache=$rh_selected; rh_image={image}; fi;\n"
+                ));
+            } else {
+                for (target, profile, image) in self.profiles()? {
+                    script.push_str(&format!(
+                        "if [ -z \"$rh_cache\" ] && [ \"$rh_target\" = {} ] && {{ [ -e \"${{rh_base}}{target}/{profile}/rhost-helper\" ] || [ -L \"${{rh_base}}{target}/{profile}/rhost-helper\" ]; }}; then rh_cache=\"${{rh_base}}{target}/{profile}\"; rh_image={}; fi;\n",
+                        crate::shell::quote(&target), crate::shell::quote(&image)
+                    ));
+                }
+            }
+        }
+        let release = if explicit {
+            self.automatic()
+                && self.target.get().is_some_and(artifact::supported)
+                && self.expected_image()?.is_none()
+        } else {
+            std::env::var_os("RHOST_HELPER_BIN").is_none()
+                && std::env::var_os("RHOST_HELPER_CC").is_none()
+        };
+        if release {
             // The private cache keeps the digest verified at install time in the
             // profile name. The loaded image must match it before dispatch.
             script.push_str(&format!(
@@ -96,13 +129,67 @@ fi
             "if [ -z \"$rh_cache\" ]; then printf 'RHOST_FAST_MISSING\\n'; exit 127; fi;\n",
         );
         script.push_str(&Self::guard("\"$rh_cache\""));
-        script.push_str(&format!(
-            "exec env RHOST_REMOTE_STATE={state} RHOST_EXPECT_BOOT_ID={} \"$rh_cache/rhost-helper\" {} {} \"$rh_image\" \"$rh_target\"",
-            crate::shell::quote(self.boot_guard.map(|b| b.as_str()).unwrap_or("")),
-            if files { "--verified-files" } else { "--verified-run" },
-            crate::shell::quote(&super::source_digest())
-        ));
+        script.push_str("rh_helper=\"$rh_cache/rhost-helper\";\n");
+        script.push_str(&self.verified_exec(files));
         Ok(format!("sh -c {}", crate::shell::quote(&script)))
+    }
+    fn fixed_command(&self, marker: &str, files: bool, fixed: &Fixed) -> Result<String, Error> {
+        let target = self
+            .target
+            .get()
+            .ok_or_else(|| Error::new("INTERNAL", "target missing"))?;
+        let mut script = format!(
+            "printf '%s' {}; rh_helper={}; rh_target={}; rh_image={};\n",
+            crate::shell::quote(marker),
+            crate::shell::path_quote(&fixed.path),
+            crate::shell::quote(&target.abi()),
+            crate::shell::quote(fixed.pin.as_ref().map(|p| p.as_str()).unwrap_or("")),
+        );
+        script.push_str(Self::ancestry_guard());
+        script.push_str(
+            r#"rh_refuse() { printf 'RHOST_FAST_FIXED_REFUSED\n'; exit 126; }
+case "$rh_helper" in /*) ;; *) rh_refuse;; esac
+rh_parent=${rh_helper%/*}
+rh_safe_ancestry "${rh_parent:-/}" || rh_refuse
+[ ! -L "$rh_helper" ] && [ -f "$rh_helper" ] && [ -x "$rh_helper" ] || rh_refuse
+rh_info=$(stat -c '%u %a %s' "$rh_helper" 2>/dev/null) || rh_info=$(stat -f '%u %Lp %z' "$rh_helper" 2>/dev/null) || rh_refuse
+set -- $rh_info; [ "$#" = 3 ] || rh_refuse
+[ "$1" = 0 ] || [ "$1" = "$rh_uid" ] || rh_refuse
+case "$2" in ''|*[!0-7]*) rh_refuse;; esac
+[ $((0$2 & 06022)) = 0 ] || rh_refuse
+[ "$3" -gt 0 ] && [ "$3" -le 8388608 ] || rh_refuse
+"#,
+        );
+        if fixed.pin.is_some() {
+            // Check a pin before executing anything at the configured path.
+            // The helper also checks the loaded image before dispatch.
+            script.push_str(
+                r#"rh_hash=$(command sha256sum 2>/dev/null < "$rh_helper") ||
+  rh_hash=$(command sha256 -q 2>/dev/null < "$rh_helper") ||
+  rh_hash=$(command shasum -a 256 2>/dev/null < "$rh_helper") ||
+  { printf 'RHOST_FAST_DEPENDENCY\n'; exit 127; }
+[ "${rh_hash%% *}" = "$rh_image" ] || rh_refuse
+"#,
+            );
+        }
+        script.push_str(&self.verified_exec(files));
+        Ok(format!("sh -c {}", crate::shell::quote(&script)))
+    }
+    fn verified_exec(&self, files: bool) -> String {
+        let state = crate::shell::path_quote(
+            &std::env::var("RHOST_REMOTE_STATE")
+                .unwrap_or_else(|_| "~/.local/state/rhost/v5".into()),
+        );
+        format!(
+            "exec env RHOST_REMOTE_STATE={state} RHOST_EXPECT_BOOT_ID={} \"$rh_helper\" {} {} \"$rh_image\" \"$rh_target\"",
+            crate::shell::quote(self.boot_guard.map(|b| b.as_str()).unwrap_or("")),
+            if files {
+                "--verified-files"
+            } else {
+                "--verified-run"
+            },
+            crate::shell::quote(&super::source_digest())
+        )
     }
     fn attempt(
         &self,
@@ -141,6 +228,10 @@ fi
                     b"RHOST_FAST_UNSUPPORTED\n".as_slice(),
                     "UNSUPPORTED_REMOTE_OS",
                 ),
+                (
+                    b"RHOST_FAST_FIXED_REFUSED\n".as_slice(),
+                    "HELPER_INCOMPATIBLE",
+                ),
             ] {
                 if bytes == receipt {
                     return Err(Error::new(code, "native bootstrap refused before dispatch")
@@ -170,7 +261,12 @@ fi
                         error
                     }
                 })?;
-                let identity = self.decode_probe(&handshake, None)?;
+                let pin = if Self::explicit_selection() {
+                    self.expected_image()?
+                } else {
+                    None
+                };
+                let identity = self.decode_probe(&handshake, pin.as_deref())?;
                 let reply = bytes[split..].to_vec();
                 if files {
                     if serde_json::from_slice::<Value>(&reply).is_err() {
@@ -222,6 +318,14 @@ fi
             "verified native answer is unavailable; do not submit a new identity",
         ))
     }
+    pub(super) fn probe_fixed(&self) -> Result<Value, Error> {
+        let request = Writer::default().frame(1)?;
+        match self.attempt(1, &request, Duration::from_secs(15), 65536, false)? {
+            Attempt::Answer(identity, _) => Ok(identity),
+            Attempt::Missing => Err(Error::new("HELPER_INCOMPATIBLE", "fixed helper is absent")
+                .with_recovery(Recovery::preparation())),
+        }
+    }
     pub(super) fn probe_release(&self) -> Result<Option<Value>, Error> {
         if !self.target.get().is_some_and(artifact::supported) {
             return Ok(None);
@@ -244,7 +348,7 @@ fi
     ) -> Result<(Value, Vec<u8>), Error> {
         match self.attempt(kind, input, budget, cap, files) {
             Ok(Attempt::Answer(identity, bytes)) => return Ok((identity, bytes)),
-            Ok(Attempt::Missing) if kind == 8 && !files => {
+            Ok(Attempt::Missing) if self.fixed() || (kind == 8 && !files) => {
                 return Err(Error::new(
                     "HELPER_PREPARATION_FAILED",
                     "matching helper is absent; prepare explicitly",
@@ -257,6 +361,7 @@ fi
             Err(error)
                 if kind == 7
                     && !files
+                    && !self.fixed()
                     && error.code == "HELPER_INCOMPATIBLE"
                     && error.recovery.submission() == "not_submitted" => {}
             Err(error) => return Err(error),

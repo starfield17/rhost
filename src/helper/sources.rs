@@ -82,7 +82,7 @@ pub fn digest() -> String {
     }
     hash.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
-pub fn script(cache: &str, marker: &str) -> String {
+pub fn script(cache: &str, marker: &str, target: &str) -> String {
     let digest = digest();
     let mut script = String::from(
         "set -eu\numask 077\ntmp=$(mktemp -d)\ntrap 'rm -rf -- \"$tmp\"' EXIT HUP INT TERM\n",
@@ -96,17 +96,19 @@ pub fn script(cache: &str, marker: &str) -> String {
     }
     script.push_str(&format!("cc -std=c99 -O2 '-DRHOST_SOURCE_DIGEST=\"{digest}\"' \"$tmp/\"*.c -o \"$tmp/rhost-helper\"\n"));
     script.push_str(&format!(
-        "\"$tmp/rhost-helper\" --install-cache {} {digest}\nprintf '%s\\n' {}\n",
+        "\"$tmp/rhost-helper\" --install-cache {} {digest} '' {}\nprintf '%s\\n' {}\n",
         crate::shell::path_quote(cache),
+        crate::shell::quote(target),
         crate::shell::quote(marker)
     ));
     script
 }
-pub fn binary_script(cache: &str, marker: &str, hash: &str) -> String {
+pub fn binary_script(cache: &str, marker: &str, hash: &str, target: &str) -> String {
     format!(
-        "set -eu\numask 077\ntmp=$(mktemp -d)\ntrap 'rm -rf -- \"$tmp\"' EXIT HUP INT TERM\ncat > \"$tmp/rhost-helper\"\nchmod 700 \"$tmp/rhost-helper\"\n\"$tmp/rhost-helper\" --install-cache {} {} {hash}\nprintf '%s\\n' {}\n",
+        "set -eu\numask 077\ntmp=$(mktemp -d)\ntrap 'rm -rf -- \"$tmp\"' EXIT HUP INT TERM\ncat > \"$tmp/rhost-helper\"\nchmod 700 \"$tmp/rhost-helper\"\n\"$tmp/rhost-helper\" --install-cache {} {} {hash} {}\nprintf '%s\\n' {}\n",
         crate::shell::path_quote(cache),
         digest(),
+        crate::shell::quote(target),
         crate::shell::quote(marker)
     )
 }

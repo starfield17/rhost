@@ -16,6 +16,9 @@ pub(super) fn recoverable(error: &Error) -> bool {
 impl Helper<'_> {
     pub fn probe(&self) -> Result<serde_json::Value, Error> {
         self.initialize()?;
+        if self.fixed() {
+            return self.probe_fixed();
+        }
         match self.probe_current() {
             Ok(value) => Ok(value),
             Err(error) if self.automatic() && recoverable(&error) => {
@@ -64,8 +67,8 @@ impl Helper<'_> {
         }
         Ok(())
     }
-    fn upload(&self, binary: &Binary, marker: &str) -> Result<(), Error> {
-        let script = sources::binary_script(&self.cache_path(), marker, &binary.sha256);
+    fn upload(&self, binary: &Binary, marker: &str, target: &str) -> Result<(), Error> {
+        let script = sources::binary_script(&self.cache_path(), marker, &binary.sha256, target);
         self.preparation_step(
             &format!("sh -c {}", crate::shell::quote(&script)),
             &binary.bytes,
@@ -74,7 +77,7 @@ impl Helper<'_> {
     }
     pub fn install(&self) -> Result<serde_json::Value, Error> {
         self.initialize()?;
-        if std::env::var_os("RHOST_NO_UPLOAD").is_some() {
+        if !self.fixed() && std::env::var_os("RHOST_NO_UPLOAD").is_some() {
             return Err(Error::new(
                 "HELPER_PREPARATION_FAILED",
                 "helper upload is disabled; only matching cache reuse is allowed",
@@ -84,16 +87,22 @@ impl Helper<'_> {
             "RHOST_PREPARED_{}",
             crate::random::hex(16).map_err(|e| Error::new("INTERNAL", e.to_string()))?
         );
+        let target = self
+            .target
+            .get()
+            .ok_or_else(|| Error::new("INTERNAL", "target missing"))?;
+        let abi = target.abi();
         match self
             .preparation
             .borrow()
             .as_ref()
             .ok_or_else(|| Error::new("INTERNAL", "preparation selection missing"))?
         {
-            Preparation::Supplied(binary) => self.upload(binary, &marker)?,
+            Preparation::Fixed(_) => return self.probe_fixed(),
+            Preparation::Supplied(binary) => self.upload(binary, &marker, &abi)?,
             Preparation::Local(configuration) => {
                 let binary = configuration.compile(self.cancelled)?;
-                self.upload(&binary, &marker)?;
+                self.upload(&binary, &marker, &abi)?;
             }
             Preparation::Automatic => {
                 self.select_profile("native-c99-o2-v1")?;
@@ -105,7 +114,7 @@ impl Helper<'_> {
                 } else {
                     self.preparation_step(
                         "sh -s",
-                        sources::script(&self.cache_path(), &marker).as_bytes(),
+                        sources::script(&self.cache_path(), &marker, &abi).as_bytes(),
                         &marker,
                     )
                 };
@@ -113,16 +122,12 @@ impl Helper<'_> {
                     if error.code != "HELPER_PREPARATION_FAILED" {
                         return Err(error);
                     }
-                    let target = self
-                        .target
-                        .get()
-                        .ok_or_else(|| Error::new("INTERNAL", "target missing"))?;
                     if !artifact::supported(target) {
                         return Err(error);
                     }
                     let binary = artifact::fetch(target, self.cancelled)?;
                     self.select_profile(&format!("{}{}", artifact::PROFILE_PREFIX, binary.sha256))?;
-                    self.upload(&binary, &marker)?;
+                    self.upload(&binary, &marker, &abi)?;
                 }
             }
         }
@@ -131,7 +136,7 @@ impl Helper<'_> {
     pub fn ensure(&self) -> Result<serde_json::Value, Error> {
         match self.probe() {
             Ok(value) => Ok(value),
-            Err(error) if recoverable(&error) => self.install(),
+            Err(error) if !self.fixed() && recoverable(&error) => self.install(),
             Err(error) => Err(error),
         }
     }

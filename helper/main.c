@@ -28,9 +28,12 @@
 #define TARGET_ARCH "aarch64"
 #elif defined(__x86_64__)
 #define TARGET_ARCH "x86_64"
+#elif defined(__linux__) && defined(__ARM_ARCH_7A__) && defined(__ARM_PCS_VFP)
+#define TARGET_ARCH "armv7-eabihf"
 #else
 #define TARGET_ARCH "other"
 #endif
+#define TARGET_ABI TARGET_OS "-" TARGET_ARCH
 
 #define BODY_LIMIT (8u * 1024u * 1024u)
 
@@ -70,8 +73,9 @@ static int refuse(uint32_t kind, const char *code, const char *message) {
     body[size++] = 0;
     return emit(kind, body, size);
 }
-static int probe(uint32_t kind,const char *executable) {
+static int probe(uint32_t kind,const char *executable,const char *image) {
     unsigned char body[256];
+    char observed[65];
     size_t size = 1;
     const char *digest = RHOST_SOURCE_DIGEST;
     if (strlen(digest) != 64) return refuse(kind, "HELPER_INCOMPATIBLE", "invalid build digest");
@@ -86,27 +90,38 @@ static int probe(uint32_t kind,const char *executable) {
     size += append_text(body + size, TARGET_ARCH);
     put32(body + size, 7); size += 4;
     char boot[37];(void)rh_boot_id(boot);size+=append_text(body+size,boot);
-    char image[65];if(!rh_binary_hash(executable,image))return refuse(kind,"STATE_UNAVAILABLE","cannot observe helper image bytes");size+=append_text(body+size,image);
+    if (!image) {
+        if (!rh_binary_hash(executable,observed))
+            return refuse(kind,"STATE_UNAVAILABLE","cannot observe helper image bytes");
+        image=observed;
+    }
+    size+=append_text(body+size,image);
     const uint32_t limits[]={8388608,12582912,8388608,67108864,1048576};
     for(size_t i=0;i<sizeof limits/sizeof limits[0];i++){put32(body+size,limits[i]);size+=4;}
     return emit(kind, body, size);
 }
 int main(int argc,char **argv) {
+    char image[65];
+    const char *verified_image=NULL;
     if(argc==5 && (!strcmp(argv[1],"--verified-files") || !strcmp(argv[1],"--verified-run"))) {
-        char target[64],image[65];
-        snprintf(target,sizeof target,"%s-%s",TARGET_OS,TARGET_ARCH);
-        if(strcmp(argv[2],RHOST_SOURCE_DIGEST) || strcmp(argv[4],target))
+        if(strcmp(argv[2],RHOST_SOURCE_DIGEST) || strcmp(argv[4],TARGET_ABI))
             return refuse(1,"HELPER_INCOMPATIBLE","verified source or target does not match");
         if(!rh_binary_hash(argv[0],image))return refuse(1,"STATE_UNAVAILABLE","cannot verify loaded helper image");
         if(*argv[3] && strcmp(argv[3],image))return refuse(1,"HELPER_INCOMPATIBLE","verified helper image does not match");
-        if(probe(1,argv[0])!=0)return 255;
+        verified_image=image;
+        if(probe(1,argv[0],verified_image)!=0)return 255;
         if(!strcmp(argv[1],"--verified-files"))return rh_files_json();
         argc=1;
     }
     if(argc==2 && !strcmp(argv[1],"--files-json"))return rh_files_json();
-    if((argc==4 || argc==5) && !strcmp(argv[1],"--install-cache")) {
-        if(strcmp(argv[3],RHOST_SOURCE_DIGEST))return refuse(0,"HELPER_INCOMPATIBLE","candidate source identity does not match");
-        return rh_install(argv[2],argv[0],argc==5?argv[4]:NULL);
+    if(argc>=4 && argc<=6 && !strcmp(argv[1],"--install-cache")) {
+        if(strcmp(argv[3],RHOST_SOURCE_DIGEST) || (argc==6 && strcmp(argv[5],TARGET_ABI))) {
+            fputs("rhost helper candidate source or target does not match\n",stderr);
+            (void)refuse(0,"HELPER_INCOMPATIBLE","candidate source or target does not match");
+            return 126;
+        }
+        const char *expected_hash=argc==5 || (argc==6 && *argv[4])?argv[4]:NULL;
+        return rh_install(argv[2],argv[0],expected_hash);
     }
     if(argc==3 && !strcmp(argv[1],"--install-cache"))return rh_install(argv[2],argv[0],NULL);
     if(argc!=1)return refuse(0,"PROTOCOL_ERROR","invalid helper invocation");
@@ -140,7 +155,7 @@ int main(int argc,char **argv) {
     if (kind == 1) {
         free(body);
         if (size != 0) return refuse(kind, "PROTOCOL_ERROR", "probe body must be empty");
-        return probe(kind,argv[0]);
+        return probe(kind,argv[0],verified_image);
     }
     rh_reader request={body,(size_t)size,0,0};
     int result=rh_runs(kind,&request);free(body);return result;
