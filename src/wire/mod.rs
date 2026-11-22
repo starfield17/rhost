@@ -1,4 +1,4 @@
-//! The schema-v5 wire envelope and the delivery it is written through.
+//! The schema-v6 wire envelope and the delivery it is written through.
 //!
 //! This is the shared half of the wire format: the envelope every operation
 //! returns, the error payload every failure carries, the single-write delivery
@@ -117,7 +117,7 @@ pub fn failure_with_mutation(
         .map(crate::domain::MutationEvidence::as_str)
         .or_else(|| matches!(operation, "fs.write" | "fs.patch").then_some("not_applied"));
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation,
         ok: false,
         host: (!host.is_empty()).then(|| host.to_string()),
@@ -136,7 +136,7 @@ pub struct VersionDto {
 
 pub fn version() -> Envelope<VersionDto> {
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation: "version",
         ok: true,
         host: None,
@@ -145,14 +145,14 @@ pub fn version() -> Envelope<VersionDto> {
             version: env!("CARGO_PKG_VERSION"),
             commit: option_env!("RHOST_BUILD_COMMIT").unwrap_or("none"),
             build_date: option_env!("RHOST_BUILD_DATE").unwrap_or("unknown"),
-            schema_version: 5,
+            schema_version: 6,
         },
     }
 }
 
 pub fn usage(message: &str) -> Envelope<Option<()>> {
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation: "usage",
         ok: false,
         host: None,
@@ -172,7 +172,7 @@ pub fn group_usage(group: &str, message: &str) -> Envelope<Option<()>> {
         message.to_string()
     };
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation: match group {
             "session" => "session.usage",
             "connection" => "connection.usage",
@@ -183,5 +183,29 @@ pub fn group_usage(group: &str, message: &str) -> Envelope<Option<()>> {
         host: None,
         data: None,
         error: Some(error("USAGE_ERROR", &message, false)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn active_result_fixtures_and_version_match_schema_six()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use serde_json::Value;
+        let schema: Value =
+            serde_json::from_str(include_str!("../../schemas/result-v6.schema.json"))?;
+        let validator = jsonschema::validator_for(&schema)?;
+        let fixtures: Vec<Value> =
+            serde_json::from_str(include_str!("../../tests/fixtures/result-v6-valid.json"))?;
+        for fixture in fixtures {
+            let result = &fixture["result"];
+            assert!(validator.is_valid(result), "{result}");
+            let mut old = result.clone();
+            old["schema_version"] = 5.into();
+            assert!(!validator.is_valid(&old), "{old}");
+        }
+        let version = serde_json::to_value(super::version())?;
+        assert!(validator.is_valid(&version), "{version}");
+        Ok(())
     }
 }

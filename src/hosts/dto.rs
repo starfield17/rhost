@@ -21,7 +21,7 @@ pub struct HostDto {
 
 pub fn hosts(discovery: &host::Discovery) -> Envelope<HostsDto> {
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation: "hosts",
         ok: true,
         host: None,

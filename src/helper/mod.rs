@@ -1,7 +1,8 @@
-//! One-shot native helper transport over the existing OpenSSH client.
+//! Verified native helper transport over the existing OpenSSH client.
 mod artifact;
 mod build;
 pub mod codec;
+pub(crate) mod mux;
 mod prepare;
 pub mod registry;
 mod sources;
@@ -24,6 +25,7 @@ pub struct Helper<'a> {
     preparation: std::cell::RefCell<Option<target::Preparation>>,
     cancelled: &'a dyn Fn() -> bool,
     boot_guard: Option<&'a crate::domain::BootId>,
+    pool: Option<&'a mux::Pool>,
 }
 impl<'a> Helper<'a> {
     pub fn new(client: &'a Client, host: &'a str) -> Self {
@@ -36,6 +38,7 @@ impl<'a> Helper<'a> {
             preparation: std::cell::RefCell::new(None),
             cancelled: &never,
             boot_guard: None,
+            pool: None,
         }
     }
     pub fn with_cancellation(mut self, cancelled: &'a dyn Fn() -> bool) -> Self {
@@ -44,6 +47,10 @@ impl<'a> Helper<'a> {
     }
     pub fn with_boot_guard(mut self, guard: Option<&'a crate::domain::BootId>) -> Self {
         self.boot_guard = guard;
+        self
+    }
+    pub(crate) fn with_pool(mut self, pool: Option<&'a mux::Pool>) -> Self {
+        self.pool = pool;
         self
     }
     fn transport(
@@ -261,7 +268,14 @@ done;
         timeout: Duration,
         cap: usize,
     ) -> Result<Vec<u8>, Error> {
-        self.verified_file(request, timeout, cap)
+        if let Some(pool) = self.pool
+            && request.len() <= codec::LIMIT - 4
+            && (1..codec::LIMIT).contains(&cap)
+        {
+            self.mux_file(pool, request, timeout, cap)
+        } else {
+            self.verified_file(request, timeout, cap)
+        }
     }
 }
 fn never() -> bool {

@@ -2,7 +2,6 @@
 use crate::{
     domain::{Phase, Recovery, Submission},
     remote::Error,
-    transport::Client,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -156,6 +155,12 @@ fn required<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
 ) -> Result<Option<T>, D::Error> {
     Option::deserialize(d)
 }
+#[derive(Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum Containment {
+    Pgid,
+    Cgroup,
+}
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Entry {
@@ -165,6 +170,14 @@ struct Entry {
     status: String,
     owner_active: bool,
     logical_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    containment: Option<Containment>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    containment_populated: Option<Value>,
     #[serde(deserialize_with = "required")]
     error: Option<Detail>,
 }
@@ -240,20 +253,15 @@ fn refusal(r: Refused, observation: bool) -> Error {
         Recovery::inspect(Phase::Operation, Submission::Confirmed)
     })
 }
-pub fn execute(
-    client: &Client,
-    host: &str,
+pub(crate) fn execute(
+    helper: &super::Helper<'_>,
     operation: &str,
     raw: &str,
-    cancelled: &dyn Fn() -> bool,
-    guard: Option<&crate::domain::BootId>,
 ) -> Result<Value, Error> {
     let q = validate(operation, raw)?;
     let observation = q["op"] != "state.prune" || q["dry_run"] == true;
     let bytes = serde_json::to_vec(&q).map_err(|_| invalid())?;
-    let reply = super::Helper::new(client, host)
-        .with_cancellation(cancelled)
-        .with_boot_guard(guard)
+    let reply = helper
         .file_call(&bytes, Duration::from_secs(60), 1024 * 1024)
         .map_err(|mut e| {
             e.mutation = None;
@@ -279,6 +287,18 @@ pub fn execute(
                     e.kind != kind
                         || key(&e.id) != Some(e.expires_unix)
                         || e.status.is_empty()
+                        || match (&e.containment, &e.containment_populated) {
+                            (None, None) => {
+                                e.kind == Kind::Runs
+                                    && e.error.is_none()
+                                    && !matches!(e.status.as_str(), "building" | "pruning")
+                            }
+                            (Some(Containment::Pgid), Some(Value::Null)) => e.kind != Kind::Runs,
+                            (Some(Containment::Cgroup), Some(Value::Null | Value::Bool(_))) => {
+                                e.kind != Kind::Runs
+                            }
+                            _ => true,
+                        }
                         || e.error
                             .as_ref()
                             .is_some_and(|e| e.code != "STATE_UNAVAILABLE")

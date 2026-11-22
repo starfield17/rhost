@@ -4,7 +4,7 @@ Read `ok`, `error.code`, `error.retryable`, and the operation's `data`. English
 messages are diagnostics, not a branching interface. Missing evidence remains
 unknown rather than being converted into success or safe retry permission.
 
-Schema 4 supplies `error.recovery`: stage (validation/preparation/submission/
+Schema 6 supplies `error.recovery`: stage (validation/preparation/submission/
 observation/operation/unknown), submission (not_submitted/may_have_submitted/
 confirmed), and action. Confirmed submission does not mean successful completion.
 `retry_request` applies to known non-submission; `retry_observation` repeats a read;
@@ -114,6 +114,13 @@ only if the host supports the required transfer service. These direct tools do
 not produce rhost's JSON evidence or file-editing guarantees; see
 [CLI.md](CLI.md) and [SAFETY.md](SAFETY.md).
 
+A lost RH02 reply leaves any submitted mutation uncertain. Inspect the named
+Run or changeset using the original identity and follow `error.recovery`.
+Resume a FOLLOW observation using its last consumed offsets.
+
+- `CONTAINMENT_UNAVAILABLE` means cgroup mode refused before program execution.
+  Check the [Run containment settings](RUNS.md#run-containment).
+
 ## Files and tunnels
 
 - `HASH_REQUIRED` asks for the SHA-256 from a fresh `fs read` before replacement.
@@ -131,7 +138,8 @@ not produce rhost's JSON evidence or file-editing guarantees; see
   retain a record when its master could still be running; inspect `tunnel list`
   before opening another forward. Preserve the record until the named master
   can be checked or closed. `TUNNEL_NOT_FOUND` means no record exists for that
-  canonical ID.
+  canonical ID. OpenSSH tunnel liveness and destination evidence appear in
+  `master_alive` and `destination_evidence`.
 
 ## Safe recovery sequence
 

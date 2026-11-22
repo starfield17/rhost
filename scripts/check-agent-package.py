@@ -62,7 +62,7 @@ def main() -> int:
     for path in (ROOT / "skills/rhost").rglob("*"):
         if path.is_file():
             text = path.read_text()
-            # Native Run streams legitimately use these paths in schema v4.
+            # Native Run streams use these paths in the active schema.
             # Keep the old exec guidance gate everywhere outside that reference.
             legacy_stream = path.name not in {"NATIVE.md", "RUNS.md"} and re.search(r"data\.(stdout|stderr)\b", text)
             if retired.search(text) or legacy_stream:
@@ -85,7 +85,11 @@ def main() -> int:
         fail("CLI.md persistence window differs from CONTROL_PERSIST")
     if f"ControlPersist={persist}" not in cli:
         fail("CLI.md persistence window differs from CONTROL_PERSIST")
-    schema = json.loads((ROOT / "schemas/result-v5.schema.json").read_text())
+    schema = json.loads((ROOT / "schemas/result-v6.schema.json").read_text())
+    request = json.loads((ROOT / "schemas/request-v6.schema.json").read_text())
+    for document in (schema, request):
+        if document["properties"]["schema_version"].get("const") != 6:
+            fail("packaged request and result validators must use schema 6")
     enums = []
     def walk(node: object) -> None:
         if isinstance(node, dict):

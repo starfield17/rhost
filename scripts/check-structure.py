@@ -109,7 +109,7 @@ ALLOWED = {
     # exception is doctor -> connection, which reports the shared master DTO.
     "exec": {"audit", "cli", "domain", "remote", "shell", "signals", "stdio",
              "transport", "wire"},
-    "request": {"cli", "domain", "files", "remote", "runs", "signals", "transport", "wire", "hosts", "doctor", "connection", "session"},
+    "request": {"cli", "domain", "files", "helper", "remote", "runs", "signals", "transport", "wire", "hosts", "doctor", "connection", "session"},
     "mcp": {"request", "transport", "signals"},
     "runs": {"domain", "cli", "helper", "remote", "transport", "base64", "shell", "signals"},
     "hosts": {"cli", "host", "wire"},

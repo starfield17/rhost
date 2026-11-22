@@ -85,7 +85,7 @@ jobs:
           reported=$("$artifact" version --json)
           printf '%s\n' "$reported"
           printf '%s' "$reported" |
-            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["data"]["version"] == sys.argv[1], d' "$version"
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["data"]["version"] == sys.argv[1], d; assert d["schema_version"] == d["data"]["schema_version"] == 6, d' "$version"
           printf '%s' "$reported" |
             python3 -c 'import json,re,sys; d=json.load(sys.stdin); assert d["data"]["commit"] == sys.argv[1], d; assert re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", d["data"]["build_date"]), d' "$commit"
           "$artifact" --help

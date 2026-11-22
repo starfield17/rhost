@@ -96,8 +96,8 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   tests. [Architecture](docs/ARCHITECTURE.md) explains boundaries and reasons.
   `scripts/check-structure.py` owns dependency policy; `make structure` checks it.
 - [Contract ledger](docs/CONTRACT.md) owns required semantics and executable
-  evidence; `schemas/result-v5.schema.json` owns the active wire shape. Each
-  capability's DTO maps its values into v5; `src/wire/` owns the shared envelope
+  evidence; `schemas/result-v6.schema.json` owns the active wire shape. Each
+  capability's DTO maps its values into v6; `src/wire/` owns the shared envelope
   and `src/domain/` stays pure. `session attach` is refused with `USAGE_ERROR`.
 - [Maintenance policy](docs/MAINTENANCE.md) owns compatibility, MSRV, release,
   change risk and regression-memory policy. `make check` runs the complete local
@@ -115,7 +115,7 @@ or CI job's run-pattern to cover tests you weren't asked to run.
   semantics are Risk A: name affected consumers and get architecture review before
   implementation. See `docs/MAINTENANCE.md#change-risk` for the complete map.
 - Cargo.toml is the sole active binary version authority. Client implementation
-  and acceptance tests must be Rust. The standalone v5 remote helper is C99 and
+  and acceptance tests must be Rust. The standalone remote helper is C99 and
   obeys the same reading budget. CI builds and tests the shipping helpers.
   Separate sanitizer builds complement that verification. The removed Go
   implementation, modules, metadata, installers and workflows live only in the

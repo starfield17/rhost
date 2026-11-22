@@ -10,6 +10,13 @@ static j_value *entry_json(const rg_record *r,int kind){
     j_value *v=j_new(J_OBJECT),*error=j_new(r->error?J_OBJECT:J_NULL);if(!v || !error)goto fail;
     if(r->error && (!j_text(error,"code",r->error,strlen(r->error)) || !j_text(error,"message","record evidence is unavailable",30)))goto fail;
     if(!j_text(v,"id",r->id,strlen(r->id)) || !j_text(v,"kind",rg_label(kind),strlen(rg_label(kind))) || !j_integer(v,"expires_unix",r->expiry) || !j_text(v,"status",r->status,strlen(r->status)) || !j_boolean(v,"owner_active",r->active) || !j_integer(v,"logical_bytes",r->bytes) || !j_take(v,"error",&error))goto fail;
+    if(kind==0 && !r->phase && !r->error) {
+        const char *mode=r->cgroup?"cgroup":"pgid";
+        if(!j_text(v,"containment",mode,strlen(mode)))goto fail;
+        if(r->population) {
+            if(!j_boolean(v,"containment_populated",r->population==2))goto fail;
+        }else if(!j_add(v,"containment_populated",j_new(J_NULL)))goto fail;
+    }
     return v;
 fail:j_free(v);j_free(error);return NULL;
 }

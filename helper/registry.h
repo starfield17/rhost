@@ -10,7 +10,7 @@
 #define RG_QUERY_RESERVE (UINT64_C(10)*1024*1024)
 typedef struct {uint64_t logical,reserved,records,queries;int complete;} rg_usage;
 typedef struct {
-    char id[80],status[32];uint64_t expiry,bytes;unsigned phase;int active;
+    char id[80],status[32];uint64_t expiry,bytes;unsigned phase,cgroup,population;int active;
     const char *error;
 } rg_record;
 int rg_kind(const char *name);

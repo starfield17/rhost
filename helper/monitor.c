@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 extern char **environ;
+#define CLIENTS 32
 #define QUOTA (64u*1024u*1024u)
 static void private_fds(void) {
     int fd=open("/dev/null",O_RDWR);
@@ -47,10 +48,20 @@ static int drain(int fd,int log,uint64_t *total,uint64_t *kept,unsigned *broken,
     }
     return 1;
 }
-static void command_child(int directory,int lock,rh_start *q,int out[2],int err[2],int ack[2],int socket_fd) {
+static void command_child(int directory,int lock,rh_start *q,int out[2],int err[2],int ack[2],int socket_fd,int gate[2],rh_cgroup *group,int startup) {
     close(out[0]);close(err[0]);close(ack[0]);close(socket_fd);close(lock);
+    if(startup>=0)close(startup);
+    rh_cgroup_close(group,0);
+    if(gate[0]>=0) {
+        close(gate[1]);
+        unsigned char permit;
+        ssize_t received;
+        do {received=read(gate[0],&permit,1);}while(received<0 && errno==EINTR);
+        close(gate[0]);
+        if(received!=1 || permit!=1)_exit(126);
+    }
     signal(SIGPIPE,SIG_DFL);signal(SIGHUP,SIG_DFL);signal(SIGINT,SIG_DFL);
-    signal(SIGTERM,SIG_DFL);signal(SIGCHLD,SIG_DFL);
+    signal(SIGTERM,SIG_DFL);signal(SIGCHLD,SIG_DFL);signal(SIGUSR1,SIG_DFL);
     sigset_t unblocked;sigemptyset(&unblocked);(void)sigprocmask(SIG_SETMASK,&unblocked,NULL);
     unsigned char ok=0;
     int input=openat(directory,"stdin",O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
@@ -66,23 +77,36 @@ static void command_child(int directory,int lock,rh_start *q,int out[2],int err[
     }
     execvp(q->argv[0],q->argv);_exit(errno==ENOENT?127:126);
 }
-void rh_monitor(int directory,int lock,rh_start *q) {
+void rh_monitor(int directory,int lock,rh_start *q,rh_cgroup *group,int startup) {
     private_fds();signal(SIGCHLD,SIG_DFL);signal(SIGHUP,SIG_IGN);signal(SIGPIPE,SIG_IGN);
-    rh_status status={0};status.state=2;
-    int out[2]={-1,-1},err[2]={-1,-1},ack[2]={-1,-1},socket_fd=-1;
+    rh_status status={0};status.state=2;status.cgroup=q->cgroup;
+    int out[2]={-1,-1},err[2]={-1,-1},ack[2]={-1,-1},gate[2]={-1,-1},socket_fd=-1;
     int out_log=-1,err_log=-1;pid_t child=-1;
+    if(q->cgroup && !rh_cgroup_prepare(group))goto lost;
     if(fchdir(directory)<0)goto lost;
     socket_fd=socket(AF_UNIX,SOCK_STREAM,0);
     struct sockaddr_un address;memset(&address,0,sizeof address);address.sun_family=AF_UNIX;
     strcpy(address.sun_path,"control.sock");
-    if(socket_fd<0 || bind(socket_fd,(struct sockaddr *)&address,sizeof address)<0 || listen(socket_fd,8)<0 || !nonblock(socket_fd))goto lost;
-    if(pipe(out)<0 || pipe(err)<0 || pipe(ack)<0)goto lost;
+    if(socket_fd<0 || bind(socket_fd,(struct sockaddr *)&address,sizeof address)<0 || listen(socket_fd,CLIENTS)<0 || !nonblock(socket_fd))goto lost;
+    if(pipe(out)<0 || pipe(err)<0 || pipe(ack)<0 || (q->cgroup && pipe(gate)<0))goto lost;
     out_log=logs(directory,"stdout");err_log=logs(directory,"stderr");
     if(out_log<0 || err_log<0)goto lost;
     if(!rh_status_write(directory,&status))goto lost;
     child=fork();
     if(child<0)goto lost;
-    if(child==0)command_child(directory,lock,q,out,err,ack,socket_fd);
+    if(child==0)command_child(directory,lock,q,out,err,ack,socket_fd,gate,group,startup);
+    if(q->cgroup) {
+        close(gate[0]);gate[0]=-1;
+        unsigned char permit=1;
+        if(!rh_cgroup_attach(group,child) || write(gate[1],&permit,1)!=1) {
+            close(gate[1]);gate[1]=-1;
+            while(waitpid(child,NULL,0)<0 && errno==EINTR){}
+            status.containment_refused=1;
+            goto lost;
+        }
+        close(gate[1]);gate[1]=-1;
+        status.population=2;
+    }
     close(out[1]);out[1]=-1;close(err[1]);err[1]=-1;close(ack[1]);ack[1]=-1;
     unsigned char ready=0;
     ssize_t acknowledged;
@@ -90,19 +114,27 @@ void rh_monitor(int directory,int lock,rh_start *q) {
     close(ack[0]);ack[0]=-1;
     if(acknowledged!=1 || ready!=1)ready=0;
     if(!nonblock(out[0]) || !nonblock(err[0])) {
+        if(q->cgroup)(void)rh_cgroup_kill(group);
         if(ready)(void)kill(-child,SIGKILL);
         else (void)kill(child,SIGKILL);
         int ignored;while(waitpid(child,&ignored,0)<0 && errno==EINTR){}
         goto lost;
     }
     status.state=3;status.out_open=status.err_open=1;
-    uint64_t started=rh_millis(),exited=0;int controlling=ready,deadline_sent=0;
+    uint64_t started=rh_millis(),exited=0,empty_at=0;int controlling=ready,deadline_sent=0;
     unsigned out_broken=0,err_broken=0;
     if(!ready)status.incomplete=1;
     (void)rh_status_write(directory,&status);
+    if(startup>=0) {
+        unsigned char ready_reply=1;
+        ssize_t replied=write(startup,&ready_reply,1);(void)replied;
+        close(startup);startup=-1;
+    }
     rh_status published=status;
-    int clients[8];uint64_t client_deadlines[8];
-    for(unsigned i=0;i<8;i++){clients[i]=-1;client_deadlines[i]=0;}
+    int clients[CLIENTS];uint64_t client_deadlines[CLIENTS];
+    unsigned subscriptions[CLIENTS]={0};
+    uint64_t revision=1,delivered[CLIENTS]={0};
+    for(unsigned i=0;i<CLIENTS;i++){clients[i]=-1;client_deadlines[i]=0;}
     for(;;) {
         siginfo_t info;memset(&info,0,sizeof info);
         if(!exited) {
@@ -118,34 +150,55 @@ void rh_monitor(int directory,int lock,rh_start *q) {
                 else if(WIFSIGNALED(code)){status.completion=2;status.value=(unsigned)WTERMSIG(code);}
                 else goto lost;
                 exited=rh_millis();
-                (void)rh_status_write(directory,&status);
             }
         }
         uint64_t now=rh_millis();
-        if(controlling && q->deadline && now-started>=q->deadline) {
-            if(!deadline_sent){(void)kill(-child,SIGTERM);deadline_sent=1;}
-            if(now-started>=q->deadline+1000)(void)kill(-child,SIGKILL);
+        if(q->cgroup) {
+            status.population=(unsigned)rh_cgroup_population(group);
+            if(status.population!=1 || !exited)empty_at=0;
+            else if(!empty_at)empty_at=now;
         }
-        struct pollfd fds[11]={{socket_fd,POLLIN,0},{status.out_open?out[0]:-1,POLLIN,0},{status.err_open?err[0]:-1,POLLIN,0}};
-        for(unsigned i=0;i<8;i++){fds[i+3].fd=clients[i];fds[i+3].events=POLLIN;fds[i+3].revents=0;}
-        (void)poll(fds,11,25);
+        if((controlling || (q->cgroup && status.population!=1)) && q->deadline && now-started>=q->deadline) {
+            if(!deadline_sent){if(controlling)(void)kill(-child,SIGTERM);deadline_sent=1;}
+            if(now-started>=q->deadline+1000) {
+                if(q->cgroup)(void)rh_cgroup_kill(group);
+                else (void)kill(-child,SIGKILL);
+            }
+        }
+        struct pollfd fds[CLIENTS+3]={{socket_fd,POLLIN,0},{status.out_open?out[0]:-1,POLLIN,0},{status.err_open?err[0]:-1,POLLIN,0}};
+        for(unsigned i=0;i<CLIENTS;i++){fds[i+3].fd=clients[i];fds[i+3].events=POLLIN;fds[i+3].revents=0;}
+        (void)poll(fds,CLIENTS+3,25);
         if(status.out_open)status.out_open=(unsigned)drain(out[0],out_log,&status.out_bytes,&status.out_kept,&out_broken,&status.incomplete);
         if(status.err_open)status.err_open=(unsigned)drain(err[0],err_log,&status.err_bytes,&status.err_kept,&err_broken,&status.incomplete);
         if(fds[0].revents&POLLIN) {
             int client=accept(socket_fd,NULL,NULL);
             if(client>=0) {
-                unsigned slot=0;while(slot<8 && clients[slot]>=0)slot++;
-                if(slot==8 || !nonblock(client))close(client);
-                else {clients[slot]=client;client_deadlines[slot]=rh_millis()+1000;}
+                unsigned slot=0;while(slot<CLIENTS && clients[slot]>=0)slot++;
+                if(slot==CLIENTS || !nonblock(client))close(client);
+                else {subscriptions[slot]=0;clients[slot]=client;client_deadlines[slot]=rh_millis()+1000;}
             }
         }
-        for(unsigned i=0;i<8;i++) {
+        for(unsigned i=0;i<CLIENTS;i++) {
             if(clients[i]<0)continue;
+            if(subscriptions[i]) {
+                if(fds[i+3].revents) {
+                    unsigned char tag=0;
+                    if(read(clients[i],&tag,1)==1 && tag==1)subscriptions[i]=1;
+                    else {close(clients[i]);clients[i]=-1;subscriptions[i]=0;}
+                }
+                continue;
+            }
             if(fds[i+3].revents || rh_millis()>=client_deadlines[i]) {
                 unsigned char tag=0,answer=0;
                 ssize_t received=read(clients[i],&tag,1);
                 if(received<0 && (errno==EAGAIN || errno==EWOULDBLOCK) && rh_millis()<client_deadlines[i])continue;
-                if(received==1 && tag>=1 && tag<=3 && controlling) {
+                if(received==1 && tag==4) {
+                    answer=1;
+                    if(write(clients[i],&answer,1)==1){subscriptions[i]=1;delivered[i]=revision;continue;}
+                }
+                if(received==1 && tag==3 && q->cgroup) {
+                    if(status.population!=1)answer=(unsigned char)rh_cgroup_kill(group);
+                }else if(received==1 && tag>=1 && tag<=3 && controlling) {
                     int signal_number=tag==1?SIGINT:(tag==2?SIGTERM:SIGKILL);
                     if(kill(-child,signal_number)==0)answer=1;
                 }
@@ -153,25 +206,40 @@ void rh_monitor(int directory,int lock,rh_start *q) {
                 (void)replied;close(clients[i]);clients[i]=-1;
             }
         }
-        if(exited && rh_millis()-exited>=2000 && (status.out_open || status.err_open)) {
+        uint64_t drain_start=q->cgroup?empty_at:exited;
+        if(drain_start && rh_millis()-drain_start>=2000 && (status.out_open || status.err_open)) {
             status.incomplete=1;status.out_open=status.err_open=0;
+            close(out[0]);out[0]=-1;close(err[0]);err[0]=-1;
         }
-        if(memcmp(&status,&published,sizeof status)!=0 && rh_status_write(directory,&status))published=status;
-        if(exited && !status.out_open && !status.err_open)break;
+        if(memcmp(&status,&published,sizeof status)!=0 && rh_status_write(directory,&status)) {
+            published=status;revision++;
+        }
+        for(unsigned i=0;i<CLIENTS;i++)if(subscriptions[i]==1 && delivered[i]!=revision) {
+            unsigned char wake=1;
+            if(write(clients[i],&wake,1)==1){subscriptions[i]=2;delivered[i]=revision;}
+        }
+        if(exited && !status.out_open && !status.err_open && (!q->cgroup || status.population==1))break;
     }
-    for(unsigned i=0;i<8;i++)if(clients[i]>=0)close(clients[i]);
     if(out_log>=0 && fsync(out_log)<0)status.incomplete=1;
     if(err_log>=0 && fsync(err_log)<0)status.incomplete=1;
     (void)rh_status_write(directory,&status);
+    for(unsigned i=0;i<CLIENTS;i++)if(clients[i]>=0)close(clients[i]);
     goto finish;
 lost:
-    status.state=5;status.completion=status.value=0;status.out_open=status.err_open=0;status.incomplete=1;
+    if(status.state!=4){status.state=5;status.completion=status.value=0;}
+    status.out_open=status.err_open=0;status.incomplete=1;
+    if(q->cgroup) {
+        if(child<0)status.containment_refused=1;
+        status.population=(unsigned)rh_cgroup_population(group);
+    }
     (void)rh_status_write(directory,&status);
 finish:
+    if(startup>=0)close(startup);
+    rh_cgroup_close(group,1);
     unlinkat(directory,"control.sock",0);
     if(socket_fd>=0)close(socket_fd);
     if(out_log>=0)close(out_log);
     if(err_log>=0)close(err_log);
-    for(unsigned i=0;i<2;i++){if(out[i]>=0)close(out[i]);if(err[i]>=0)close(err[i]);if(ack[i]>=0)close(ack[i]);}
+    for(unsigned i=0;i<2;i++){if(out[i]>=0)close(out[i]);if(err[i]>=0)close(err[i]);if(ack[i]>=0)close(ack[i]);if(gate[i]>=0)close(gate[i]);}
     close(lock);close(directory);_exit(0);
 }

@@ -18,6 +18,7 @@ use std::time::Duration;
 #[derive(Clone)]
 struct Server {
     client: Arc<Client>,
+    runtime: Arc<crate::request::Runtime>,
     tools: Arc<Vec<(String, Tool)>>,
     stopped: Arc<AtomicBool>,
     admission: Arc<admission::Admission>,
@@ -34,7 +35,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("rhost",env!("CARGO_PKG_VERSION")))
-            .with_instructions("Inspect coverage and next_request before claiming completeness. Run wait/cancel stops observation, never work; retain generation/key/payload before start. Session exec timeout may interrupt; cancel does not revoke it. Inspect completion, mutation and error.recovery before retry. Use run.watch for status and run.read/search for bounded logs. Defaults: files 8192 bytes, logs 4096; resume source-byte cursors. OpenSSH owns authentication and host keys. Helper preparation establishes native readiness; doctor diagnoses shell dependencies.")
+            .with_instructions("Inspect coverage and next_request before claiming completeness. Run wait/cancel stops observation, never work; retain generation/key/payload before start. Session exec timeout may interrupt; cancel does not revoke it. Inspect completion, mutation and error.recovery before retry. Use run.watch for status or follow pages and run.read/search for bounded log ranges. Defaults: files 8192 bytes, logs 4096; resume source-byte cursors. OpenSSH owns authentication and host keys. Helper preparation establishes native readiness; doctor diagnoses shell dependencies.")
     }
     async fn list_tools(
         &self,
@@ -90,10 +91,11 @@ impl ServerHandler for Server {
             }
         };
         let client = self.client.clone();
+        let runtime = self.runtime.clone();
         let stopped = self.stopped.clone();
         let result = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            crate::request::execute_call(&client, call, &|| {
+            runtime.execute(&client, call, &|| {
                 cancellation.is_cancelled()
                     || cancelled.load(Ordering::SeqCst)
                     || stopped.load(Ordering::SeqCst)
@@ -110,9 +112,9 @@ impl ServerHandler for Server {
     }
 }
 fn tools() -> Result<Vec<(String, Tool)>, String> {
-    let schema: Value = serde_json::from_str(include_str!("../../schemas/request-v5.schema.json"))
+    let schema: Value = serde_json::from_str(include_str!("../../schemas/request-v6.schema.json"))
         .map_err(|e| e.to_string())?;
-    let result: Value = serde_json::from_str(include_str!("../../schemas/result-v5.schema.json"))
+    let result: Value = serde_json::from_str(include_str!("../../schemas/result-v6.schema.json"))
         .map_err(|e| e.to_string())?;
     let operations = schema["properties"]["operation"]["enum"]
         .as_array()
@@ -178,7 +180,7 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
                 "Explicitly remove eligible expired terminal changeset journals, ending their recovery retention."
             }
             "run.watch" => {
-                "Wait for Run state/completion without transferring logs. Stream counters and gaps do not imply logs were read."
+                "Wait for Run state and completion. Include a cursor or byte budget to follow retained raw output and resume from next."
             }
             "run.read" => {
                 "Read one retained stdout/stderr range, default tail 4096 bytes. Text by default; request base64 for exact bytes. Inspect coverage and next_request."
@@ -190,7 +192,7 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
                 "Discover retained Run registrations and lifecycle status in the expected namespace generation."
             }
             "run.start" => {
-                "Register or rediscover a detached Run using the same immutable key and payload. wait_ms only observes; deadline_ms is enforced remotely."
+                "Register or rediscover a detached Run using the same immutable key and payload. wait_ms observes the Run. deadline_ms is enforced remotely. cgroup containment requires delegated Linux cgroup v2."
             }
             "run.poll" => {
                 "Observe a Run and bounded separate byte streams. Repeated retained cursors are safe; transport loss does not establish completion."
@@ -208,7 +210,7 @@ fn tools() -> Result<Vec<(String, Tool)>, String> {
             "fs.write" | "fs.patch" => {
                 "Apply a hash-guarded file edit. Inspect mutation evidence even on failure."
             }
-            _ => "Perform one typed remote operation and return its schema-v5 envelope.",
+            _ => "Perform one typed remote operation and return its schema-v6 envelope.",
         };
         let mut tool = Tool::new(
             format!("rhost_{}", operation.replace('.', "_")),
@@ -239,6 +241,7 @@ pub fn run(client: &Client, interrupt: &crate::signals::Interrupt, selection: &S
         let stopped = Arc::new(AtomicBool::new(false));
         let server = Server {
             client: Arc::new(client.clone()),
+            runtime: Arc::new(crate::request::Runtime::default()),
             tools,
             stopped: stopped.clone(),
             admission: Arc::new(admission::Admission::default()),

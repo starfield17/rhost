@@ -2,7 +2,7 @@
 //!
 //! This is one capability. The surface (the parsed `Fs` and the names callers
 //! use) is `surface`; the grammar is `command`, the use-cases are `ops`, the
-//! local-tool and remote-helper rules are `backend`, and the schema-v5 view is
+//! local-tool and remote-helper rules are `backend`, and the schema-v6 view is
 //! `dto`.
 
 mod backend;
@@ -17,6 +17,7 @@ mod ops;
 mod page;
 mod render;
 mod request;
+pub(crate) use request::execute_with;
 pub use request::{RequestOutcome, execute_params};
 mod run;
 mod surface;

@@ -1,5 +1,6 @@
 //! Structured file parameters are parsed once, before helper preparation.
 use super::backend::{Edit, WriteResult};
+use crate::helper::Helper;
 use crate::remote::Error;
 use crate::transport::Client;
 use serde::Deserialize;
@@ -84,14 +85,7 @@ fn path(s: &str) -> Result<(), Error> {
             .with_recovery(crate::domain::Recovery::invalid())
     })
 }
-fn execute_simple(
-    client: &Client,
-    host: &str,
-    operation: &str,
-    raw: &str,
-    cancelled: &dyn Fn() -> bool,
-    boot_guard: Option<&crate::domain::BootId>,
-) -> Result<Value, Error> {
+fn execute_simple(helper: &Helper<'_>, operation: &str, raw: &str) -> Result<Value, Error> {
     let result = (|| {
         let (payload, budget) = (|| -> Result<_, Error> {
         let (payload, budget) = match operation {
@@ -173,14 +167,11 @@ fn execute_simple(
         } else {
             30000
         };
-        let bytes = crate::helper::Helper::new(client, host)
-            .with_cancellation(cancelled)
-            .with_boot_guard(boot_guard)
-            .file_call(
-                &payload,
-                Duration::from_millis(timeout),
-                super::backend::output_budget(budget),
-            )?;
+        let bytes = helper.file_call(
+            &payload,
+            Duration::from_millis(timeout),
+            super::backend::output_budget(budget),
+        )?;
         if operation == "fs.read" {
             let answer: Value = serde_json::from_slice(&bytes).map_err(|_| bad_answer())?;
             if answer.get("error").is_some() {
@@ -275,7 +266,7 @@ impl RequestOutcome {
             }
             value
         });
-        json!({"schema_version":5,"operation":operation,"host":host,"ok":error.is_none(),"data":self.data,"error":error})
+        json!({"schema_version":6,"operation":operation,"host":host,"ok":error.is_none(),"data":self.data,"error":error})
     }
     pub fn done(data: Value) -> Self {
         Self { data, error: None }
@@ -295,19 +286,26 @@ pub fn execute_params(
     cancelled: &dyn Fn() -> bool,
     guard: Option<&crate::domain::BootId>,
 ) -> RequestOutcome {
+    let helper = Helper::new(client, host)
+        .with_cancellation(cancelled)
+        .with_boot_guard(guard);
+    execute_with(&helper, operation, raw)
+}
+
+pub(crate) fn execute_with(helper: &Helper<'_>, operation: &str, raw: &str) -> RequestOutcome {
     let mut outcome = if operation == "fs.changeset.list" {
-        match crate::helper::registry::execute(client, host, operation, raw, cancelled, guard) {
+        match crate::helper::registry::execute(helper, operation, raw) {
             Ok(data) => RequestOutcome::done(data),
             Err(e) => RequestOutcome::failed(e),
         }
     } else if operation.starts_with("fs.changeset.") {
-        super::changes::execute(client, host, operation, raw, cancelled, guard)
+        super::changes::execute(helper, operation, raw)
     } else if matches!(operation, "fs.search" | "fs.find") {
-        super::collection::execute(client, host, operation, raw, cancelled, guard)
+        super::collection::execute(helper, operation, raw)
     } else if operation == "fs.read_many" {
-        super::inspect::execute(client, host, raw, cancelled, guard)
+        super::inspect::execute(helper, raw)
     } else {
-        match execute_simple(client, host, operation, raw, cancelled, guard) {
+        match execute_simple(helper, operation, raw) {
             Ok(data) => RequestOutcome::done(data),
             Err(e) => RequestOutcome::failed(e),
         }

@@ -14,6 +14,8 @@ mod exec;
 mod files;
 #[path = "live/mcp_client.rs"]
 mod mcp_client;
+#[path = "live/runs.rs"]
+mod runs;
 #[path = "live/session.rs"]
 mod session;
 #[path = "live/smoke.rs"]

@@ -1,6 +1,6 @@
 //! Structured, bounded observations; revisions are not workspace snapshots.
 use super::{RequestOutcome, backend::Answer};
-use crate::{remote::Error, transport::Client};
+use crate::{helper::Helper, remote::Error};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 fn cap() -> usize {
@@ -68,33 +68,21 @@ struct ManyResult {
     unread: Vec<String>,
 }
 pub(super) fn call<T: for<'a> Deserialize<'a>>(
-    client: &Client,
-    host: &str,
+    helper: &Helper<'_>,
     payload: Value,
     limit: usize,
-    cancelled: &dyn Fn() -> bool,
-    guard: Option<&crate::domain::BootId>,
 ) -> Result<T, Error> {
     let bytes = serde_json::to_vec(&payload).map_err(|_| invalid())?;
     if bytes.len() > 12 * 1024 * 1024 {
         return Err(invalid());
     }
-    let reply = crate::helper::Helper::new(client, host)
-        .with_cancellation(cancelled)
-        .with_boot_guard(guard)
-        .file_call(&bytes, std::time::Duration::from_secs(60), limit)?;
+    let reply = helper.file_call(&bytes, std::time::Duration::from_secs(60), limit)?;
     match serde_json::from_slice::<Answer<T>>(&reply).map_err(|_| bad())? {
         Answer::Done(v) => Ok(v),
         Answer::Refused(e) => Err(super::request::refusal(e)),
     }
 }
-pub(super) fn execute(
-    client: &Client,
-    host: &str,
-    raw: &str,
-    cancelled: &dyn Fn() -> bool,
-    guard: Option<&crate::domain::BootId>,
-) -> RequestOutcome {
+pub(super) fn execute(helper: &Helper<'_>, raw: &str) -> RequestOutcome {
     let result = (|| {
         let p: Many = parse(raw)?;
         if p.paths.is_empty()
@@ -109,12 +97,9 @@ pub(super) fn execute(
             path(name)?;
         }
         let mut r: ManyResult = call(
-            client,
-            host,
+            helper,
             json!({"op":"read_many","paths":p.paths,"start":p.start,"lines":p.lines,"max_bytes":p.max_bytes,"with_coverage":true}),
             64 * 1024 * 1024,
-            cancelled,
-            guard,
         )?;
         if r.items.len() + r.unread.len() != p.paths.len() {
             return Err(bad());

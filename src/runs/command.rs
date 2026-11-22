@@ -21,6 +21,11 @@ pub static FLAGS: &[FlagSpec] = &[
     FlagSpec::value("env", false, "explicit KEY=VALUE; repeatable"),
     FlagSpec::value("wait", true, "local observation budget; default 0"),
     FlagSpec::value("deadline", true, "remote execution deadline"),
+    FlagSpec::value(
+        "containment",
+        true,
+        "pgid (default) or delegated Linux cgroup",
+    ),
     FlagSpec::value("stdout-since", true, "stdout source-byte cursor"),
     FlagSpec::value("stderr-since", true, "stderr source-byte cursor"),
     FlagSpec::value("max-bytes", true, "per-stream page budget; default 4096"),
@@ -64,6 +69,7 @@ fn allowed(group: &str, leaf: Option<&str>) -> &'static [&'static str] {
             "env",
             "wait",
             "deadline",
+            "containment",
         ],
         ("run", Some("poll")) => &[
             "json",
@@ -74,7 +80,15 @@ fn allowed(group: &str, leaf: Option<&str>) -> &'static [&'static str] {
             "stderr-since",
             "max-bytes",
         ],
-        ("run", Some("watch")) => &["json", "generation", "if-boot-id", "wait"],
+        ("run", Some("watch")) => &[
+            "json",
+            "generation",
+            "if-boot-id",
+            "wait",
+            "stdout-since",
+            "stderr-since",
+            "max-bytes",
+        ],
         ("run", Some("read")) => &[
             "json",
             "generation",
@@ -208,6 +222,9 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
                     params["environment"] =
                         json!({"inherit":p.bool_flag("inherit-env"),"values":env});
                     params["wait_ms"] = json!(milliseconds(p.value("wait"))?);
+                    if let Some(mode) = p.value("containment") {
+                        params["containment"] = json!(mode);
+                    }
                     if p.value("deadline").is_some() {
                         params["deadline_ms"] = json!(milliseconds(p.value("deadline"))?);
                     }
@@ -220,6 +237,16 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
                     if leaf == "watch" {
                         if p.value("wait").is_some() {
                             params["wait_ms"] = json!(milliseconds(p.value("wait"))?);
+                        }
+                        for (flag, key) in [
+                            ("stdout-since", "stdout_since"),
+                            ("stderr-since", "stderr_since"),
+                            ("max-bytes", "max_bytes"),
+                        ] {
+                            if let Some(value) = p.value(flag) {
+                                params[key] =
+                                    json!(value.parse::<u64>().map_err(|_| "invalid integer")?);
+                            }
                         }
                     } else {
                         params["stream"] = json!(
@@ -289,7 +316,7 @@ pub fn parse(group: &str, argv: &[String], json: bool) -> Invocation {
             format!("run.{leaf}")
         };
         let mut document =
-            json!({"schema_version":5,"operation":operation,"host":host,"params":params});
+            json!({"schema_version":6,"operation":operation,"host":host,"params":params});
         if let Some(guard) = p.value("if-boot-id") {
             crate::domain::BootId::new(guard.to_string()).map_err(|e| e.to_string())?;
             document["if_boot_id"] = guard.into();

@@ -1,9 +1,9 @@
 # rhost
 
-Operate SSH-reachable Linux hosts from coding agents or scripts over standard OpenSSH—covering foreground execution, recoverable background work, compare-and-swap file edits, and persistent tmux sessions. One capability layer backs the CLI, single-document JSON requests (`schema_version: 5`), and stdio MCP tools, with zero remote daemon and zero remote Python.
+Operate SSH-reachable Linux hosts from coding agents or scripts over standard OpenSSH—covering foreground execution, recoverable background work, compare-and-swap file edits, and persistent tmux sessions. One capability layer backs the CLI, single-document JSON requests (`schema_version: 6`), and stdio MCP tools, with zero remote daemon and zero remote Python.
 
 ```text
-Codex / Claude / CLI / JSON (schema v5)
+Codex / Claude / CLI / JSON (schema v6)
   -> local OpenSSH (ControlMaster, ~/.ssh/config, host keys, ssh-agent)
      -> C99 remote helper / tmux (per-Run monitors, CAS files, PTY sessions; no daemon, no Python)
 ```
@@ -12,7 +12,7 @@ Codex / Claude / CLI / JSON (schema v5)
 
 - **OpenSSH instead of a custom SSH stack**: Reuses `~/.ssh/config`, `ssh-agent`, host-key verification, and `ControlMaster` (`ControlPersist=15m`). `rhost` never prompts for credentials, stores keys, or weakens host-key checks.
 - **C99 helper instead of remote Python**: File operations and recoverable Runs run through a standalone C99 binary (`helper/`) cached privately on the host (`~/.cache/rhost/helper/`), with durable Run/changeset state under `~/.local/state/rhost/v5` (`RHOST_REMOTE_STATE`). Preparation reuses a valid cache, compiles with an existing remote C99 `cc`, or uploads a static Linux musl release binary verified against its HTTPS SHA-256 sidecar (`linux-x86_64`, `linux-aarch64`), with no remote daemon and no automatic package installs.
-- **Bounded observation and recoverable Runs instead of blind SSH retries**: In `v5.3.0` (schema 5), file reads default to **8 KiB** (`8192` bytes) and Run/session log previews default to **4 KiB** (`4096` bytes) with source-byte cursors (`run.watch` omits log bodies). Timeouts and client cancellations only end local observation; uncertain `run.start` submissions deduplicate via namespace `generation` and caller-retained expiring keys, and file replacements require a whole-file SHA-256 match.
+- **Bounded observation and recoverable Runs instead of blind SSH retries**: File reads default to **8 KiB** (`8192` bytes) and Run/session log previews default to **4 KiB** (`4096` bytes) with source-byte cursors (`run.watch` can follow both streams). Timeouts and client cancellations only end local observation; uncertain `run.start` submissions deduplicate via namespace `generation` and caller-retained expiring keys, and file replacements require a whole-file SHA-256 match.
 
 ## Install
 
@@ -74,22 +74,22 @@ rhost exec gpu --cwd '~/work/project' --command 'cargo test --locked'
 rhost doctor gpu --json
 rhost helper prepare gpu --json
 
-# Single closed JSON request (schema v5; MCP structuredContent uses the same envelope)
+# Single closed JSON request (schema v6; MCP structuredContent uses the same envelope)
 rhost request --from - <<'EOF'
-{"schema_version":5,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
+{"schema_version":6,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 EOF
 ```
 
 - **Diagnosis vs. preparation**: `rhost doctor` probes shell tools and resolved `command -v` paths (`ok:true` means the probe completed; inspect `capabilities`). Native `fs.*` ops prepare the C99 helper automatically; `rhost helper prepare` returns `generation`, `remote_time_unix`, and helper identity before `run start` (`rhost helper status` reads an existing namespace without creating one).
 - **Remote tool requirements**: `exec` and `doctor` require `/bin/sh`, `bash`, `ps`, `base64`, and either `setsid` or Perl with `POSIX::setsid`. `session` requires `bash`, `tmux`, `flock` (`session attach` is refused with `USAGE_ERROR`); resumable/checksum transfers require `rsync`; native `fs.*` and `run.*` require the C99 helper (bootstrapped via POSIX `sh` utilities, no remote Python or `tmux`).
-- **Schema, state, and boundaries**: Public JSON uses schema v5 (`v5.3.0`; schema-4 validators must update, while existing Run/changeset records remain compatible). Branch on `error.code` and `error.recovery`, not prose. See [state discovery and retention](skills/rhost/references/FILES.md#state-discovery-and-retention) for `run.list`, `fs.changeset.list`, `state.list`, `state.usage`, and `state.prune`. `rhost` does not manage SSH credentials, system packages, Git branches/worktrees, or job scheduling.
+- **Schema, state, and boundaries**: Public JSON uses schema v6 (`v6.0.0`). Update request and result validators to v6. Existing Run and changeset records remain readable. Branch on `error.code` and `error.recovery`, not prose. See [state discovery and retention](skills/rhost/references/FILES.md#state-discovery-and-retention) for `run.list`, `fs.changeset.list`, `state.list`, `state.usage`, and `state.prune`. `rhost` does not manage SSH credentials, system packages, Git branches/worktrees, or job scheduling.
 
 ## Docs, schemas, and verification
 
 - [Architecture and ownership](docs/ARCHITECTURE.md)
 - [Contract ledger](docs/CONTRACT.md)
 - [Context-bounded observation (v5.3.0)](docs/architecture/context-v530.md)
-- [Request schema v5](schemas/request-v5.schema.json) and [Result schema v5](schemas/result-v5.schema.json)
+- [Request schema v6](schemas/request-v6.schema.json) and [Result schema v6](schemas/result-v6.schema.json)
 - [Agent skill](skills/rhost/SKILL.md)
 - [Contributor rules](AGENTS.md) and [Maintenance policy](docs/MAINTENANCE.md)
 

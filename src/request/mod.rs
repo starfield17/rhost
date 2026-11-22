@@ -6,13 +6,34 @@ use serde_json::{Value, json};
 mod core;
 mod input;
 pub(crate) use input::{Call, arguments as from_arguments};
+
+#[derive(Default)]
+pub(crate) struct Runtime {
+    pool: crate::helper::mux::Pool,
+}
+
+impl Runtime {
+    pub(crate) fn execute(
+        &self,
+        client: &Client,
+        call: Call,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Value {
+        execute_call(client, call, cancelled, Some(&self.pool))
+    }
+}
 pub fn execute(client: &Client, raw: &str, cancelled: &dyn Fn() -> bool) -> Value {
     match input::raw(raw) {
-        Ok(call) => execute_call(client, call, cancelled),
+        Ok(call) => execute_call(client, call, cancelled, None),
         Err(error) => failure("request", None, error),
     }
 }
-pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> bool) -> Value {
+fn execute_call(
+    client: &Client,
+    q: Call,
+    cancelled: &dyn Fn() -> bool,
+    pool: Option<&crate::helper::mux::Pool>,
+) -> Value {
     if core::recognizes(&q.operation) {
         return match core::execute(
             client,
@@ -41,14 +62,11 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
             | "fs.changeset.prune"
             | "fs.changeset.list"
     ) {
-        let outcome = crate::files::execute_params(
-            client,
-            host,
-            &q.operation,
-            q.params.get(),
-            cancelled,
-            guard.as_ref(),
-        );
+        let helper = crate::helper::Helper::new(client, host)
+            .with_cancellation(cancelled)
+            .with_boot_guard(guard.as_ref())
+            .with_pool(pool);
+        let outcome = crate::files::execute_with(&helper, &q.operation, q.params.get());
         return outcome.envelope(&q.operation, host);
     } else if matches!(
         q.operation.as_str(),
@@ -73,6 +91,7 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
             q.params.get(),
             cancelled,
             guard.as_ref(),
+            pool,
         )
     } else {
         return failure(
@@ -83,7 +102,7 @@ pub(crate) fn execute_call(client: &Client, q: Call, cancelled: &dyn Fn() -> boo
     };
     match result {
         Ok(data) => {
-            json!({"schema_version":5,"operation":q.operation,"ok":true,"host":host,"data":data,"error":null})
+            json!({"schema_version":6,"operation":q.operation,"ok":true,"host":host,"data":data,"error":null})
         }
         Err(e) => failure(&q.operation, Some(host), e),
     }
@@ -95,7 +114,7 @@ pub fn failure(operation: &str, host: Option<&str>, error: Error) -> Value {
     } else if matches!(operation, "fs.write" | "fs.patch") {
         detail["mutation"] = "not_applied".into();
     }
-    let mut envelope = json!({"schema_version":5,"operation":operation,"ok":false,"host":host,"data":null,"error":detail});
+    let mut envelope = json!({"schema_version":6,"operation":operation,"ok":false,"host":host,"data":null,"error":detail});
     if host.is_none()
         && core::recognizes(operation)
         && let Some(object) = envelope.as_object_mut()

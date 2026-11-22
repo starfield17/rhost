@@ -63,6 +63,13 @@ fn unique_environment<'de, D: serde::Deserializer<'de>>(
 fn nonnull_deadline<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
     u64::deserialize(d).map(Some)
 }
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Containment {
+    #[default]
+    Pgid,
+    Cgroup,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Start {
@@ -72,6 +79,8 @@ struct Start {
     cwd: String,
     program: Program,
     environment: Environment,
+    #[serde(default)]
+    containment: Containment,
     #[serde(default)]
     stdin_base64: String,
     #[serde(default)]
@@ -108,6 +117,7 @@ pub struct Prepared {
     pub kind: u32,
     pub body: Writer,
     pub wait_ms: u32,
+    pub cgroup: bool,
 }
 fn invalid(message: &str) -> Error {
     Error::new("CONFIG_INVALID", message).with_recovery(crate::domain::Recovery::invalid())
@@ -147,6 +157,7 @@ pub fn key(value: &str) -> Result<u64, Error> {
 pub fn prepare(operation: &str, host: &str, params: &str) -> Result<Prepared, Error> {
     let mut body = Writer::default();
     let mut wait_ms = 0;
+    let mut cgroup = false;
     let (kind, _operation) = match operation {
         "metadata" => {
             let _: Empty = parse(params)?;
@@ -214,6 +225,10 @@ pub fn prepare(operation: &str, host: &str, params: &str) -> Result<Prepared, Er
             body.bytes(&input)?;
             body.int(p.wait_ms);
             body.long(p.deadline_ms.unwrap_or(0));
+            cgroup = matches!(p.containment, Containment::Cgroup);
+            if cgroup {
+                body.byte(1);
+            }
             wait_ms = p.wait_ms;
             (2, "run.start")
         }
@@ -267,5 +282,6 @@ pub fn prepare(operation: &str, host: &str, params: &str) -> Result<Prepared, Er
         kind,
         body,
         wait_ms,
+        cgroup,
     })
 }

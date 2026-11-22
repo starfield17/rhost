@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "state.h"
+#include "mux.h"
 #include <stdlib.h>
 #include <string.h>
 static int env_name(const char *p) {
@@ -43,6 +44,11 @@ int rh_parse_start(rh_reader *r,rh_start *q) {
     }
     free(previous);
     q->input=rh_read_bytes(r,&q->input_size);q->wait=rh_read_int(r);q->deadline=rh_read_long(r);
+    /* A trailing opt-in field keeps the default RH01 payload and key hash. */
+    if(rh_mux_active() && r->at<r->size) {
+        q->cgroup=rh_read_byte(r);
+        if(q->cgroup!=1)return 0;
+    }
     uint64_t expiry;
     return rh_done(r) && q->input && rh_generation(q->generation) && rh_key(q->key,&expiry) && expiry==q->expiry && q->cwd && *q->cwd && q->wait<=300000 && q->deadline<=604800000;
 }

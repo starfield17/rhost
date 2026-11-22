@@ -1,8 +1,10 @@
 /* Standalone C99 helper: bounded requests and remote-owned process evidence. */
 #define _POSIX_C_SOURCE 200809L
 #include "state.h"
+#include "mux.h"
 #include "json.h"
 #include <stdint.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -101,9 +103,10 @@ static int probe(uint32_t kind,const char *executable,const char *image) {
     return emit(kind, body, size);
 }
 int main(int argc,char **argv) {
+    signal(SIGPIPE,SIG_IGN);
     char image[65];
     const char *verified_image=NULL;
-    if(argc==5 && (!strcmp(argv[1],"--verified-files") || !strcmp(argv[1],"--verified-run"))) {
+    if(argc==5 && (!strcmp(argv[1],"--verified-files") || !strcmp(argv[1],"--verified-run") || !strcmp(argv[1],"--verified-mux"))) {
         if(strcmp(argv[2],RHOST_SOURCE_DIGEST) || strcmp(argv[4],TARGET_ABI))
             return refuse(1,"HELPER_INCOMPATIBLE","verified source or target does not match");
         if(!rh_binary_hash(argv[0],image))return refuse(1,"STATE_UNAVAILABLE","cannot verify loaded helper image");
@@ -111,6 +114,7 @@ int main(int argc,char **argv) {
         verified_image=image;
         if(probe(1,argv[0],verified_image)!=0)return 255;
         if(!strcmp(argv[1],"--verified-files"))return rh_files_json();
+        if(!strcmp(argv[1],"--verified-mux"))return rh_mux();
         argc=1;
     }
     if(argc==2 && !strcmp(argv[1],"--files-json"))return rh_files_json();

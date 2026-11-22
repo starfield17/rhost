@@ -120,6 +120,22 @@ impl Client {
         args
     }
 
+    /// Opens one full-duplex, non-PTY SSH channel for a framed protocol.
+    pub fn spawn_channel(
+        &self,
+        target: &str,
+        remote_command: &str,
+    ) -> std::io::Result<std::process::Child> {
+        use std::process::{Command, Stdio};
+        config::ensure_control_dir().map_err(std::io::Error::other)?;
+        Command::new(&self.cfg.ssh_bin)
+            .args(self.exec_argv(target, remote_command, false))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    }
+
     /// Runs one remote command and keeps its output in bounded memory.
     pub fn run_captured(
         &self,

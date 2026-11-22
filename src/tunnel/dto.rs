@@ -1,9 +1,5 @@
-//! The schema-v5 view of a tunnel.
+//! The schema-v6 view of a tunnel.
 //!
-//! Tunnel DTOs live here rather than with the others because a tunnel is the one
-//! result whose `status` is not rhost's claim but an observation: the DTO can
-//! only be built from a value whose master has already been asked.
-
 use super::Tunnel as TunnelData;
 use crate::wire::Envelope;
 use serde::Serialize;
@@ -17,7 +13,8 @@ pub struct TunnelDto<'a> {
     listen: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     destination: Option<&'a str>,
-    status: &'a str,
+    master_alive: bool,
+    destination_evidence: &'static str,
 }
 
 impl<'a> From<&'a TunnelData> for TunnelDto<'a> {
@@ -30,7 +27,8 @@ impl<'a> From<&'a TunnelData> for TunnelDto<'a> {
             // A socks forward has no destination, and an empty one would be a
             // second way to say the same thing.
             destination: value.destination.as_deref(),
-            status: value.status.as_str(),
+            master_alive: value.status.master_alive(),
+            destination_evidence: super::record::DESTINATION_EVIDENCE,
         }
     }
 }
@@ -43,7 +41,7 @@ pub fn tunnel<'a>(
     value: &'a TunnelData,
 ) -> Envelope<TunnelDto<'a>> {
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation,
         ok: true,
         host: (!host.is_empty()).then(|| host.to_string()),
@@ -59,7 +57,7 @@ pub struct TunnelsDto<'a> {
 
 pub fn tunnels(rows: &[TunnelData]) -> Envelope<TunnelsDto<'_>> {
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation: "tunnel.list",
         ok: true,
         host: None,
@@ -80,7 +78,7 @@ pub struct TunnelClosedDto<'a> {
 
 pub fn tunnel_closed(id: &str) -> Envelope<TunnelClosedDto<'_>> {
     Envelope {
-        schema_version: 5,
+        schema_version: 6,
         operation: "tunnel.close",
         ok: true,
         host: None,

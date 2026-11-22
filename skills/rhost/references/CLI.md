@@ -3,7 +3,7 @@
 The installed binary's `--help` output is the authoritative command and flag
 inventory: every command has its own page, and a flag that reaches a parser
 without reaching its page fails the test suite. All structured responses use
-schema v4 with top-level `schema_version`, `operation`, `ok`, `data`, and
+schema v6 with top-level `schema_version`, `operation`, `ok`, `data`, and
 `error`. Branch on `error.code`, never on English text; the full
 `error.code` → recovery table lives in
 [RECOVERY.md](RECOVERY.md). After installation, upgrade, or a flag mismatch,
@@ -193,7 +193,7 @@ unavailable. For file bytes, use `scp` only when the host supports SFTP or the
 required scp service, and inspect both source and destination after a failed
 transfer. A PTY is not a reliable byte-transfer channel.
 
-Direct OpenSSH output is terminal text and exit status, not a schema-v5 JSON
+Direct OpenSSH output is terminal text and exit status, not a schema-v6 JSON
 envelope. Do not infer rhost completion or cleanup evidence from a shell prompt.
 See [SAFETY.md](SAFETY.md) before replacing or deleting files this way.
 
@@ -252,6 +252,7 @@ rhost audit --json --limit 20 --host <host>
 ```
 
 Tunnels bind loopback unless `--allow-exposure` is explicit. Keep
-`data.tunnel_id`; list entries use `data.tunnels[].tunnel_id`. `alive` means the
-forward exists, not that an application answers behind it. Audit is local,
-bounded, fail-open, and can be disabled with `RHOST_AUDIT=0`.
+`data.tunnel_id`; list entries use `data.tunnels[].tunnel_id`. `master_alive`
+records whether the dedicated master answered its control check. OpenSSH tunnel
+results report `destination_evidence: "unknown"`. Audit is local, bounded, and
+fail-open. Set `RHOST_AUDIT=0` to disable it.

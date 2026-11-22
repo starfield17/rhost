@@ -1,6 +1,8 @@
 //! Embedded sources are the only source-build authority, never remote packages.
 use sha2::{Digest, Sha256};
 pub const SOURCES: &[(&str, &str)] = &[
+    ("cgroup.c", include_str!("../../helper/cgroup.c")),
+    ("cgroup.h", include_str!("../../helper/cgroup.h")),
     ("changes.h", include_str!("../../helper/changes.h")),
     ("changes_api.c", include_str!("../../helper/changes_api.c")),
     (
@@ -31,6 +33,7 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("file_read.c", include_str!("../../helper/file_read.c")),
     ("files.c", include_str!("../../helper/files.c")),
     ("files.h", include_str!("../../helper/files.h")),
+    ("follow.c", include_str!("../../helper/follow.c")),
     ("host.c", include_str!("../../helper/host.c")),
     ("identity.c", include_str!("../../helper/identity.c")),
     ("inspect.h", include_str!("../../helper/inspect.h")),
@@ -51,6 +54,8 @@ pub const SOURCES: &[(&str, &str)] = &[
     ("json.h", include_str!("../../helper/json.h")),
     ("main.c", include_str!("../../helper/main.c")),
     ("monitor.c", include_str!("../../helper/monitor.c")),
+    ("mux.c", include_str!("../../helper/mux.c")),
+    ("mux.h", include_str!("../../helper/mux.h")),
     ("protocol.c", include_str!("../../helper/protocol.c")),
     ("protocol.h", include_str!("../../helper/protocol.h")),
     ("registry.h", include_str!("../../helper/registry.h")),

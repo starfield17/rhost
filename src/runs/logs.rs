@@ -6,17 +6,6 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Watch {
-    generation: String,
-    run_id: String,
-    #[serde(default = "wait")]
-    wait_ms: u32,
-}
-fn wait() -> u32 {
-    30000
-}
 fn optional<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
     u64::deserialize(d).map(Some)
 }
@@ -88,21 +77,14 @@ pub(super) fn execute(
     raw: &str,
     cancelled: &dyn Fn() -> bool,
     guard: Option<&crate::domain::BootId>,
+    pool: Option<&crate::helper::mux::Pool>,
 ) -> Result<Value, Error> {
     let helper = Helper::new(client, host)
         .with_cancellation(cancelled)
         .with_boot_guard(guard);
     if op == "run.watch" {
-        let p: Watch = parse(raw)?;
-        if p.wait_ms > 300000 {
-            return Err(invalid("invalid wait budget"));
-        }
-        let mut b = identity(&p.generation, &p.run_id)?;
-        b.int(p.wait_ms);
-        let (_, reply) = helper.operation(9, b, p.wait_ms)?;
-        let data = super::dto::decode(9, &reply)?;
-        super::dto::bind(9, &data, Some(&p.generation), Some(&p.run_id))?;
-        return Ok(data);
+        let p: super::follow::Watch = parse(raw)?;
+        return p.execute(&helper, pool, identity(&p.generation, &p.run_id)?);
     }
     let (p, search) = if op == "run.search" {
         let s: Search = parse(raw)?;
@@ -149,8 +131,10 @@ pub(super) fn execute(
     b.long(p.tail.unwrap_or(u64::from(p.max_bytes)));
     b.long(p.until.unwrap_or(0));
     b.int(p.max_bytes);
-    let (_, reply) = helper.operation(10, b, 0)?;
-    let mut data = super::dto::decode(10, &reply)?;
+    let reply = helper.mux(pool, 10, b, 0, |_, _| {
+        Err(crate::helper::codec::protocol("unexpected Run read event"))
+    })?;
+    let mut data = super::dto::decode(10, &reply, true)?;
     super::dto::bind(10, &data, Some(&p.generation), Some(&p.run_id))?;
     let out = &mut data["output"];
     if out["stream"] != p.stream {

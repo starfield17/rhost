@@ -71,7 +71,7 @@ impl Fixture {
         assert!(output.stderr.is_empty(), "{output:?}");
         let value: Value = serde_json::from_slice(&output.stdout)
             .unwrap_or_else(|e| panic!("response: {e}: {output:?}"));
-        let schema: Value = serde_json::from_str(include_str!("../schemas/result-v5.schema.json"))
+        let schema: Value = serde_json::from_str(include_str!("../schemas/result-v6.schema.json"))
             .unwrap_or_else(|e| panic!("schema: {e}"));
         let validator =
             jsonschema::validator_for(&schema).unwrap_or_else(|e| panic!("validator: {e}"));
@@ -84,7 +84,7 @@ impl Fixture {
 #[test]
 fn cancelling_an_observer_preserves_the_remote_run() {
     let f = Fixture::new();
-    let envelope = |operation: &str, params: Value| json!({"schema_version":5,"operation":operation,"host":"gpu","params":params});
+    let envelope = |operation: &str, params: Value| json!({"schema_version":6,"operation":operation,"host":"gpu","params":params});
     let prepared = f.request(&envelope("helper.prepare", json!({})));
     let generation = prepared["data"]["generation"].clone();
     let expiry = prepared["data"]["remote_time_unix"]
@@ -142,7 +142,7 @@ impl Drop for Fixture {
 #[test]
 fn public_requests_recover_completed_runs_and_refuse_a_changed_retry() {
     let f = Fixture::new();
-    let envelope = |operation: &str, params: Value| json!({"schema_version":5,"operation":operation,"host":"gpu","params":params});
+    let envelope = |operation: &str, params: Value| json!({"schema_version":6,"operation":operation,"host":"gpu","params":params});
     let prepared = f.request(&envelope("helper.prepare", json!({})));
     assert_eq!(prepared["ok"], true, "{prepared}");
     let generation = prepared["data"]["generation"].clone();
@@ -172,7 +172,7 @@ fn public_requests_recover_completed_runs_and_refuse_a_changed_retry() {
 }
 
 fn message(operation: &str, params: Value) -> Value {
-    json!({"schema_version":5,"operation":operation,"host":"gpu","params":params})
+    json!({"schema_version":6,"operation":operation,"host":"gpu","params":params})
 }
 fn namespace(f: &Fixture) -> (Value, u64) {
     let v = f.request(&message("helper.prepare", json!({})));
@@ -222,6 +222,18 @@ fn output_quota_preserves_source_counts_and_explicit_gaps() {
     assert_eq!(done["stdout"]["observed_bytes"], 65 * 1048576);
     assert_eq!(done["stdout"]["next"], 4096);
     assert_eq!(done["stdout"]["incomplete"], true);
+    let retained = 64 * 1048576;
+    let followed = f.request(&message(
+        "run.watch",
+        json!({
+            "generation":g,"run_id":key,"stdout_since":retained-4,"max_bytes":4,"wait_ms":0
+        }),
+    ));
+    assert_eq!(followed["ok"], true, "{followed}");
+    assert_eq!(followed["data"]["stdout"]["from"], retained - 4);
+    assert_eq!(followed["data"]["stdout"]["next"], retained);
+    assert_eq!(followed["data"]["stdout"]["content_base64"], "AAAAAA==");
+    assert_eq!(followed["data"]["stdout"]["unavailable_after"], 1048576);
     let log = f
         .root
         .join("state/runs")

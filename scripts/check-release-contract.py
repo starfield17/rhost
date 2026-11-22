@@ -123,6 +123,7 @@ def main() -> int:
         ("artifact name", 'artifact="dist/rhost_${version}_${PLATFORM}"'),
         ("artifact executes version --json", '"$artifact" version --json'),
         ("artifact version matches the manifest", 'assert d["data"]["version"] == sys.argv[1]'),
+        ("artifact exposes schema 6", 'assert d["schema_version"] == d["data"]["schema_version"] == 6'),
         ("artifact commit matches the checkout", 'assert d["data"]["commit"] == sys.argv[1]'),
         ("artifact build date is a UTC timestamp", 're.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"'),
         ("artifact executes --help", '"$artifact" --help'),

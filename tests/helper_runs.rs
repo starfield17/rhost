@@ -423,3 +423,6 @@ fn installer_rejects_wrong_binary_digest_before_replacing_a_working_image() {
 
 #[path = "helper_runs/watch.rs"]
 mod watch;
+
+#[path = "support/helper_v6.rs"]
+mod helper_v6;

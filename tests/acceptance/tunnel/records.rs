@@ -50,7 +50,8 @@ fn tunnel_list_is_empty_without_records_and_reports_stale_ones_without_deleting_
         .unwrap_or_default();
     assert_eq!(rows.len(), 1, "{value}");
     assert_eq!(rows[0]["tunnel_id"], id.as_str());
-    assert_eq!(rows[0]["status"], "stale");
+    assert_eq!(rows[0]["master_alive"], false);
+    assert_eq!(rows[0]["destination_evidence"], "unknown");
     assert_eq!(rows[0]["kind"], "socks");
     assert_eq!(rows[0]["listen"], "localhost:1080");
     assert_eq!(

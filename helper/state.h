@@ -1,11 +1,13 @@
 #ifndef RHOST_STATE_H
 #define RHOST_STATE_H
 #include "protocol.h"
+#include "cgroup.h"
 #include <sys/types.h>
 typedef struct { int root, runs, registry; char generation[33]; } rh_state;
 typedef struct {
     unsigned state, completion, value, out_open, err_open, incomplete;
     uint64_t out_bytes, err_bytes, out_kept, err_kept;
+    unsigned cgroup, population, containment_refused;
 } rh_status;
 int rh_random(char *out,size_t bytes);
 int rh_directory(const char *path,int create);
@@ -23,17 +25,21 @@ int rh_key(const char *key,uint64_t *expiry);
 int rh_generation(const char *s);
 uint64_t rh_millis(void);
 void rh_record(rh_buf *b,const rh_state *s,const char *key,const rh_status *status);
+int rh_valid_run_directory(int directory);
+int rh_current_status(int directory,rh_status *status);
+int rh_control_open(int directory);
+int rh_watch(uint32_t kind,rh_state *state,const char *key,int directory,uint32_t wait);
 int rh_runs(uint32_t kind,rh_reader *request);
 typedef struct {
     char *generation,*key,*cwd,**argv,**env;
     size_t argc,envc,input_size;
-    unsigned inherit,login;
+    unsigned inherit,login,cgroup;
     unsigned char *input;
     uint64_t expiry,deadline;
     uint32_t wait;
 } rh_start;
 int rh_parse_start(rh_reader *r,rh_start *q);
 void rh_start_free(rh_start *q);
-void rh_monitor(int directory,int lock,rh_start *q);
+void rh_monitor(int directory,int lock,rh_start *q,rh_cgroup *group,int startup);
 int rh_install(const char *directory,const char *executable,const char *expected_hash);
 #endif

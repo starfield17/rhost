@@ -56,8 +56,7 @@ impl Kind {
     }
 }
 
-/// Whether the forward is still there. `alive` means the dedicated master
-/// answered; `stale` means its socket is gone.
+/// Result of checking the dedicated OpenSSH master.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Status {
     Alive,
@@ -65,13 +64,13 @@ pub enum Status {
 }
 
 impl Status {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Alive => "alive",
-            Self::Stale => "stale",
-        }
+    pub fn master_alive(self) -> bool {
+        self == Self::Alive
     }
 }
+
+/// Destination evidence provided by an OpenSSH control-socket check.
+pub const DESTINATION_EVIDENCE: &str = "unknown";
 
 /// What a later process reads back from disk. v2 dropped the reference's
 /// duplicate `id` field, so the record names the tunnel exactly once.

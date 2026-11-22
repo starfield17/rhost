@@ -12,6 +12,15 @@ bash/tmux session implementation. `helper prepare` creates or validates a
 namespace and returns its generation/time/identity; `helper status` is read-only
 and refuses an absent namespace. Doctor reports command presence separately.
 
+## Helper channels
+
+The helper supports RH01 single-shot calls and verified RH02 sessions over
+non-PTY OpenSSH. RH02 verifies the loaded image and probe at channel startup.
+It reads each complete frame before dispatch and puts the request ID on its
+replies. MCP reuses a channel for compatible Run and bounded file operations
+on the same target with the same boot guard. The channel lives within the MCP
+process. Detached Run monitors and retained records survive its exit.
+
 ## Preparation policies
 
 

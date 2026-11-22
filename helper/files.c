@@ -1,4 +1,5 @@
 #include "files.h"
+#include "mux.h"
 #include "changes.h"
 #include "inspect.h"
 #include "registry.h"
@@ -47,17 +48,44 @@ static j_value *operation(const j_value *q,f_error *e){
     char *path=f_path(q,e);if(!path)return NULL;j_value *result;
     if(resolving)result=resolve(q,path,e);else if(reading)result=f_read(q,path,e);else result=f_edit(q,path,patch,e);free(path);return result;
 }
-int rh_files_json(void){
-    j_buf input={0};input.limit=J_INPUT_LIMIT;unsigned char bytes[65536];f_error error={NULL,NULL,"not_applied"};j_value *result=NULL,*q=NULL;
-    for(;;){size_t n=fread(bytes,1,sizeof bytes,stdin);j_append(&input,bytes,n);if(input.failed || n<sizeof bytes)break;}
-    if(input.failed || ferror(stdin))f_fail(&error,"CONFIG_INVALID","request exceeds bounded input or cannot be read");
-    else{q=j_parse(input.data,input.size);if(!q || q->type!=J_OBJECT)f_fail(&error,"CONFIG_INVALID","request must be one valid JSON object");else result=operation(q,&error);}
-    if(!result){
-        result=j_new(J_OBJECT);const char *code=error.code?error.code:"INTERNAL",*message=error.message?error.message:"native file operation failed";
-        if(!result || !j_text(result,"error",code,strlen(code)) || !j_text(result,"message",message,strlen(message))){j_free(result);j_free(q);free(input.data);return 255;}
-        if(!j_text(result,"mutation",error.mutation,strlen(error.mutation))){j_free(result);j_free(q);free(input.data);return 255;}
+static int file_answer(const unsigned char *data,size_t size,int unreadable,j_buf *out) {
+    f_error error={NULL,NULL,"not_applied"};j_value *result=NULL,*q=NULL;
+    if(unreadable)f_fail(&error,"CONFIG_INVALID","request exceeds bounded input or cannot be read");
+    else {
+        q=j_parse(data,size);
+        if(!q || q->type!=J_OBJECT)f_fail(&error,"CONFIG_INVALID","request must be one valid JSON object");
+        else result=operation(q,&error);
     }
-    j_buf out={0};out.limit=J_OUTPUT_LIMIT;int ok=j_dump(result,&out);
+    if(!result){
+        result=j_new(J_OBJECT);
+        const char *code=error.code?error.code:"INTERNAL",*message=error.message?error.message:"native file operation failed";
+        if(!result || !j_text(result,"error",code,strlen(code)) ||
+           !j_text(result,"message",message,strlen(message)) ||
+           !j_text(result,"mutation",error.mutation,strlen(error.mutation))) {
+            j_free(result);j_free(q);return 0;
+        }
+    }
+    int ok=j_dump(result,out);
+    j_free(result);j_free(q);return ok;
+}
+
+int rh_files_json(void){
+    j_buf input={0};input.limit=J_INPUT_LIMIT;unsigned char bytes[65536];
+    for(;;){size_t n=fread(bytes,1,sizeof bytes,stdin);j_append(&input,bytes,n);if(input.failed || n<sizeof bytes)break;}
+    j_buf out={0};out.limit=J_OUTPUT_LIMIT;
+    int ok=file_answer(input.data,input.size,input.failed || ferror(stdin),&out);
     if(ok)ok=fwrite(out.data,1,out.size,stdout)==out.size && fputc('\n',stdout)!=EOF && fflush(stdout)==0;
-    free(input.data);free(out.data);j_free(result);j_free(q);return ok?0:255;
+    free(input.data);free(out.data);return ok?0:255;
+}
+
+int rh_mux_files(rh_reader *request) {
+    uint32_t cap=rh_read_int(request);
+    if(request->failed || !cap || cap>=RH_LIMIT)
+        return rh_refuse(RH_FILES,"PROTOCOL_ERROR","invalid file reply budget");
+    j_buf out={0};out.limit=cap;
+    int ok=file_answer(request->data+request->at,request->size-request->at,0,&out);
+    rh_buf body={0};
+    if(ok){rh_byte(&body,0);rh_raw(&body,out.data,out.size);}
+    int result=ok?rh_emit(RH_FILES,&body):255;
+    free(out.data);free(body.data);return result;
 }

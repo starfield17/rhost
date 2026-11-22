@@ -1,5 +1,6 @@
 #define _XOPEN_SOURCE 700
 #include "state.h"
+#include "mux.h"
 #include "registry.h"
 #include <dirent.h>
 #include <errno.h>
@@ -16,18 +17,19 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-static int valid_directory(int fd) {
+int rh_valid_run_directory(int fd) {
     struct stat info;return fd>=0 && fstat(fd,&info)==0 && info.st_uid==geteuid() && !(info.st_mode&0077);
 }
-static int current_status(int directory,rh_status *status) {
+int rh_current_status(int directory,rh_status *status) {
     if(!rh_status_read(directory,status))return 0;
     int lock=openat(directory,"owner.lock",O_RDWR|O_NOFOLLOW|O_CLOEXEC);
     if(lock<0)return 0;
     if(flock(lock,LOCK_EX|LOCK_NB)==0) {
         /* Re-read after obtaining liveness ownership to retain a just-published exit. */
         if(!rh_status_read(directory,status)){close(lock);return 0;}
-        if(status->state!=4 && status->state!=5) {
-            status->state=5;status->completion=status->value=0;
+        if((status->state!=4 && status->state!=5) || status->out_open || status->err_open || status->population==2) {
+            if(status->state!=4) {status->state=5;status->completion=status->value=0;}
+            if(status->population==2)status->population=0;
             status->out_open=status->err_open=0;status->incomplete=1;
             if(!rh_status_write(directory,status)){close(lock);return 0;}
         }
@@ -56,7 +58,8 @@ static int stream(rh_buf *b,int directory,const char *name,uint64_t from,uint32_
 static int observation(uint32_t kind,rh_state *s,const char *key,int directory,uint32_t wait,uint64_t out,uint64_t err,uint32_t cap,int start) {
     uint64_t until=rh_millis()+wait;rh_status status;
     for(;;) {
-        if(!current_status(directory,&status))return rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish Run evidence");
+        if(start && rh_mux_cancelled())return 0;
+        if(!rh_current_status(directory,&status))return rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish Run evidence");
         if(!wait || status.state>=4 || (!start && (status.out_kept>out || status.err_kept>err)) || rh_millis()>=until)break;
         struct timespec pause={0,25000000};nanosleep(&pause,NULL);
     }
@@ -75,18 +78,22 @@ static int submit(uint32_t kind,rh_reader *r) {
     rh_state s;
     if(!rh_state_open(&s,0)){rh_start_free(&q);return rh_refuse(kind,"STATE_UNAVAILABLE","prepare the remote namespace first");}
     const char *error=NULL;
+    rh_cgroup group=RH_CGROUP_INIT;
+    int startup[2]={-1,-1};
     if(strcmp(q.generation,s.generation)){error="NAMESPACE_MISMATCH";goto refused;}
     uint64_t now;
     if(!rh_clock(&s,&now)){error="STATE_UNAVAILABLE";goto refused;}
     if(q.expiry<=now || q.expiry-now>604800){error="REQUEST_EXPIRED";goto refused;}
-    /* The final fields are observation wait (4) and execution deadline (8). */
-    rh_buf canonical={0};rh_raw(&canonical,r->data,r->size-12);rh_raw(&canonical,r->data+r->size-8,8);
+    /* Observation wait is never part of the immutable key binding. */
+    size_t wait_at=r->size-12-q.cgroup;
+    rh_buf canonical={0};rh_raw(&canonical,r->data,wait_at);
+    rh_raw(&canonical,r->data+wait_at+4,8+q.cgroup);
     if(canonical.failed){free(canonical.data);error="STATE_UNAVAILABLE";goto refused;}
     unsigned char hash[32];rh_sha256(canonical.data,canonical.size,hash);free(canonical.data);
     int directory=openat(s.runs,q.key,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(directory>=0) {
         unsigned char *previous=NULL;size_t size=0;
-        int match=valid_directory(directory) && rh_file(directory,"fingerprint",&previous,&size,32) && size==32 && !memcmp(previous,hash,32);
+        int match=rh_valid_run_directory(directory) && rh_file(directory,"fingerprint",&previous,&size,32) && size==32 && !memcmp(previous,hash,32);
         free(previous);
         if(!match){close(directory);error="IDEMPOTENCY_CONFLICT";goto refused;}
     }else {
@@ -102,12 +109,15 @@ static int submit(uint32_t kind,rh_reader *r) {
         if(!resolved){error="CONFIG_INVALID";goto refused;}
         free(q.cwd);q.cwd=resolved;
         error=rg_capacity(&s,0);if(error)goto refused;
+        if(q.cgroup && (!rh_cgroup_parent(&group) || pipe(startup)<0)) {
+            error="CONTAINMENT_UNAVAILABLE";goto refused;
+        }
         char staging[96];snprintf(staging,sizeof staging,".pending-%s",q.key);
         if(mkdirat(s.runs,staging,0700)<0){error="STATE_UNAVAILABLE";goto refused;}
         directory=openat(s.runs,staging,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
         if(directory<0){error="STATE_UNAVAILABLE";goto refused;}
         int lock=openat(directory,"owner.lock",O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);
-        rh_status initial={0};initial.state=1;
+        rh_status initial={0};initial.state=1;initial.cgroup=q.cgroup;
         if(lock<0 || flock(lock,LOCK_EX)<0 || !rh_atomic(directory,"request",r->data,r->size) ||
            !rh_atomic(directory,"fingerprint",hash,32) || !rh_atomic(directory,"stdin",q.input,q.input_size) ||
            !rh_status_write(directory,&initial) || renameat(s.runs,staging,s.runs,q.key)<0 || fsync(s.runs)<0) {
@@ -117,52 +127,51 @@ static int submit(uint32_t kind,rh_reader *r) {
         if(child==0) {
             /* No inherited registry lock or SSH pipe may hold a submission open. */
             rh_state_close(&s);
-            if(setsid()<0)_exit(255);
-            pid_t monitor=fork();if(monitor<0)_exit(255);if(monitor>0)_exit(0);
-            rh_monitor(directory,lock,&q);
+            if(startup[0]>=0)close(startup[0]);
+            if(setsid()<0){rh_cgroup_close(&group,1);_exit(255);}
+            pid_t monitor=fork();
+            if(monitor<0){rh_cgroup_close(&group,1);_exit(255);}
+            if(monitor>0)_exit(0);
+            rh_monitor(directory,lock,&q,&group,startup[1]);
         }
+        if(startup[1]>=0){close(startup[1]);startup[1]=-1;}
+        rh_cgroup_close(&group,child<0);
         close(lock);
         /* A failed fork leaves accepted evidence; never submit the work again. */
         if(child>0) {int code;while(waitpid(child,&code,0)<0 && errno==EINTR){}}
     }
     if(flock(s.registry,LOCK_UN)<0){close(directory);error="STATE_UNAVAILABLE";goto refused;}
-    int result=observation(kind,&s,q.key,directory,q.wait,0,0,4096,1);
+    if(startup[0]>=0) {
+        unsigned char answer;
+        ssize_t received;
+        if(!rh_mux_cancelled()) {
+            do {received=read(startup[0],&answer,1);}while(received<0 && errno==EINTR && !rh_mux_cancelled());
+        }
+        close(startup[0]);startup[0]=-1;
+    }
+    rh_status observed;
+    int result;
+    if(q.cgroup && rh_current_status(directory,&observed) && observed.containment_refused)
+        result=rh_refuse(kind,"CONTAINMENT_UNAVAILABLE","cgroup v2 containment failed before exec");
+    else result=observation(kind,&s,q.key,directory,q.wait,0,0,4096,1);
     close(directory);rh_state_close(&s);rh_start_free(&q);return result;
 refused:
+    if(startup[0]>=0)close(startup[0]);if(startup[1]>=0)close(startup[1]);
+    rh_cgroup_close(&group,1);
     rh_state_close(&s);rh_start_free(&q);return rh_refuse(kind,error,"Run submission refused");
 }
 static int signal_run(uint32_t kind,int directory,unsigned tag,const char *key) {
-    int cwd=open(".",O_RDONLY|O_DIRECTORY|O_CLOEXEC);int fd=-1;unsigned char delivered=0;
-    if(cwd<0 || fchdir(directory)<0)goto done;
-    fd=socket(AF_UNIX,SOCK_STREAM,0);
-    struct sockaddr_un address;memset(&address,0,sizeof address);address.sun_family=AF_UNIX;strcpy(address.sun_path,"control.sock");
-    struct timeval timeout={1,0};
-    if(fd<0 || setsockopt(fd,SOL_SOCKET,SO_RCVTIMEO,&timeout,sizeof timeout)<0 || setsockopt(fd,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof timeout)<0)goto done;
-    if(connect(fd,(struct sockaddr *)&address,sizeof address)<0)goto done;
-    unsigned char message=(unsigned char)tag;
-    if(write(fd,&message,1)!=1 || read(fd,&delivered,1)!=1)delivered=0;
-done:
-    if(cwd>=0){int restored=fchdir(cwd);(void)restored;close(cwd);}if(fd>=0)close(fd);
+    unsigned char delivered=0,message=(unsigned char)tag;
+    int fd=rh_control_open(directory);
+    if(fd>=0) {
+        if(write(fd,&message,1)!=1 || read(fd,&delivered,1)!=1)delivered=0;
+        close(fd);
+    }
     if(!delivered)return rh_refuse(kind,"RUN_CONTROL_UNAVAILABLE","monitor did not confirm signal delivery");
     rh_buf b={0};rh_byte(&b,0);rh_text(&b,key);rh_byte(&b,1);int result=rh_emit(kind,&b);free(b.data);return result;
 }
-/* Observation owns no Run lifetime and never opens either log stream. */
-static int watch_run(uint32_t kind,rh_state *s,const char *key,int directory,uint32_t wait){
-    uint64_t until=rh_millis()+wait;rh_status status;
-    for(;;){
-        if(!current_status(directory,&status))return rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish Run evidence");
-        if(!wait || status.state>=4 || rh_millis()>=until)break;
-        struct timespec pause={0,25000000};nanosleep(&pause,NULL);
-    }
-    rh_buf b={0};rh_byte(&b,0);rh_record(&b,s,key,&status);
-    rh_long(&b,status.out_bytes);rh_long(&b,status.out_kept);rh_byte(&b,status.out_open);
-    rh_byte(&b,status.incomplete || status.out_bytes>status.out_kept);
-    rh_long(&b,status.err_bytes);rh_long(&b,status.err_kept);rh_byte(&b,status.err_open);
-    rh_byte(&b,status.incomplete || status.err_bytes>status.err_kept);
-    int result=rh_emit(kind,&b);free(b.data);return result;
-}
 static int read_run(uint32_t kind,rh_state *s,const char *key,int directory,unsigned which,unsigned selection,uint64_t from,uint64_t tail,uint64_t until,uint32_t cap){
-    rh_status status;if(!current_status(directory,&status))return rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish Run evidence");
+    rh_status status;if(!rh_current_status(directory,&status))return rh_refuse(kind,"STATE_UNAVAILABLE","cannot establish Run evidence");
     uint64_t kept=which==1?status.out_kept:status.err_kept,observed=which==1?status.out_bytes:status.err_bytes;
     if(selection&2)until=kept;
     if(until>kept)return rh_refuse(kind,"OUTPUT_RANGE_UNAVAILABLE","requested output is not retained");
@@ -199,11 +208,11 @@ int rh_runs(uint32_t kind,rh_reader *r) {
     }
     if(kind==3 || kind==5 || kind==9 || kind==10) {
         int directory=openat(s.runs,key,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-        if(!valid_directory(directory)){if(directory>=0)close(directory);result=rh_refuse(kind,"RUN_NOT_FOUND","Run is not available");goto done;}
+        if(!rh_valid_run_directory(directory)){if(directory>=0)close(directory);result=rh_refuse(kind,"RUN_NOT_FOUND","Run is not available");goto done;}
         (void)flock(s.registry,LOCK_UN);
         if(kind==3)result=observation(kind,&s,key,directory,wait,out,err,cap,0);
         else if(kind==10)result=read_run(kind,&s,key,directory,which,selection,out,tail,until,cap);
-        else if(kind==9)result=watch_run(kind,&s,key,directory,wait);
+        else if(kind==9)result=rh_watch(kind,&s,key,directory,wait);
         else result=signal_run(kind,directory,signal_tag,key);
         close(directory);goto done;
     }
@@ -216,7 +225,7 @@ int rh_runs(uint32_t kind,rh_reader *r) {
         if(!rh_key(entry->d_name,&expiry))continue;
         int directory=openat(s.runs,entry->d_name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
         rh_status status;
-        if(!valid_directory(directory) || !current_status(directory,&status)){if(directory>=0)close(directory);failed=1;break;}
+        if(!rh_valid_run_directory(directory) || !rh_current_status(directory,&status)){if(directory>=0)close(directory);failed=1;break;}
         if(kind==4) {
             if(count>=4096){failed=1;close(directory);break;}
             rh_record(&records,&s,entry->d_name,&status);count++;

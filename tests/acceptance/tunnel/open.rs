@@ -134,9 +134,10 @@ fn tunnel_open_starts_one_dedicated_master_and_records_the_id_it_reports() -> Re
     assert_eq!(value["data"]["listen"], "localhost:8080");
     assert_eq!(value["data"]["destination"], "localhost:80");
     assert_eq!(
-        value["data"]["status"], "alive",
+        value["data"]["master_alive"], true,
         "an id is only reported once the master answered: {value}"
     );
+    assert_eq!(value["data"]["destination_evidence"], "unknown");
     let id = opened_id(&value)?;
     let shape = Regex::new(r"^t_[0-9a-f]{32}$").map_err(|error| fail("regex", error))?;
     assert!(shape.is_match(&id), "unexpected tunnel id shape: {id}");
@@ -222,7 +223,8 @@ fn tunnel_open_starts_one_dedicated_master_and_records_the_id_it_reports() -> Re
         .unwrap_or_default();
     assert_eq!(rows.len(), 1, "{listed}");
     assert_eq!(rows[0]["tunnel_id"], id.as_str());
-    assert_eq!(rows[0]["status"], "alive");
+    assert_eq!(rows[0]["master_alive"], true);
+    assert_eq!(rows[0]["destination_evidence"], "unknown");
     assert_eq!(state_files(&harness)?.len(), 1, "one record, one tunnel");
 
     let (outcome, closed) = envelope(&harness, &["tunnel", "close", &id, "--json"])?;
@@ -339,7 +341,8 @@ fn uncertain_master_cleanup_keeps_a_discoverable_record() -> Result<(), String> 
         .as_array()
         .ok_or("missing tunnels")?;
     assert_eq!(rows.len(), 1, "{listed}");
-    assert_eq!(rows[0]["status"], "alive");
+    assert_eq!(rows[0]["master_alive"], true);
+    assert_eq!(rows[0]["destination_evidence"], "unknown");
     let id = rows[0]["tunnel_id"].as_str().ok_or("missing id")?;
     let (outcome, closed) = envelope(&harness, &["tunnel", "close", id, "--json"])?;
     assert_eq!(outcome.status, 0, "{closed}");

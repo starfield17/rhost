@@ -7,8 +7,8 @@ fn actual_dtos_match_independent_schema() -> Result<(), Box<dyn std::error::Erro
     assert_eq!(cases.len(), 38);
     for (name, raw) in [
         (
-            "active v4 schema",
-            include_str!("../schemas/result-v5.schema.json"),
+            "active v6 schema",
+            include_str!("../schemas/result-v6.schema.json"),
         ),
         (
             "published v4.1.0 v2 validator",
@@ -54,6 +54,9 @@ fn published_v2_validator_detects_closed_object_growth() -> Result<(), Box<dyn s
         .into_iter()
         .find(|case| case["operation"] == "version" && case["ok"] == true)
         .ok_or("missing successful version case")?;
+    version["schema_version"] = 2.into();
+    version["data"]["schema_version"] = 2.into();
+    assert!(validator.is_valid(&version));
     version["data"]
         .as_object_mut()
         .ok_or("version data is not an object")?
@@ -135,7 +138,7 @@ fn schema4_preserves_published_legacy_payload_acceptance() -> Result<(), Box<dyn
 fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dyn std::error::Error>>
 {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schemas/result-v5.schema.json"))?;
+        serde_json::from_str(include_str!("../schemas/result-v6.schema.json"))?;
     let validator = jsonschema::validator_for(&schema)?;
 
     let mut covered: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -146,7 +149,7 @@ fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dy
     }
 
     let fixtures: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("fixtures/result-v5-valid.json"))?;
+        serde_json::from_str(include_str!("fixtures/result-v6-valid.json"))?;
     for fixture in &fixtures {
         let name = fixture["name"].as_str().unwrap_or("<unnamed>");
         let result = &fixture["result"];
@@ -173,5 +176,40 @@ fn active_fixtures_and_cases_cover_every_schema_operation() -> Result<(), Box<dy
         missing.is_empty(),
         "no DTO case or fixture covers these schema operations: {missing:?}"
     );
+    Ok(())
+}
+
+#[test]
+fn published_v5_schemas_and_fixtures_are_immutable() -> Result<(), Box<dyn std::error::Error>> {
+    use sha2::{Digest, Sha256};
+    let result = include_str!("../schemas/result-v5.schema.json");
+    let request = include_bytes!("../schemas/request-v5.schema.json");
+    let fixture = include_str!("fixtures/result-v5-valid.json");
+
+    for (bytes, expected) in [
+        (
+            result.as_bytes(),
+            "27a0753f63837bef3cb775b65bd406bca5a4e5e3c26f0b9064d976c5ce700f73",
+        ),
+        (
+            request.as_slice(),
+            "cee3b3f68e04e8887277ed71b5b63bc41e51556947a47715de45408f3cfa3092",
+        ),
+        (
+            fixture.as_bytes(),
+            "4389a6781c64d6643ddab7d00315331b46f599ff558891dc59a1d32da64b30c5",
+        ),
+    ] {
+        let actual: String = Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(actual, expected);
+    }
+    let schema: serde_json::Value = serde_json::from_str(result)?;
+    let validator = jsonschema::validator_for(&schema)?;
+    for row in serde_json::from_str::<Vec<serde_json::Value>>(fixture)? {
+        assert!(validator.is_valid(&row["result"]), "{row}");
+    }
     Ok(())
 }

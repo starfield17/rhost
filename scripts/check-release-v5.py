@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enforce native helper build, verification and publication policy."""
+"""Enforce the native helper release policy shared by v5 and v6."""
 from pathlib import Path
 import re
 
@@ -51,4 +51,5 @@ for path in (ROOT / ".github/workflows").glob("*.yml"):
     for line in path.read_text().splitlines():
         if re.search(r"^\s*(?:-\s+)?uses:", line):
             assert re.search(r"@[0-9a-f]{40}$", line) or line.strip() == "uses: ./.github/workflows/helper-verify.yml", f"unbound action: {line}"
+assert '#[path = "support/helper_v6.rs"]' in (ROOT / "tests/helper_runs.rs").read_text()
 print("check-release-v5: three native helpers, exact-byte acceptance and SHA-256 publication checks")

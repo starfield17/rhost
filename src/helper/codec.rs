@@ -102,14 +102,19 @@ pub fn answer(bytes: &[u8], kind: u32) -> Result<Vec<u8>, Error> {
     if r.long()? != (bytes.len() - 16) as u64 {
         return Err(protocol("invalid helper frame length"));
     }
+    result(&bytes[16..])
+}
+pub(crate) fn result(body: &[u8]) -> Result<Vec<u8>, Error> {
+    let mut r = Reader::new(body);
     match r.byte()? {
-        0 => Ok(bytes[17..].to_vec()),
-        1 => {
+        0 => Ok(body[1..].to_vec()),
+        refusal @ (1 | 2) => {
             let code = r.text()?;
             let message = r.text()?;
             let retryable = r.boolean()?;
             r.done()?;
             let code = match code.as_str() {
+                "REMOTE_EXECUTION_UNKNOWN" => "REMOTE_EXECUTION_UNKNOWN",
                 "PROTOCOL_ERROR" => "PROTOCOL_ERROR",
                 "HELPER_INCOMPATIBLE" => "HELPER_INCOMPATIBLE",
                 "STATE_UNAVAILABLE" => "STATE_UNAVAILABLE",
@@ -118,6 +123,7 @@ pub fn answer(bytes: &[u8], kind: u32) -> Result<Vec<u8>, Error> {
                 "REQUEST_EXPIRED" => "REQUEST_EXPIRED",
                 "IDEMPOTENCY_CONFLICT" => "IDEMPOTENCY_CONFLICT",
                 "RUN_NOT_FOUND" => "RUN_NOT_FOUND",
+                "CONTAINMENT_UNAVAILABLE" => "CONTAINMENT_UNAVAILABLE",
                 "RUN_CONTROL_UNAVAILABLE" => "RUN_CONTROL_UNAVAILABLE",
                 "OUTPUT_RANGE_UNAVAILABLE" => "OUTPUT_RANGE_UNAVAILABLE",
                 "CONFIG_INVALID" => "CONFIG_INVALID",
@@ -125,15 +131,22 @@ pub fn answer(bytes: &[u8], kind: u32) -> Result<Vec<u8>, Error> {
                 "CONTEXT_UNAVAILABLE" => "CONTEXT_UNAVAILABLE",
                 _ => return Err(protocol("unknown helper refusal")),
             };
+            if code == "REMOTE_EXECUTION_UNKNOWN" {
+                return Err(Error::new(code, message));
+            }
             Err(Error {
                 code,
                 message,
                 retryable,
                 mutation: None,
-                recovery: crate::domain::Recovery::inspect(
-                    crate::domain::Phase::Operation,
-                    crate::domain::Submission::Confirmed,
-                ),
+                recovery: if refusal == 2 || code == "CONTAINMENT_UNAVAILABLE" {
+                    crate::domain::Recovery::not_dispatched()
+                } else {
+                    crate::domain::Recovery::inspect(
+                        crate::domain::Phase::Operation,
+                        crate::domain::Submission::Confirmed,
+                    )
+                },
             })
         }
         _ => Err(protocol("invalid helper result tag")),

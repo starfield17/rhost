@@ -2,8 +2,8 @@
 use super::RequestOutcome;
 use crate::{
     domain::{Phase, Recovery, Submission},
+    helper::Helper,
     remote::Error,
-    transport::Client,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -198,14 +198,7 @@ fn check<T>(r: &Page<T>, p: &Search) -> Result<(), Error> {
     }
     Ok(())
 }
-pub(super) fn execute(
-    client: &Client,
-    host: &str,
-    operation: &str,
-    raw: &str,
-    cancelled: &dyn Fn() -> bool,
-    guard: Option<&crate::domain::BootId>,
-) -> RequestOutcome {
+pub(super) fn execute(helper: &Helper<'_>, operation: &str, raw: &str) -> RequestOutcome {
     let result = (|| {
         let original: Value = serde_json::from_str(raw).map_err(|_| invalid())?;
         let p: Search = serde_json::from_str(raw).map_err(|_| invalid())?;
@@ -269,16 +262,14 @@ pub(super) fn execute(
             }
         }
         if find {
-            let r: Page<Found> =
-                super::inspect::call(client, host, q, 16 * 1024 * 1024, cancelled, guard)?;
+            let r: Page<Found> = super::inspect::call(helper, q, 16 * 1024 * 1024)?;
             check(&r, &p)?;
             if r.scanned_bytes != 0 || r.items.iter().any(|f| !path(&f.path)) {
                 return Err(bad());
             }
             serde_json::to_value(r).map_err(|_| bad())
         } else {
-            let mut r: Page<File> =
-                super::inspect::call(client, host, q, 16 * 1024 * 1024, cancelled, guard)?;
+            let mut r: Page<File> = super::inspect::call(helper, q, 16 * 1024 * 1024)?;
             check(&r, &p)?;
             if r.items.iter().map(|f| f.matches.len()).sum::<usize>() > p.max_matches
                 || r.items

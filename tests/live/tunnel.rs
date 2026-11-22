@@ -34,10 +34,9 @@ fn socks_tunnel_persists_across_cli_processes_and_closes_cleanly() -> Result<(),
         let rows = listed.value["data"]["tunnels"]
             .as_array()
             .ok_or("tunnel.list did not return an array")?;
-        assert!(
-            rows.iter()
-                .any(|row| row["tunnel_id"] == id && row["status"] == "alive")
-        );
+        assert!(rows.iter().any(|row| row["tunnel_id"] == id
+            && row["master_alive"] == true
+            && row["destination_evidence"] == "unknown"));
         TcpStream::connect_timeout(
             &format!("127.0.0.1:{port}")
                 .parse()
@@ -112,5 +111,62 @@ fn reverse_tunnel_carries_bytes_from_remote_to_local() -> Result<(), String> {
     let answer = super::support::decode(output, &["reverse client"])?;
     assert_eq!(number(&answer.value, "/data/execution/exit_code")?, 0);
     live.ok(&["--json", "tunnel", "close", &id])?;
+    Ok(())
+}
+
+#[test]
+fn live_master_keeps_destination_unknown_when_a_connect_fails() -> Result<(), String> {
+    let live = Live::new("tunnel-destination")?;
+    let port_answer = live.exec(
+        "python3 -c \"import socket; s=socket.socket(); s.bind(('localhost',0)); print(s.getsockname()[1]); s.close()\"",
+    )?;
+    let remote_port = text(&port_answer.value, "/data/output/stdout/content")?.trim();
+    let loopback = std::net::Ipv4Addr::LOCALHOST;
+    let listen = format!("{loopback}:{}", free_local_port()?);
+    let destination = format!("{loopback}:{remote_port}");
+    let opened = live.ok(&[
+        "tunnel",
+        "open",
+        live.host(),
+        "--kind",
+        "local",
+        "--listen",
+        &listen,
+        "--destination",
+        &destination,
+        "--json",
+    ])?;
+    let id = text(&opened.value, "/data/tunnel_id")?;
+    let observed = (|| {
+        assert_eq!(opened.value["data"]["master_alive"], true);
+        assert_eq!(opened.value["data"]["destination_evidence"], "unknown");
+        let mut client = TcpStream::connect(&listen).map_err(|e| e.to_string())?;
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .map_err(|e| e.to_string())?;
+        let mut byte = [0];
+        match client.read(&mut byte) {
+            Ok(0) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => {}
+            other => {
+                return Err(format!(
+                    "expected the forward connection to close, got {other:?}"
+                ));
+            }
+        }
+        let listed = live.ok(&["tunnel", "list", "--json"])?;
+        let row = listed.value["data"]["tunnels"]
+            .as_array()
+            .ok_or("tunnel records")?
+            .iter()
+            .find(|row| row["tunnel_id"] == id)
+            .ok_or("tunnel record missing")?;
+        assert_eq!(row["master_alive"], true);
+        assert_eq!(row["destination_evidence"], "unknown");
+        Ok(())
+    })();
+    let closed = live.ok(&["tunnel", "close", id, "--json"]);
+    observed?;
+    closed?;
     Ok(())
 }

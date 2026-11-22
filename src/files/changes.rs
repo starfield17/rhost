@@ -1,6 +1,6 @@
 //! Targeted file journal contracts, separate from project or Git ownership.
 use super::{RequestOutcome, backend::Edit};
-use crate::{remote::Error, transport::Client};
+use crate::{helper::Helper, remote::Error};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 #[derive(Deserialize)]
@@ -282,14 +282,7 @@ fn decode(bytes: &[u8], operation: &str, expected_generation: &str, id: &str) ->
         Err(error) => RequestOutcome::failed(error),
     }
 }
-pub(super) fn execute(
-    client: &Client,
-    host: &str,
-    operation: &str,
-    raw: &str,
-    cancelled: &dyn Fn() -> bool,
-    guard: Option<&crate::domain::BootId>,
-) -> RequestOutcome {
+pub(super) fn execute(helper: &Helper<'_>, operation: &str, raw: &str) -> RequestOutcome {
     let result = (|| {
         let (payload, generation, id) = prepare(operation, raw)
             .map_err(|e| e.with_recovery(crate::domain::Recovery::invalid()))?;
@@ -300,9 +293,7 @@ pub(super) fn execute(
                 "encoded changeset exceeds 12 MiB",
             ));
         }
-        let reply = crate::helper::Helper::new(client, host)
-            .with_cancellation(cancelled)
-            .with_boot_guard(guard)
+        let reply = helper
             .file_call(&bytes, std::time::Duration::from_secs(60), 512 * 1024)
             .map_err(|mut e| {
                 if e.recovery.submission() != "not_submitted" && e.recovery.stage() == "unknown" {

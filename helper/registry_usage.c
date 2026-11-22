@@ -43,7 +43,12 @@ int rg_observe(int base,const char *name,int kind,const char *generation,rg_reco
     else if(!r->phase || !missing)r->error="STATE_UNAVAILABLE";
     if(!r->phase && kind==0){
         rh_status status;if(!rh_status_read(dir,&status))r->error="STATE_UNAVAILABLE";
-        else {const char *names[]={"","accepted","starting","running","exited","lost"};strcpy(r->status,status.state<4 && !r->active?"lost":names[status.state]);}
+        else {
+            const char *names[]={"","accepted","starting","running","exited","lost"};
+            strcpy(r->status,status.state<4 && !r->active?"lost":names[status.state]);
+            r->cgroup=status.cgroup;
+            r->population=status.population==2 && !r->active?0:status.population;
+        }
     }else if(!r->phase){
         unsigned char *raw=NULL;size_t size=0;j_value *meta=NULL;
         if(rh_file(dir,kind==1?"manifest.json":"meta.json",&raw,&size,256*1024))meta=j_parse(raw,size);free(raw);

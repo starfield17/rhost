@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "state.h"
+#include "mux.h"
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -131,21 +132,24 @@ int rh_clock(rh_state *s,uint64_t *now) {
     return rh_atomic(s->root,"clock",out,8);
 }
 int rh_status_write(int directory,const rh_status *s) {
-    rh_buf b={0};rh_raw(&b,"RHST0001",8);
+    rh_buf b={0};rh_raw(&b,s->cgroup?"RHST0002":"RHST0001",8);
     rh_byte(&b,s->state);rh_byte(&b,s->completion);rh_int(&b,s->value);
     rh_byte(&b,s->out_open);rh_byte(&b,s->err_open);rh_byte(&b,s->incomplete);
     rh_long(&b,s->out_bytes);rh_long(&b,s->err_bytes);rh_long(&b,s->out_kept);rh_long(&b,s->err_kept);
+    if(s->cgroup){rh_byte(&b,s->population);rh_byte(&b,s->containment_refused);}
     int ok=!b.failed && rh_atomic(directory,"status",b.data,b.size);free(b.data);return ok;
 }
 int rh_status_read(int directory,rh_status *s) {
     unsigned char *data=NULL;size_t size=0;
     if(!rh_file(directory,"status",&data,&size,128))return 0;
-    if(size!=49 || memcmp(data,"RHST0001",8)){free(data);return 0;}
+    int cgroup=size==51 && !memcmp(data,"RHST0002",8);
+    if(!cgroup && (size!=49 || memcmp(data,"RHST0001",8))){free(data);return 0;}
     rh_reader r={data,size,8,0};memset(s,0,sizeof *s);
     s->state=rh_read_byte(&r);s->completion=rh_read_byte(&r);s->value=rh_read_int(&r);
     s->out_open=rh_read_byte(&r);s->err_open=rh_read_byte(&r);s->incomplete=rh_read_byte(&r);
     s->out_bytes=rh_read_long(&r);s->err_bytes=rh_read_long(&r);s->out_kept=rh_read_long(&r);s->err_kept=rh_read_long(&r);
-    int ok=rh_done(&r) && s->state>=1 && s->state<=5 && s->out_open<=1 && s->err_open<=1 && s->incomplete<=1 && s->out_kept<=s->out_bytes && s->err_kept<=s->err_bytes;
+    if(cgroup){s->cgroup=1;s->population=rh_read_byte(&r);s->containment_refused=rh_read_byte(&r);}
+    int ok=rh_done(&r) && s->population<=2 && s->containment_refused<=1 && s->state>=1 && s->state<=5 && s->out_open<=1 && s->err_open<=1 && s->incomplete<=1 && s->out_kept<=s->out_bytes && s->err_kept<=s->err_bytes;
     if(s->state==4)ok=ok && ((s->completion==1 && s->value<=255)||(s->completion==2 && s->value>0));
     else ok=ok && !s->completion && !s->value;
     free(data);return ok;
@@ -168,4 +172,5 @@ uint64_t rh_millis(void) {
 void rh_record(rh_buf *b,const rh_state *s,const char *key,const rh_status *status) {
     rh_text(b,s->generation);rh_text(b,key);rh_byte(b,status->state);
     if(status->state==4) {rh_byte(b,status->completion);rh_int(b,status->value);}
+    if(rh_mux_active()){rh_byte(b,status->cgroup);rh_byte(b,status->population);}
 }

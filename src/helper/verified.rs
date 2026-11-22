@@ -7,6 +7,12 @@ use crate::{domain::Recovery, remote::Error};
 use serde_json::Value;
 use std::time::Duration;
 
+#[derive(Clone, Copy)]
+pub(super) enum Mode {
+    Run,
+    Files,
+    Mux,
+}
 enum Attempt {
     Missing,
     Answer(Value, Vec<u8>),
@@ -52,17 +58,17 @@ impl Helper<'_> {
         }
         Ok(profiles)
     }
-    fn verified_command(
+    pub(super) fn verified_command(
         &self,
         marker: &str,
-        files: bool,
+        mode: Mode,
         release_probe: bool,
     ) -> Result<String, Error> {
         let explicit = Self::explicit_selection();
         if explicit {
             self.initialize()?;
             if let Some(Preparation::Fixed(fixed)) = self.preparation.borrow().as_ref() {
-                return self.fixed_command(marker, files, fixed);
+                return self.fixed_command(marker, mode, fixed);
             }
         }
         let base = crate::shell::path_quote(&self.cache_base()?);
@@ -130,10 +136,10 @@ fi
         );
         script.push_str(&Self::guard("\"$rh_cache\""));
         script.push_str("rh_helper=\"$rh_cache/rhost-helper\";\n");
-        script.push_str(&self.verified_exec(files));
+        script.push_str(&self.verified_exec(mode));
         Ok(format!("sh -c {}", crate::shell::quote(&script)))
     }
-    fn fixed_command(&self, marker: &str, files: bool, fixed: &Fixed) -> Result<String, Error> {
+    fn fixed_command(&self, marker: &str, mode: Mode, fixed: &Fixed) -> Result<String, Error> {
         let target = self
             .target
             .get()
@@ -172,21 +178,25 @@ case "$2" in ''|*[!0-7]*) rh_refuse;; esac
 "#,
             );
         }
-        script.push_str(&self.verified_exec(files));
+        script.push_str(&self.verified_exec(mode));
         Ok(format!("sh -c {}", crate::shell::quote(&script)))
     }
-    fn verified_exec(&self, files: bool) -> String {
+    fn verified_exec(&self, mode: Mode) -> String {
         let state = crate::shell::path_quote(
             &std::env::var("RHOST_REMOTE_STATE")
                 .unwrap_or_else(|_| "~/.local/state/rhost/v5".into()),
         );
+        let cgroup = std::env::var("RHOST_CGROUP_ROOT")
+            .ok()
+            .map(|path| format!(" RHOST_CGROUP_ROOT={}", crate::shell::quote(&path)))
+            .unwrap_or_default();
         format!(
-            "exec env RHOST_REMOTE_STATE={state} RHOST_EXPECT_BOOT_ID={} \"$rh_helper\" {} {} \"$rh_image\" \"$rh_target\"",
+            "exec env RHOST_REMOTE_STATE={state}{cgroup} RHOST_EXPECT_BOOT_ID={} \"$rh_helper\" {} {} \"$rh_image\" \"$rh_target\"",
             crate::shell::quote(self.boot_guard.map(|b| b.as_str()).unwrap_or("")),
-            if files {
-                "--verified-files"
-            } else {
-                "--verified-run"
+            match mode {
+                Mode::Files => "--verified-files",
+                Mode::Run => "--verified-run",
+                Mode::Mux => "--verified-mux",
             },
             crate::shell::quote(&super::source_digest())
         )
@@ -206,7 +216,11 @@ case "$2" in ''|*[!0-7]*) rh_refuse;; esac
             format!("RHOST_FRAME_{kind}_{nonce}\n")
         };
         let command = self
-            .verified_command(&marker, files, kind == 1 && !files)
+            .verified_command(
+                &marker,
+                if files { Mode::Files } else { Mode::Run },
+                kind == 1 && !files,
+            )
             .map_err(|e| e.with_recovery(Recovery::preparation()))?;
         let (run, stdout, stderr) =
             self.transport(&command, input, budget, cap.saturating_add(65536))?;
@@ -289,24 +303,7 @@ case "$2" in ''|*[!0-7]*) rh_refuse;; esac
                 }
                 return Ok(Attempt::Answer(identity, reply));
             }
-        } else if let Some(kind) =
-            crate::remote::pre_execution(&String::from_utf8_lossy(&stderr), run.exit)
-        {
-            use crate::domain::PreExecFailure as P;
-            let code = match kind {
-                P::Usage => "USAGE_ERROR",
-                P::Config => "CONFIG_INVALID",
-                P::HostUnknown => "HOST_UNKNOWN",
-                P::Authentication => "SSH_AUTH_FAILED",
-                P::HostKey => "HOST_KEY_FAILED",
-                P::Connection => "SSH_UNREACHABLE",
-                P::DependencyMissing => "REMOTE_DEPENDENCY_MISSING",
-            };
-            let mut error = Error::new(code, "SSH refused native bootstrap before dispatch")
-                .with_recovery(Recovery::preparation());
-            if kind == P::Connection {
-                error = error.retryable();
-            }
+        } else if let Some(error) = transport_refusal(&stderr, run.exit) {
             return Err(error);
         }
         Err(Error::new(
@@ -412,4 +409,24 @@ fn cancelled() -> Error {
         "REMOTE_COMMAND_CANCELLED",
         "native observation cancelled; remote work may remain active",
     )
+}
+
+pub(super) fn transport_refusal(stderr: &[u8], exit: Option<i32>) -> Option<Error> {
+    let kind = crate::remote::pre_execution(&String::from_utf8_lossy(stderr), exit)?;
+    use crate::domain::PreExecFailure as P;
+    let code = match kind {
+        P::Usage => "USAGE_ERROR",
+        P::Config => "CONFIG_INVALID",
+        P::HostUnknown => "HOST_UNKNOWN",
+        P::Authentication => "SSH_AUTH_FAILED",
+        P::HostKey => "HOST_KEY_FAILED",
+        P::Connection => "SSH_UNREACHABLE",
+        P::DependencyMissing => "REMOTE_DEPENDENCY_MISSING",
+    };
+    let mut error = Error::new(code, "SSH refused native bootstrap before dispatch")
+        .with_recovery(Recovery::preparation());
+    if kind == P::Connection {
+        error = error.retryable();
+    }
+    Some(error)
 }

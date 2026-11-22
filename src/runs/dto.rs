@@ -11,7 +11,7 @@ pub fn bind(
     generation: Option<&str>,
     key: Option<&str>,
 ) -> Result<(), Error> {
-    if matches!(kind, 2 | 3 | 9 | 10)
+    if matches!(kind, 2 | 3 | 9..=11 | 13)
         && (data["run"]["generation"].as_str() != generation
             || data["run"]["run_id"].as_str() != key)
     {
@@ -31,7 +31,7 @@ pub fn bind(
     }
     Ok(())
 }
-pub(super) fn record(r: &mut Reader<'_>) -> Result<Value, Error> {
+fn record(r: &mut Reader<'_>, mux: bool) -> Result<Value, Error> {
     let generation = r.text()?;
     let run_id = r.text()?;
     super::request::generation(&generation)?;
@@ -54,6 +54,24 @@ pub(super) fn record(r: &mut Reader<'_>) -> Result<Value, Error> {
             _ => return Err(protocol("invalid completion")),
         };
     }
+    let (mode, population) = if mux {
+        match (r.byte()?, r.byte()?) {
+            (0, 0) => ("pgid", None),
+            (1, population @ 0..=2) => (
+                "cgroup",
+                match population {
+                    0 => None,
+                    1 => Some(false),
+                    _ => Some(true),
+                },
+            ),
+            _ => return Err(protocol("invalid Run containment evidence")),
+        }
+    } else {
+        ("pgid", None)
+    };
+    value["containment"] = json!(mode);
+    value["containment_populated"] = json!(population);
     Ok(value)
 }
 pub(super) fn stream(r: &mut Reader<'_>) -> Result<Value, Error> {
@@ -71,7 +89,7 @@ pub(super) fn stream(r: &mut Reader<'_>) -> Result<Value, Error> {
         "content":String::from_utf8_lossy(bytes),"open":open,"incomplete":incomplete}),
     )
 }
-pub fn decode(kind: u32, bytes: &[u8]) -> Result<Value, Error> {
+pub fn decode(kind: u32, bytes: &[u8], mux: bool) -> Result<Value, Error> {
     let mut r = Reader::new(bytes);
     let data = match kind {
         7 | 8 => {
@@ -83,13 +101,13 @@ pub fn decode(kind: u32, bytes: &[u8]) -> Result<Value, Error> {
                 crate::domain::BootId::new(boot.clone())
                     .map_err(|_| protocol("invalid namespace boot identity"))?;
             }
-            json!({"schema_generations":[5],"generation":generation,"remote_time_unix":now,"context":{"boot_id":if boot.is_empty(){None}else{Some(boot)}}})
+            json!({"schema_generations":[6],"generation":generation,"remote_time_unix":now,"context":{"boot_id":if boot.is_empty(){None}else{Some(boot)}}})
         }
         2 | 3 => {
-            json!({"run":record(&mut r)?,"stdout":stream(&mut r)?,"stderr":stream(&mut r)?,"stale":false})
+            json!({"run":record(&mut r, mux)?,"stdout":stream(&mut r)?,"stderr":stream(&mut r)?,"stale":false})
         }
-        9 => {
-            let run = record(&mut r)?;
+        9 | 11 | 13 => {
+            let run = record(&mut r, mux)?;
             let mut counts = Vec::new();
             for _ in 0..2 {
                 let observed = r.long()?;
@@ -102,7 +120,7 @@ pub fn decode(kind: u32, bytes: &[u8]) -> Result<Value, Error> {
             json!({"run":run,"stdout":counts[0],"stderr":counts[1]})
         }
         10 => {
-            let run = record(&mut r)?;
+            let run = record(&mut r, mux)?;
             let which = match r.byte()? {
                 1 => "stdout",
                 2 => "stderr",
@@ -129,7 +147,7 @@ pub fn decode(kind: u32, bytes: &[u8]) -> Result<Value, Error> {
             }
             let mut items = Vec::new();
             for _ in 0..count {
-                items.push(record(&mut r)?);
+                items.push(record(&mut r, mux)?);
             }
             json!(items)
         }

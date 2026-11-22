@@ -1,4 +1,5 @@
 #include "protocol.h"
+#include "mux.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,10 +69,17 @@ char *rh_read_text(rh_reader *r) {
 }
 int rh_done(const rh_reader *r) { return !r->failed && r->at==r->size; }
 int rh_emit(uint32_t kind,const rh_buf *body) {
-    unsigned char h[16]={'R','H','0','1'};
+    unsigned char h[RH_MUX_HEADER]={'R','H','0','1'};
     if(body->failed || body->size>RH_LIMIT) return 255;
-    rh_put32(h+4,kind|UINT32_C(0x80000000)); rh_put32(h+8,0); rh_put32(h+12,(uint32_t)body->size);
-    if(fwrite(h,1,16,stdout)!=16 || fwrite(body->data,1,body->size,stdout)!=body->size || fflush(stdout)) return 255;
+    size_t size=16;
+    uint64_t id=rh_mux_reply_id();
+    if(id) {
+        size=RH_MUX_HEADER;
+        rh_mux_header(h,id,kind,body->size);
+    } else {
+        rh_put32(h+4,kind|RH_REPLY);rh_put32(h+8,0);rh_put32(h+12,(uint32_t)body->size);
+    }
+    if(fwrite(h,1,size,stdout)!=size || fwrite(body->data,1,body->size,stdout)!=body->size || fflush(stdout)) return 255;
     return 0;
 }
 int rh_refuse(uint32_t kind,const char *code,const char *message) {

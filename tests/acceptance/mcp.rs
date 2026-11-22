@@ -75,7 +75,7 @@ impl Mcp {
         let response = self.answer(id)?;
         let envelope = response["result"]["structuredContent"].clone();
         let schema: Value =
-            serde_json::from_str(include_str!("../../schemas/result-v5.schema.json"))
+            serde_json::from_str(include_str!("../../schemas/result-v6.schema.json"))
                 .map_err(|e| e.to_string())?;
         let validator = jsonschema::validator_for(&schema).map_err(|e| e.to_string())?;
         assert!(validator.is_valid(&envelope), "{response}");
@@ -197,22 +197,44 @@ pub(super) fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String)
         .ok_or("clock missing")?
         + 3600;
     let key = format!("{expiry}-{}", "d".repeat(64));
-    let started=m.call(3,"rhost_run_start",json!({"host":"gpu","params":{"generation":generation,"key":key,"expires_unix":expiry,"cwd":"/","program":{"argv":["/bin/sleep","30"]},"environment":{"inherit":false,"values":{}}}}))?;
-    assert_eq!(started["ok"], true, "{started}");
-    let submissions = harness.path("submitted-polls");
-    std::fs::create_dir(&submissions).map_err(|e| e.to_string())?;
+    let wire = harness.path("submitted-frames");
+    let launches = harness.path("mux-launches");
     let observed = crate::hosts::LOCAL_HOST.replace(
         "exec /bin/bash",
         &format!(
-            "case \"$remote\" in *RHOST_FRAME_3_*) : > {}/\"$$\";; esac\nexec /bin/bash",
-            crate::support::shell_quote(&submissions.to_string_lossy())
+            r#"case "$remote" in *RHOST_MUX_*)
+  printf '%s\n' opened >> {}
+  tee -a {} | /bin/bash -lc "$remote"
+  exit $?
+;; esac
+exec /bin/bash"#,
+            crate::support::shell_quote(&launches.to_string_lossy()),
+            crate::support::shell_quote(&wire.to_string_lossy()),
         ),
     );
     harness.stub("ssh", &observed)?;
+    let started=m.call(3,"rhost_run_start",json!({"host":"gpu","params":{"generation":generation,"key":key,"expires_unix":expiry,"cwd":"/","program":{"argv":["/bin/sleep","30"]},"environment":{"inherit":false,"values":{}}}}))?;
+    assert_eq!(started["ok"], true, "{started}");
     let submitted = || {
-        std::fs::read_dir(&submissions)
-            .map(|entries| entries.count())
-            .unwrap_or(0)
+        let bytes = std::fs::read(&wire).unwrap_or_default();
+        let mut remaining = bytes.as_slice();
+        let mut polls = std::collections::BTreeSet::new();
+        while let Some(header) = remaining.get(..20) {
+            if &header[..4] != b"RH02" {
+                break;
+            }
+            let Ok(size) = header[16..20].try_into().map(u32::from_be_bytes) else {
+                break;
+            };
+            let Some(next) = remaining.get(20 + size as usize..) else {
+                break;
+            };
+            if header[12..16] == 3u32.to_be_bytes() {
+                polls.insert(&header[4..12]);
+            }
+            remaining = next;
+        }
+        polls.len()
     };
     for id in 10..26 {
         m.start(
@@ -228,6 +250,10 @@ pub(super) fn occupied(m: &mut Mcp, harness: &Harness) -> Result<(Value, String)
         }
         std::thread::sleep(Duration::from_millis(20));
     }
+    assert_eq!(
+        std::fs::read(&launches).map_err(|e| e.to_string())?,
+        b"opened\n"
+    );
     Ok((generation, key))
 }
 

@@ -1,6 +1,6 @@
 # Maintenance policy
 
-v5.3 uses one schema-v5 envelope for all public JSON operations. Changes are conservative by default:
+v6.0 uses one schema-v6 envelope for all public JSON operations. Changes are conservative by default:
 the contract and existing gates define the product, and implementation work does
 not grant permission to reinterpret them.
 
@@ -11,9 +11,11 @@ compatibility generation, not a release train.
 
 A producer may keep its current schema version only when every DTO shape it can
 emit is accepted by the published compatibility validator for that generation.
-All actual DTO cases must pass the active schema v5. Published v5.1.0 schema-3
+All actual DTO cases must pass the active schema v6. Published v5.1.0 schema-3
 request/result validators and fixtures remain frozen and digest-protected.
-Published v5.2.0 schema-4 validators and fixtures are also frozen. Schema 5 adds
+Published v5.2.0 schema-4 and v5.3 schema-5 validators and fixtures are also
+frozen. Schema 6 adds Run containment and FOLLOW pages. Tunnel results replace
+`status` with `master_alive` and `destination_evidence`. Schema 5 adds
 bounded file/Run/session observations and executable range continuations;
 callers must use its validator and honor explicit coverage and retention gaps.
 Schema 4 adds required recovery evidence and replaces search/list shapes; callers
@@ -109,13 +111,16 @@ implementation and is frozen as history. Current product semantics live in
 this document.
 
 
-## v5 native helper and MCP toolchain
+## Native helper and MCP toolchain
 
 The v5 client MSRV is Rust 1.88 for the official MCP SDK. Runtime dependencies
 add rmcp with default features disabled and only server/stdio support, plus
 Tokio for that adapter. HTTP transports and authentication stacks are disabled.
 `mcp` owns SDK types; capabilities return the same typed request outcomes to CLI
 and MCP. Cancellation is request-scoped and stops observation, never a Run.
+
+The opt-in live cgroup case uses `RHOST_TEST_CGROUP_ROOT` as the remote
+operator-delegated subtree. Without that variable it verifies pre-exec refusal.
 
 Local and CI `make check` build a native C test helper when
 `RHOST_HELPER_BIN` is absent. `make test-smoke` uses the same build. The
@@ -126,7 +131,7 @@ build. The client uses a versioned HTTPS SHA-256 sidecar to verify downloaded
 Linux helpers. Automatic preparation can also use an existing remote C99
 compiler. A configured client-side compiler is an explicit build choice.
 
-## v5 publication procedure
+## Publication procedure
 
 1. Verify the version in `Cargo.toml` and its plugin mirrors. Run `make check`
    and `make test-smoke`. If using a real remote host, set explicit

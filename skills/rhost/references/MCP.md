@@ -49,7 +49,7 @@ unrelated client settings.
 ## Discover and call tools
 
 Use the connected server's tool list; clients may add a server prefix to names.
-v5.3.0 uses schema 5, adds state discovery and path collections, and provides local discovery, diagnostic and session tools alongside the
+v6.0.0 uses schema 6 and provides state discovery, path collections, local discovery, diagnostic and session tools alongside the
 native helper/Run/file tools available in v5.0.0. Older clients expose a smaller
 set; use advertised tools or the corresponding CLI operation.
 
@@ -70,7 +70,7 @@ For example, `rhost_fs_read` takes:
 {"host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 ```
 
-`structuredContent` is the schema-v5 envelope. Inspect operation-specific
+`structuredContent` is the schema-v6 envelope. Inspect operation-specific
 completion and partial-result fields. A successful Run observation can contain
 a failed child exit; an error can still contain effects or useful data.
 
@@ -88,7 +88,7 @@ and streaming/pipelines belong to CLI. `session attach` remains refused.
 
 ```bash
 rhost request --from - <<'EOF'
-{"schema_version":5,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
+{"schema_version":6,"operation":"fs.read","host":"gpu","params":{"path":"~/work/project/config.toml","max_bytes":4096}}
 EOF
 ```
 
@@ -133,9 +133,13 @@ Annotations are hints, not authorization. Results retain both structured JSON an
 serialized text as recommended by the MCP tools specification. Wire-byte savings
 from specialized schemas do not establish a particular client's token savings.
 
-## Bounded context in v5.3
+## Bounded context
 
-Use `run.watch` for state and completion without log bodies. `run.read` defaults
+Use `run.watch` for state and completion. Supply `stdout_since`,
+`stderr_since`, or `max_bytes` to return a bounded base64 page. Resume with
+each stream's `next`. RH02 reuses the verified helper channel across compatible
+calls. See [Run containment](RUNS.md#run-containment) for the `run.start`
+containment option. `run.read` defaults
 to a 4096-byte retained-tail preview of the selected stream; request text or
 base64 explicitly. `run.search` returns literal matches and bounded context.
 Repeat search with `since=data.next` and the same `until` for a fixed interval.

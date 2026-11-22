@@ -92,7 +92,7 @@ impl Host {
             .take()
             .ok_or("stdin")?
             .write_all(
-                json!({"schema_version":5,"operation":operation,"host":self.host,"params":params})
+                json!({"schema_version":6,"operation":operation,"host":self.host,"params":params})
                     .to_string()
                     .as_bytes(),
             )
@@ -109,7 +109,7 @@ impl Host {
                 String::from_utf8_lossy(&output.stderr)
             )
         })?;
-        let schema: Value = serde_json::from_str(include_str!("../schemas/result-v5.schema.json"))
+        let schema: Value = serde_json::from_str(include_str!("../schemas/result-v6.schema.json"))
             .map_err(|e| e.to_string())?;
         assert!(
             jsonschema::validator_for(&schema)

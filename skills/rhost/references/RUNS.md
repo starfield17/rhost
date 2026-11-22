@@ -39,6 +39,24 @@ accepted/starting result is valid before readiness. `--deadline` is enforced by
 the remote monitor. Signals are explicit `INT`, `TERM` or `KILL`. Canceling the
 local CLI or MCP observer leaves remote work alone.
 
+### Run containment
+
+The default `--containment pgid` uses the managed process group.
+`--containment cgroup` (request parameter `"containment": "cgroup"`) requires
+Linux and an operator-delegated cgroup v2 subtree. Set `RHOST_CGROUP_ROOT` to
+the absolute path on the remote host, either in the helper environment or in
+the local rhost invocation. The SSH account needs permission to create the Run
+leaf, move its child into it, and write its `cgroup.kill`. A failed delegation
+check returns `CONTAINMENT_UNAVAILABLE` before program execution.
+
+`data.run.containment` identifies the effective mode.
+`data.run.containment_populated` reports the last established cgroup population
+as a boolean, or null when unavailable or using PGID. Leader exit can coexist
+with a populated cgroup. `KILL` and deadline escalation target the whole Run
+leaf. `INT` and `TERM` target the live leader's process group. The monitor stays
+outside the leaf. Treat this as process-lifetime containment for cooperative
+jobs under the SSH account.
+
 Use absolute program paths and explicit `--env KEY=VALUE` where reproducibility
 matters. Environment inheritance defaults to false; `--inherit-env` explicitly
 inherits the SSH invocation environment. Shell programs use `--command`, an
@@ -98,6 +116,13 @@ For namespace usage and explicit prune preview, read
 `rhost run watch <host> <run-id> --generation <generation> --wait 30s --json`
 returns status, completion and stream counters, without transferring log bodies.
 Leader completion is independent of open streams and unread or unavailable logs.
+
+Pass `--stdout-since`, `--stderr-since`, or `--max-bytes` to follow output.
+An omitted cursor starts at zero and the default budget is 4096 bytes per stream.
+Each stream returns base64 bytes with `from` and `next`. Reconnect and pass the
+reported `next` values to resume. `unavailable_after` counts observed bytes
+discarded beyond the retained prefix. The leader's `completion` can arrive
+while either stream is still open.
 
 `run read` requires `--output-stream stdout|stderr`. The default is a bounded retained
 tail. `--since`, `--until`, `--max-bytes` and `--format text|base64` select an exact
